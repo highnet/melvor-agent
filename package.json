@@ -1,0 +1,31 @@
+{
+  "name": "melvor-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.1.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @melvor-agent/mod dev",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "docs:api": "tsx scripts/gen-api-docs.ts",
+    "docs:api:check": "tsx scripts/gen-api-docs.ts --check",
+    "knowledge:dump": "tsx packages/knowledge/src/cli/verify-dump.ts",
+    "planner": "pnpm --filter @melvor-agent/planner dev",
+    "ci": "pnpm check && pnpm typecheck && pnpm docs:api:check && pnpm test"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

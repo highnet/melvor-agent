@@ -1,0 +1,15 @@
+{
+  "name": "@melvor-agent/mod",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "node build.mjs --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@melvor-agent/shared": "workspace:*",
+    "zod": "^3.24.1"
+  }
+}

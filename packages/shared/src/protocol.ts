@@ -1,0 +1,99 @@
+import { z } from 'zod';
+import { journalDigestSchema, logRecordSchema } from './journal.js';
+import { candidateSchema, objectiveSchema } from './objective.js';
+import { qualitySampleSchema, stateSnapshotSchema } from './snapshot.js';
+
+/**
+ * The agent's lifecycle. All three tiers are gated on this.
+ *
+ * `suspended` exists because offline progress is not a startup-only event: a
+ * stalled loop longer than `Game.MIN_OFFLINE_TIME` (60s) drops a *running*
+ * game into the offline loop mid-session. See docs/api-notes.md §3.
+ */
+export const runStateSchema = z.enum([
+  /** Loaded, but automation has never been armed. */
+  'idle',
+  /** Armed and permitted to act. */
+  'running',
+  /** Offline progress in flight. No ticks, no snapshots, no actions. */
+  'suspended',
+  /** Refusing to arm — stale dump, wrong character, or a failed guard. */
+  'blocked',
+  /** Kill switch pulled. Only a game reload leaves this state. */
+  'killed',
+]);
+export type RunState = z.infer<typeof runStateSchema>;
+
+/** Commands the TUI (or the in-game panel) can issue. */
+export const commandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('arm') }),
+  z.object({ type: z.literal('disarm') }),
+  /** Hard stop. Tears down every listener and timer. For the operator. */
+  z.object({ type: z.literal('kill') }),
+  z.object({ type: z.literal('replan'), reason: z.string() }),
+  z.object({ type: z.literal('set_objective'), objective: objectiveSchema }),
+  z.object({ type: z.literal('dump_knowledge') }),
+  z.object({ type: z.literal('export_save') }),
+]);
+export type Command = z.infer<typeof commandSchema>;
+
+/** mod -> service. Posted on every policy tick. */
+export const agentReportSchema = z.object({
+  runState: runStateSchema,
+  snapshot: stateSnapshotSchema.nullable(),
+  objective: objectiveSchema.nullable(),
+  candidates: z.array(candidateSchema),
+  logs: z.array(logRecordSchema),
+  quality: z.array(qualitySampleSchema),
+  /** Non-null while the agent is refusing to arm; rendered verbatim by the TUI. */
+  blockedReason: z.string().nullable(),
+});
+export type AgentReport = z.infer<typeof agentReportSchema>;
+
+/** service -> mod, in response to a report. Commands are delivered at most once. */
+export const agentReplySchema = z.object({
+  commands: z.array(commandSchema),
+});
+export type AgentReply = z.infer<typeof agentReplySchema>;
+
+/** service -> TUI. Everything the dashboard renders. */
+export const dashboardSchema = z.object({
+  connected: z.boolean(),
+  /** ms since the last report from the mod; null if none ever received. */
+  lastReportAgeMs: z.number().int().nonnegative().nullable(),
+  report: agentReportSchema.nullable(),
+  digest: journalDigestSchema,
+  /** Progress per real-time hour: the control condition is a single skill left running. */
+  levelsPerHour: z.number().nullable(),
+  gpPerHour: z.number().nullable(),
+});
+export type Dashboard = z.infer<typeof dashboardSchema>;
+
+export const plannerRequestSchema = z.object({
+  snapshot: stateSnapshotSchema,
+  candidates: z.array(candidateSchema),
+  digest: journalDigestSchema,
+  trigger: z.enum([
+    'game_start',
+    'offline_loop_exited',
+    'objective_completed',
+    'objective_aborted',
+    'unlock_acquired',
+    'death',
+    'resource_exhausted',
+    'budget_exceeded',
+    'stuck_detected',
+    'operator',
+  ]),
+});
+export type PlannerRequest = z.infer<typeof plannerRequestSchema>;
+
+/**
+ * The safety boundary. Parsed, then every objective is checked against the
+ * capability registry before anything reaches a game function.
+ */
+export const plannerResponseSchema = z.object({
+  objectives: z.array(objectiveSchema).min(1),
+  reasoning: z.string(),
+});
+export type PlannerResponse = z.infer<typeof plannerResponseSchema>;
