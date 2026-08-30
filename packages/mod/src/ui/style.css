@@ -1,0 +1,16 @@
+/*
+ * Deliberately minimal. The panel reuses the game's own Bootstrap classes
+ * (block, block-header, btn, text-muted, alert) rather than shipping a design
+ * system, so this file only covers what those classes do not.
+ */
+#melvor-agent-panel {
+  font-size: 0.875rem;
+}
+
+#melvor-agent-panel td {
+  padding: 0.15rem 0.25rem;
+}
+
+#melvor-agent-panel .btn + .btn {
+  margin-top: 0.25rem;
+}

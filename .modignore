@@ -1,0 +1,12 @@
+node_modules
+src
+test
+*.ts
+*.mjs
+*.map
+tsconfig*.json
+package.json
+pnpm-lock.yaml
+.git
+.*ignore
+.env*
