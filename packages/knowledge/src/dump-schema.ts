@@ -1,0 +1,122 @@
+import { z } from 'zod';
+
+/**
+ * The shape of `knowledge/dump.json`.
+ *
+ * The game's registries are the numeric source of truth: they are correct for
+ * the exact installed version. The wiki is not, and is only ever used for what
+ * the data does not encode. Where the two disagree, the data wins and the
+ * discrepancy is logged to `knowledge/conflicts.md` — never silently resolved.
+ */
+export const knowledgeDumpSchema = z.object({
+  /** Global `gameVersion` at capture, e.g. `"v1.3.1"`. */
+  gameVersion: z.string().min(1),
+  capturedAt: z.number().int().positive(),
+  gamemodeId: z.string().min(1),
+
+  realms: z.array(z.object({ id: z.string(), name: z.string() })),
+
+  skills: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      isCombat: z.boolean(),
+      hasMastery: z.boolean(),
+    }),
+  ),
+
+  currencies: z.array(z.object({ id: z.string(), name: z.string() })),
+
+  woodcuttingTrees: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      level: z.number().int().nonnegative(),
+      baseInterval: z.number().nonnegative(),
+      baseExperience: z.number().nonnegative(),
+      productId: z.string(),
+      productName: z.string(),
+      productSellsFor: z.number().nonnegative(),
+      productSellsForCurrencyId: z.string(),
+    }),
+  ),
+
+  /**
+   * Note the absence of `maxHit`. A `Monster` in the registry is data with no
+   * computed max hit — only an instantiated `Enemy` has one. Recording a
+   * plausible-looking number here would poison the combat gate, so the field
+   * is omitted rather than approximated.
+   */
+  monsters: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      combatLevel: z.number().nonnegative(),
+    }),
+  ),
+
+  dungeons: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      monsterIds: z.array(z.string()),
+      realmId: z.string(),
+    }),
+  ),
+
+  shopPurchases: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      allowQuantityPurchase: z.boolean(),
+    }),
+  ),
+});
+
+export type KnowledgeDump = z.infer<typeof knowledgeDumpSchema>;
+
+/** Why a dump was rejected. Rendered verbatim in the panel and the TUI. */
+export type DumpStaleness =
+  | { fresh: true }
+  | { fresh: false; reason: 'missing'; detail: string }
+  | { fresh: false; reason: 'version_mismatch'; detail: string }
+  | { fresh: false; reason: 'malformed'; detail: string };
+
+/**
+ * Decides whether a dump may be trusted for the running game.
+ *
+ * A stale dump is worse than no dump: the planner would reason over numbers
+ * that no longer describe the installed game. So automation refuses to arm
+ * rather than degrading quietly.
+ *
+ * @param raw - Parsed JSON from `knowledge/dump.json`, or null when absent.
+ * @param liveGameVersion - The running game's `gameVersion` global.
+ * @returns Freshness, with an operator-readable reason when it fails.
+ */
+export function checkDumpFreshness(raw: unknown, liveGameVersion: string): DumpStaleness {
+  if (raw === null || raw === undefined) {
+    return { fresh: false, reason: 'missing', detail: 'no dump found; run pnpm knowledge:dump' };
+  }
+
+  const parsed = knowledgeDumpSchema.safeParse(raw);
+  if (!parsed.success) {
+    return {
+      fresh: false,
+      reason: 'malformed',
+      detail: parsed.error.issues
+        .slice(0, 3)
+        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+        .join('; '),
+    };
+  }
+
+  if (parsed.data.gameVersion !== liveGameVersion) {
+    return {
+      fresh: false,
+      reason: 'version_mismatch',
+      detail: `dump is for ${parsed.data.gameVersion}, game is ${liveGameVersion}; regenerate with pnpm knowledge:dump`,
+    };
+  }
+
+  return { fresh: true };
+}

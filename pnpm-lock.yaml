@@ -39,6 +39,9 @@ importers:
 
   packages/mod:
     dependencies:
+      '@melvor-agent/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
       '@melvor-agent/shared':
         specifier: workspace:*
         version: link:../shared
