@@ -63,3 +63,66 @@ declare const gameVersion = "v1.3.1";   // gameTypes/account.d.ts:1
 
 Stamp every knowledge dump with it and compare on boot. Note the typings project's own
 `package.json` version (`1.13.0`) is unrelated and stale — do not use it for anything.
+
+## `isActive` is on `ActiveAction`, not on `Skill`
+
+`skill.isActive` does not typecheck against `AnySkill` (= `Skill<any>`). The
+property belongs to the `ActiveAction` interface, which only skills that can be
+run directly implement. Combat is the notable case where the active action is the
+`CombatManager`, not the Attack skill.
+
+```ts
+function readSkillActive(skill: AnySkill): boolean {
+  const candidate = skill as AnySkill & Partial<Pick<ActiveAction, 'isActive'>>;
+  return candidate.isActive ?? false;
+}
+```
+
+The vendored typings caught this at compile time — worth remembering that they are
+strict enough to be a real check on assumptions, not just autocomplete.
+
+## There are two `GP` ids and only one is the currency
+
+- `CurrencyIDs.GP = "melvorD:GP"` — the actual currency, in `game.currencies`.
+- `TownshipResourceIDs.GP = "melvorF:GP"` — a Township resource, unrelated.
+
+Grepping `idEnums.d.ts` for `GP` returns both. Always check which `const enum`
+block a value came from before using it; the file is 480KB of similar-looking
+names and several ids repeat across unrelated enums.
+
+## `Woodcutting.selectTree` is a toggle that returns `void`
+
+Two hazards in one call:
+
+- It returns `void`, so there is nothing to check.
+- It *toggles*. Calling it on an already-selected tree deselects it, so a naive
+  retry loop undoes its own work.
+
+The only correct pattern is to test membership first and then observe:
+
+```ts
+if (game.woodcutting.activeTrees.has(tree)) return;  // already selected
+game.woodcutting.selectTree(tree);
+// verify: tree.id is now in [...game.woodcutting.activeTrees].map(t => t.id)
+```
+
+Verified: `woodcutting.d.ts:57,77`. `isTreeUnlocked(tree)` and `treeCutLimit` are
+the two preconditions worth checking before selecting.
+
+## `Monster.combatLevel` exists; `Monster.maxHit` does not
+
+`game.monsters` entries carry `combatLevel`, `name`, `levels` — but max hit is
+computed on `Character`, and `Enemy extends Character`. Do not add a `maxHit`
+field to any monster dump: a plausible-looking approximation there would poison
+the combat gate silently.
+
+`game.dungeons` entries do carry `monsters: Monster[]` (from `CombatArea`) and
+`realm: Realm` (from `RealmedObject`), so "the monsters in this dungeon" and
+"which realm is this" are both cheap and reliable.
+
+## Use `game.generateSaveString()` for auto-export, not `exportSave()`
+
+The global `exportSave(update?: boolean): Promise<void>` drives the export
+*modal* — useless to an unattended agent. `game.generateSaveString(): string`
+returns the save directly, which can be posted to a local service that writes it
+to disk. The mod itself is sandboxed and cannot write files.

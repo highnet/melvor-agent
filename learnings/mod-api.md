@@ -109,3 +109,39 @@ https://wiki.melvoridle.com/api.php?action=parse&page=Mod_Creation/Essentials&pr
 ```
 
 `action=query&list=allpages&apprefix=<prefix>` enumerates a page tree.
+
+## Lint autofix will rewrite patch hooks into arrows — disable that rule
+
+Biome's `lint/complexity/useArrowFunction` rewrote
+
+```ts
+ctx.patch(Game, 'loop').after(function () { ... });
+```
+
+into an arrow function on the first `--write` run. That is precisely the
+documented `this`-binding trap: patch hooks are invoked with `this` bound to the
+patched instance, and an arrow captures module scope instead. It happened to be
+harmless in that hook because it does not use `this` — the next one that does
+would fail silently.
+
+`useArrowFunction` is now `off` for `packages/mod/src/adapter/**` in `biome.json`.
+Any linter or codemod touching patch hooks needs the same treatment.
+
+## The `Game` class reference is an API touchpoint that does not look like one
+
+An adapter-boundary rule that only greps for `game.` misses this:
+
+```ts
+ctx.patch(Game, 'loop')   // <- `Game`, the class, passed as a value
+```
+
+There is no dot, so it reads as ordinary code. `scripts/check-adapter-boundary.mjs`
+matches bare class identifiers followed by `,`, `)` or `]` for exactly this reason,
+and it caught a real leak on its first run.
+
+## `ctx.patch` has no unpatch
+
+`ModContext` exposes `patch` and `isPatched`, but nothing to remove a patch. A
+disposer for a patched hook can only flip a flag so the handler stops doing work;
+the patch itself stays installed for the life of the page. Budget for that when
+designing teardown — the kill switch cannot truly un-hook the game loop.
