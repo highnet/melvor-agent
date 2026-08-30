@@ -18,9 +18,7 @@ const snapshot = {
   totalLevel: 122,
   completionPercent: 1.53,
   currencies: [{ id: 'melvorD:GP', name: 'GP', amount: 12_345 }],
-  skills: [
-    { id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true },
-  ],
+  skills: [{ id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true }],
   bank: { slotsUsed: 4, slotsMax: 20, items: [] },
   activeAction: { id: 'melvorD:Woodcutting', name: 'Woodcutting', isActive: true },
   combat: {
@@ -53,7 +51,9 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
       snapshot,
       objective: null,
       candidates: [],
-      logs: [{ at: 1_700_000_000_000, level: 'info', source: 'policy', message: 'started cutting' }],
+      logs: [
+        { at: 1_700_000_000_000, level: 'info', source: 'policy', message: 'started cutting' },
+      ],
       quality: [],
       blockedReason: null,
     },
@@ -82,9 +82,13 @@ describe('render', () => {
 
   it('calls out the suspended offline window', () => {
     const offline = dashboard();
+    if (offline.report === null) throw new Error('fixture must include a report');
     const text = plain(
       render(
-        { ...offline, report: { ...offline.report!, snapshot: { ...snapshot, isOfflineLoop: true } } },
+        {
+          ...offline,
+          report: { ...offline.report, snapshot: { ...snapshot, isOfflineLoop: true } },
+        },
         null,
         100,
         30,
@@ -95,12 +99,13 @@ describe('render', () => {
 
   it('shows the blocked reason verbatim', () => {
     const blocked = dashboard();
+    if (blocked.report === null) throw new Error('fixture must include a report');
     const text = plain(
       render(
         {
           ...blocked,
           report: {
-            ...blocked.report!,
+            ...blocked.report,
             runState: 'blocked',
             blockedReason: 'knowledge dump version_mismatch: dump is for v1.3.0',
           },
@@ -127,7 +132,9 @@ describe('render', () => {
   });
 
   it('reports a silent mod rather than implying it is connected', () => {
-    const text = plain(render(dashboard({ connected: false, lastReportAgeMs: 90_000 }), null, 100, 30));
+    const text = plain(
+      render(dashboard({ connected: false, lastReportAgeMs: 90_000 }), null, 100, 30),
+    );
     expect(text).toContain('mod silent');
     expect(text).toContain('2m ago');
   });

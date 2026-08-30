@@ -19,7 +19,7 @@
     "docs:api:check": "tsx scripts/gen-api-docs.ts --check",
     "knowledge:dump": "tsx packages/knowledge/src/cli/verify-dump.ts",
     "planner": "pnpm --filter @melvor-agent/planner dev",
-    "ci": "pnpm check && pnpm typecheck && pnpm docs:api:check && pnpm test"
+    "ci": "pnpm check && pnpm typecheck && node scripts/check-adapter-boundary.mjs && pnpm docs:api:check && pnpm test"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",

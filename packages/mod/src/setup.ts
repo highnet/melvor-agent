@@ -1,5 +1,5 @@
-import { addSidebarPanel, CharacterSettings, dumpRegistries } from './adapter/index.js';
-import { Agent, DEFAULT_SETTINGS, type AgentSettings } from './runtime/agent.js';
+import { CharacterSettings, addSidebarPanel, dumpRegistries, onGameLoop } from './adapter/index.js';
+import { Agent, type AgentSettings, DEFAULT_SETTINGS } from './runtime/agent.js';
 import { Logger } from './runtime/logger.js';
 import { Transport } from './runtime/transport.js';
 import { createPanel } from './ui/panel.js';
@@ -62,12 +62,9 @@ export function setup(ctx: Modding.ModContext): void {
     });
 
     // The reflex tier runs off the game's own loop rather than a timer, so it
-    // is genuinely per-tick. `function` rather than an arrow: patch hooks are
-    // invoked with `this` bound to the patched instance, and an arrow would
-    // silently capture module scope instead.
-    ctx.patch(Game, 'loop').after(function () {
-      agent?.onGameTick();
-    });
+    // is genuinely per-tick. The patch itself lives in the adapter, like every
+    // other game touchpoint.
+    onGameLoop(ctx, () => agent?.onGameTick());
 
     log.info('runtime', 'character loaded; waiting for offline progress to resolve');
   });

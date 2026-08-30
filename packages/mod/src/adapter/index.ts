@@ -16,7 +16,7 @@
 export { act, type ActSpec } from './act.js';
 export { selectTree, startWoodcutting, stopWoodcutting } from './actions.js';
 export { readGatherCandidates } from './candidates.js';
-export { onGameEvent, Subscriptions, type Disposer } from './events.js';
+export { onGameEvent, onGameLoop, Subscriptions, type Disposer } from './events.js';
 export {
   CATEGORICALLY_REFUSED,
   checkCharacterAllowed,

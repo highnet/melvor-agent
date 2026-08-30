@@ -75,7 +75,12 @@ export function act<T>(spec: ActSpec<T>, isSuspended: () => boolean): ActionResu
     );
   }
 
-  return ok(spec.name, before, after, returned === undefined ? undefined : `returned ${safeJson(returned)}`);
+  return ok(
+    spec.name,
+    before,
+    after,
+    returned === undefined ? undefined : `returned ${safeJson(returned)}`,
+  );
 }
 
 function describe(error: unknown): string {

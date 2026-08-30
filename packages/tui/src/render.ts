@@ -41,7 +41,9 @@ export function render(
   const lines: string[] = [];
   const w = Math.max(40, width);
 
-  lines.push(`${C.bold}${C.cyan} Melvor Play Agent ${C.reset}${C.grey}${'─'.repeat(Math.max(0, w - 20))}${C.reset}`);
+  lines.push(
+    `${C.bold}${C.cyan} Melvor Play Agent ${C.reset}${C.grey}${'─'.repeat(Math.max(0, w - 20))}${C.reset}`,
+  );
 
   if (error !== null) {
     lines.push(`${C.red} planner service unreachable: ${error}${C.reset}`);
@@ -133,7 +135,9 @@ function renderLog(dashboard: Dashboard, rows: number, width: number): string[] 
   }
 
   for (const record of records.slice(-rows).reverse()) {
-    lines.push(` ${logColour(record)}${fmtTime(record.at)} ${record.source.padEnd(7)} ${truncate(record.message, width - 22)}${C.reset}`);
+    lines.push(
+      ` ${logColour(record)}${fmtTime(record.at)} ${record.source.padEnd(7)} ${truncate(record.message, width - 22)}${C.reset}`,
+    );
   }
   return lines;
 }

@@ -31,9 +31,21 @@ export type ObjectiveParams = z.infer<typeof objectiveParamsSchema>;
  * snapshot; the planner only chooses among these, it does not author them.
  */
 export const successCriterionSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('skill_level_at_least'), skillId: gameIdSchema, level: z.number().int().positive() }),
-  z.object({ type: z.literal('item_qty_at_least'), itemId: gameIdSchema, qty: z.number().int().positive() }),
-  z.object({ type: z.literal('currency_at_least'), currencyId: gameIdSchema, amount: z.number().positive() }),
+  z.object({
+    type: z.literal('skill_level_at_least'),
+    skillId: gameIdSchema,
+    level: z.number().int().positive(),
+  }),
+  z.object({
+    type: z.literal('item_qty_at_least'),
+    itemId: gameIdSchema,
+    qty: z.number().int().positive(),
+  }),
+  z.object({
+    type: z.literal('currency_at_least'),
+    currencyId: gameIdSchema,
+    amount: z.number().positive(),
+  }),
 ]);
 export type SuccessCriterion = z.infer<typeof successCriterionSchema>;
 

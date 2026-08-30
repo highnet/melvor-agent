@@ -1,8 +1,8 @@
 import { serve } from '@hono/node-server';
 import {
+  type Dashboard,
   agentReportSchema,
   commandSchema,
-  type Dashboard,
   plannerRequestSchema,
 } from '@melvor-agent/shared';
 import { Hono } from 'hono';

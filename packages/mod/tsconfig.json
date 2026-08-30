@@ -6,5 +6,9 @@
     "types": [],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
-  "include": ["src", "../../vendor/melvor-typings/gameTypes/**/*.d.ts", "../../vendor/melvor-typings/libraryTypes/**/*.d.ts"]
+  "include": [
+    "src",
+    "../../vendor/melvor-typings/gameTypes/**/*.d.ts",
+    "../../vendor/melvor-typings/libraryTypes/**/*.d.ts"
+  ]
 }

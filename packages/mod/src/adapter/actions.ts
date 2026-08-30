@@ -65,8 +65,7 @@ export function selectTree(
         return null;
       },
       perform: () => game.woodcutting.selectTree(tree),
-      changed: (before, after) =>
-        !before.trees.includes(treeId) && after.trees.includes(treeId),
+      changed: (before, after) => !before.trees.includes(treeId) && after.trees.includes(treeId),
     },
     isSuspended,
   );
@@ -82,9 +81,7 @@ export function selectTree(
  * @param isSuspended - Guard against acting during offline catch-up.
  * @returns Evidence that woodcutting became the active action.
  */
-export function startWoodcutting(
-  isSuspended: () => boolean,
-): ActionResult<WoodcuttingProjection> {
+export function startWoodcutting(isSuspended: () => boolean): ActionResult<WoodcuttingProjection> {
   return act(
     {
       name: 'woodcutting.start',
@@ -112,9 +109,7 @@ export function startWoodcutting(
  * @param isSuspended - Guard against acting during offline catch-up.
  * @returns Evidence that the skill left the active state.
  */
-export function stopWoodcutting(
-  isSuspended: () => boolean,
-): ActionResult<WoodcuttingProjection> {
+export function stopWoodcutting(isSuspended: () => boolean): ActionResult<WoodcuttingProjection> {
   return act(
     {
       name: 'woodcutting.stop',

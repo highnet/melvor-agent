@@ -13,7 +13,9 @@ const snapshot = {
   totalLevel: 120,
   completionPercent: 1.5,
   currencies: [{ id: 'melvorD:GP', name: 'GP', amount: 1000 }],
-  skills: [{ id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 13, xp: 1800, isActive: false }],
+  skills: [
+    { id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 13, xp: 1800, isActive: false },
+  ],
   bank: { slotsUsed: 0, slotsMax: 20, items: [] },
   activeAction: null,
   combat: {
@@ -131,8 +133,6 @@ describe('journal digest', () => {
     // The other 5 must survive as counts, not vanish.
     expect(digest.aggregates).toHaveLength(1);
     expect(digest.aggregates[0]?.attempts).toBe(5);
-    expect(
-      (digest.aggregates[0]?.completed ?? 0) + (digest.aggregates[0]?.aborted ?? 0),
-    ).toBe(5);
+    expect((digest.aggregates[0]?.completed ?? 0) + (digest.aggregates[0]?.aborted ?? 0)).toBe(5);
   });
 });

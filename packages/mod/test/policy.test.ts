@@ -48,7 +48,11 @@ describe('success criteria', () => {
 
   it('is complete once the criterion holds', () => {
     const stocked = snapshot({
-      bank: { slotsUsed: 3, slotsMax: 20, items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 100 }] },
+      bank: {
+        slotsUsed: 3,
+        slotsMax: 20,
+        items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 100 }],
+      },
     });
     expect(isObjectiveComplete(stocked, objective().successWhen)).toBe(true);
   });
@@ -112,7 +116,9 @@ describe('gatherResource', () => {
 
   it('does nothing while the skill is already running', () => {
     const running = snapshot({
-      skills: [{ id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true }],
+      skills: [
+        { id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true },
+      ],
     });
     expect(gatherResource(context({ snapshot: running }))).toMatchObject({
       kind: 'idle',
@@ -134,7 +140,11 @@ describe('gatherResource', () => {
     // An objective that is both complete and over budget must report the abort,
     // otherwise a runaway objective could mask itself by finishing late.
     const done = snapshot({
-      bank: { slotsUsed: 3, slotsMax: 20, items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 500 }] },
+      bank: {
+        slotsUsed: 3,
+        slotsMax: 20,
+        items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 500 }],
+      },
     });
     const decision = gatherResource(
       context({ snapshot: done, now: START + 61 * 60_000, objectiveStartedAt: START }),
@@ -144,7 +154,11 @@ describe('gatherResource', () => {
 
   it('reports completion once the criteria hold', () => {
     const done = snapshot({
-      bank: { slotsUsed: 3, slotsMax: 20, items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 500 }] },
+      bank: {
+        slotsUsed: 3,
+        slotsMax: 20,
+        items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 500 }],
+      },
     });
     expect(gatherResource(context({ snapshot: done }))).toMatchObject({ kind: 'complete' });
   });
@@ -161,7 +175,11 @@ describe('gatherResource', () => {
 
   it('aborts on a skill with no verified executor rather than improvising', () => {
     const mining = objective({
-      params: { kind: 'gather_resource', skillId: 'melvorD:Mining', recipeId: 'melvorD:Copper_Ore' },
+      params: {
+        kind: 'gather_resource',
+        skillId: 'melvorD:Mining',
+        recipeId: 'melvorD:Copper_Ore',
+      },
     });
     expect(gatherResource(context({ objective: mining }))).toMatchObject({
       kind: 'abort',

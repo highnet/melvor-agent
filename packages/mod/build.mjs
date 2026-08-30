@@ -38,7 +38,9 @@ if (watch) {
   const context = await esbuild.context({ ...options, plugins: [assertSetupExport()] });
   await context.watch();
   console.log(`[melvor-agent] watching; output -> ${options.outfile}`);
-  console.log('[melvor-agent] reload the game to pick up each build (Directory Link re-zips on reload)');
+  console.log(
+    '[melvor-agent] reload the game to pick up each build (Directory Link re-zips on reload)',
+  );
 } else {
   await esbuild.build({ ...options, plugins: [assertSetupExport()] });
   console.log(`[melvor-agent] built -> ${options.outfile}`);
@@ -61,8 +63,7 @@ function assertSetupExport() {
         const bundle = readFileSync(options.outfile, 'utf8');
         if (!/export\s*\{[^}]*\bsetup\b/.test(bundle)) {
           throw new Error(
-            'bundle does not export `setup`; the mod would load and silently never run. ' +
-              `Check that esbuild format is "esm" (currently "${options.format}").`,
+            `bundle does not export \`setup\`; the mod would load and silently never run. Check that esbuild format is "esm" (currently "${options.format}").`,
           );
         }
       });

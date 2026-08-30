@@ -47,12 +47,7 @@ export const actionResultSchema = <T extends z.ZodTypeAny>(observed: T) =>
     }),
   ]);
 
-export const ok = <T>(
-  action: string,
-  before: T,
-  after: T,
-  detail?: string,
-): ActionResult<T> => ({
+export const ok = <T>(action: string, before: T, after: T, detail?: string): ActionResult<T> => ({
   ok: true,
   action,
   observed: { before, after },

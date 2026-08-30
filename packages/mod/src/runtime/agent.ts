@@ -9,17 +9,18 @@ import type {
 } from '@melvor-agent/shared';
 import { stateSnapshotSchema } from '@melvor-agent/shared';
 import {
+  Subscriptions,
   checkCharacterAllowed,
   checkRealmAllowed,
+  dumpRegistries,
+  exportSave,
   onGameEvent,
-  readGatherCandidates,
   readGameVersion,
+  readGatherCandidates,
   readSnapshot,
   selectTree,
   startWoodcutting,
   stopWoodcutting,
-  Subscriptions,
-  exportSave,
 } from '../adapter/index.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import type { PolicyAction } from '../policy/types.js';
@@ -462,7 +463,10 @@ export class Agent {
       case 'set_objective':
         // Already parsed by the schema; the kind check is the capability gate.
         if (!isSupportedKind(command.objective.kind)) {
-          this.log.error('planner', `rejected objective: no executor for ${command.objective.kind}`);
+          this.log.error(
+            'planner',
+            `rejected objective: no executor for ${command.objective.kind}`,
+          );
           return;
         }
         this.settings = { ...this.settings, objective: command.objective };
@@ -471,7 +475,7 @@ export class Agent {
         this.log.info('operator', `objective set: ${command.objective.rationale}`);
         break;
       case 'dump_knowledge':
-        this.log.info('operator', 'knowledge dump requested');
+        await this.dumpKnowledge();
         break;
       case 'export_save': {
         const result = exportSave();
@@ -485,6 +489,45 @@ export class Agent {
       }
     }
     this.notify();
+  }
+
+  /**
+   * Exports the game's registries and ships them to the service.
+   *
+   * Runs from inside the game because only the running game knows its own
+   * registries, and they are correct for the exact installed version in a way
+   * no offline source is. The service writes the file; the mod cannot.
+   *
+   * @returns Whether the dump was captured and stored.
+   */
+  async dumpKnowledge(): Promise<boolean> {
+    let dump: ReturnType<typeof dumpRegistries>;
+    try {
+      dump = dumpRegistries();
+    } catch (error) {
+      this.log.error('adapter', `knowledge dump failed to read registries: ${String(error)}`);
+      return false;
+    }
+
+    const stored = await this.transport.uploadDump(dump);
+    if (!stored) {
+      this.log.error(
+        'runtime',
+        `dump captured (${dump.gameVersion}) but the service could not store it: ${this.transport.error ?? 'unreachable'}`,
+      );
+      return false;
+    }
+
+    this.log.info(
+      'runtime',
+      `knowledge dump stored for ${dump.gameVersion} (${dump.skills.length} skills, ${dump.monsters.length} monsters)`,
+    );
+    // A fresh dump may clear a version_mismatch block, so let the operator retry.
+    if (this.state === 'blocked') {
+      this.blockedReason = null;
+      this.state = 'idle';
+    }
+    return true;
   }
 
   /** Replaces settings wholesale, e.g. after a panel edit. */

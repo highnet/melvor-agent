@@ -129,6 +129,14 @@ function renderControls(agent: Agent): HTMLElement {
     cell.appendChild(control);
     row.appendChild(cell);
   }
+
+  // The dump must be produced from inside the game: only the running game
+  // knows its own registries for the exact installed version.
+  const dump = button('Dump knowledge', 'btn-secondary', () => void agent.dumpKnowledge());
+  const dumpCell = el('div', 'col-12 mt-2');
+  dumpCell.appendChild(dump);
+  row.appendChild(dumpCell);
+
   return row;
 }
 
@@ -185,7 +193,10 @@ function renderLog(log: Logger): HTMLElement {
   wrapper.appendChild(el('div', 'font-size-sm text-muted mb-1', 'Recent activity'));
 
   const list = el('div', 'font-size-sm');
-  Object.assign(list.style, { maxHeight: '220px', overflowY: 'auto' } satisfies Partial<CSSStyleDeclaration>);
+  Object.assign(list.style, {
+    maxHeight: '220px',
+    overflowY: 'auto',
+  } satisfies Partial<CSSStyleDeclaration>);
 
   for (const record of log.tail(40).reverse()) {
     const line = el('div', levelClass(record.level));

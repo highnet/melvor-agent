@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint and format
+        run: pnpm check
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Keeps every Melvor API call inside src/adapter/, so a game update
+      # breaks exactly one directory.
+      - name: Adapter boundary
+        run: node scripts/check-adapter-boundary.mjs
+
+      # docs/API.md is generated from the adapter surface. This is the
+      # anti-hallucination mechanism: the reference cannot go stale.
+      - name: API docs drift
+        run: pnpm docs:api:check
+
+      - name: Tests
+        run: pnpm test
+
+      # A wrong esbuild format produces a mod that loads and silently never
+      # runs, so the build asserts its own output exports `setup`.
+      - name: Build mod bundle
+        run: pnpm --filter @melvor-agent/mod build

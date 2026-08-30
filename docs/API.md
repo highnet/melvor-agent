@@ -1,0 +1,451 @@
+# Adapter API
+
+<!--
+  GENERATED FILE — do not edit by hand.
+  Source: packages/mod/src/adapter/index.ts
+  Regenerate: pnpm docs:api   Verify: pnpm docs:api:check (CI runs this)
+-->
+
+Every Melvor API touchpoint in this repo lives behind these exports. Nothing
+outside `packages/mod/src/adapter/` may call a game function, so a game update
+breaks exactly one directory.
+
+Two invariants hold across the whole surface:
+
+- **No action returns `void`.** Each returns an `ActionResult` carrying before/after
+  evidence, because the game's own return conventions are inconsistent and a
+  non-throwing call proves nothing.
+- **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
+  fail with reason `suspended` rather than acting mid catch-up.
+
+36 exports.
+
+## `act`
+
+`function`
+
+Runs a game action and returns evidence that it worked.
+
+A game call returning without throwing does not mean it worked: requirements
+can be unmet, the wrong screen can be open, an offline tick can swallow it.
+Worse, the game's own return conventions are inconsistent —
+`Player.equipItem` returns boolean, `Player.equipFood` returns
+`boolean | undefined`, and `Bank.removeItemQuantity` and
+`Woodcutting.selectTree` return `void`. So the return value is recorded as
+*supporting* detail, never as the verdict; the verdict is the before/after diff.
+
+```ts
+act: <T>(spec: ActSpec<T>, isSuspended: () => boolean) => ActionResult<T>
+```
+
+## `ActionResult`
+
+`type`
+
+The contract every adapter action returns. Never `void`.
+
+On success it carries the before/after projection that *proves* the state
+changed, so callers verify evidence rather than trusting a return code.
+
+```ts
+ActionResult: any
+```
+
+## `ActiveActionState`
+
+`type`
+
+```ts
+ActiveActionState: any
+```
+
+## `ActSpec`
+
+`interface`
+
+Options for a single verified action.
+
+```ts
+ActSpec: any
+```
+
+## `addSidebarPanel`
+
+`function`
+
+Registers the agent's sidebar entry.
+
+`sidebar` is a global, not part of the mod context. Categories and items are
+get-or-create, so this is safe to call more than once — a reload that
+re-registers will configure the existing entry rather than duplicating it.
+
+```ts
+addSidebarPanel: (options: SidebarPanelOptions) => PanelHandle
+```
+
+## `BankState`
+
+`type`
+
+```ts
+BankState: any
+```
+
+## `Candidate`
+
+`type`
+
+```ts
+Candidate: any
+```
+
+## `CATEGORICALLY_REFUSED`
+
+`const`
+
+Actions the agent will never take, at any autonomy level.
+
+These are refused categorically rather than escalated to the operator: an
+agent running unattended for days has nobody to ask, and "ask" degrades into
+"block forever" or, worse, "assume yes".
+
+There is deliberately no adapter function for any of these, so this list is
+documentation of an absence rather than a runtime check that could be
+bypassed. It exists so the omission is legible, and so a future contributor
+adding one of these trips over the reason first.
+
+```ts
+CATEGORICALLY_REFUSED: readonly ["destroying unique or one-of-a-kind items", "spending one-time tokens or consumable unlock items", "permanent character choices (gamemode, ironman, skill resets)", "deleting or overwriting save slots"]
+```
+
+## `CharacterSettings`
+
+`class`
+
+```ts
+CharacterSettings: typeof CharacterSettings
+```
+
+## `checkCharacterAllowed`
+
+`function`
+
+Whether this character may be automated.
+
+The agent is meant to run on a throwaway character. An empty allowlist means
+"refuse everything" rather than "allow everything": a misconfigured agent must
+fail closed, since the failure mode is days of unattended play on the wrong save.
+
+```ts
+checkCharacterAllowed: (characterName: string, allowlist: readonly string[]) => string | null
+```
+
+## `checkRealmAllowed`
+
+`function`
+
+Whether the currently selected realm is refused.
+
+```ts
+checkRealmAllowed: () => string | null
+```
+
+## `CombatState`
+
+`type`
+
+```ts
+CombatState: any
+```
+
+## `Disposer`
+
+`type`
+
+Undoes a subscription. Every listener the mod creates returns one of these.
+
+```ts
+Disposer: any
+```
+
+## `dumpRegistries`
+
+`function`
+
+Exports the game's own data registries.
+
+These registries are ground truth: they are correct for the exact installed
+version, which the wiki is not. Everything numeric the planner ever sees
+originates here. The dump is stamped with `gameVersion` so a game update
+makes the staleness detectable rather than silent.
+
+Only the slices Phase 1 and the Phase 2 combat gate need are exported. This
+is deliberate: `game.items` alone is thousands of entries, and a dump nobody
+reads is just a large file that goes stale.
+
+```ts
+dumpRegistries: () => KnowledgeDump
+```
+
+## `exportSave`
+
+`function`
+
+Produces the save-export string.
+
+Uses `game.generateSaveString()` rather than the global `exportSave()`, which
+drives the export modal — useless to an unattended agent. The string is
+handed to the planner service, which is the only component that can write to
+disk.
+
+```ts
+exportSave: () => { ok: true; save: string; } | { ok: false; detail: string; }
+```
+
+## `FailureReason`
+
+`type`
+
+```ts
+FailureReason: any
+```
+
+## `isRefusedRealm`
+
+`function`
+
+Whether a realm is on the hard refusal list.
+
+```ts
+isRefusedRealm: (realmId: string) => boolean
+```
+
+## `Objective`
+
+`type`
+
+```ts
+Objective: any
+```
+
+## `onGameEvent`
+
+`function`
+
+Subscribes to a `Game` event and returns a disposer.
+
+`GameEventEmitter` wraps mitt and exposes only `on` / `off` — there is no
+`once` and no built-in unsubscribe handle. An unattended agent that leaks
+listeners across reloads will double-fire its reflexes, so every subscription
+is wrapped here and the kill switch disposes all of them.
+
+The emitter is typed against the `GameEvents` map, so an event-name typo is a
+compile error rather than a silently dead listener.
+
+```ts
+onGameEvent: <K extends keyof GameEvents>(event: K, handler: (payload: GameEvents[K]) => void) => Disposer
+```
+
+## `onGameLoop`
+
+`function`
+
+Runs a handler after every game loop tick.
+
+This is what makes the reflex tier genuinely per-tick rather than a timer
+approximating one. Patching is the only way to hook the loop, so it lives
+here with every other game touchpoint.
+
+The hook is a `function`, not an arrow: patch hooks are invoked with `this`
+bound to the patched instance, and an arrow would silently capture module
+scope instead. Nothing here needs `this`, but the habit is the one that
+matters — the failure is quiet when it does.
+
+```ts
+onGameLoop: (ctx: Modding.ModContext, handler: () => void) => Disposer
+```
+
+## `PanelHandle`
+
+`interface`
+
+Lets callers remove the sidebar entry again; the kill switch uses it.
+
+```ts
+PanelHandle: any
+```
+
+## `PersistenceHealth`
+
+`interface`
+
+```ts
+PersistenceHealth: any
+```
+
+## `readCharacterName`
+
+`function`
+
+Name of the currently loaded character, for the save allowlist guard.
+
+```ts
+readCharacterName: () => string
+```
+
+## `readCompletionPercent`
+
+`function`
+
+Overall completion percentage across every category.
+
+```ts
+readCompletionPercent: () => number
+```
+
+## `readCurrency`
+
+`function`
+
+Amount of a currency by namespaced id, or 0 when it is not registered.
+
+```ts
+readCurrency: (currencyId: string) => number
+```
+
+## `readGameVersion`
+
+`function`
+
+The global `gameVersion`, e.g. `"v1.3.1"`. Drives the stale-dump refusal.
+
+```ts
+readGameVersion: () => string
+```
+
+## `readGatherCandidates`
+
+`function`
+
+Enumerates the gathering objectives the mod can execute right now.
+
+Every number comes from the game's own registries and modifier-aware getters
+— `getTreeInterval` already accounts for gear, mastery and modifiers — so the
+planner chooses among measured options rather than guessing. Locked trees are
+not emitted at all, which is what makes `available` a literal `true`: an
+unavailable candidate is simply absent.
+
+Phase 1 covers Woodcutting only. Extending to another gathering skill means
+verifying that skill's own selection API first; the selection methods are not
+uniform across skills, so there is deliberately no generic abstraction here.
+
+```ts
+readGatherCandidates: () => Candidate[]
+```
+
+## `readIsInOnlineLoop`
+
+`function`
+
+Raw read of the game's online-loop flag.
+
+Underscore-prefixed and therefore fragile, which is why it is read in exactly
+one place. It is corroborating evidence only — authoritative offline state is
+tracked from the `offlineLoopEntered` / `offlineLoopExited` events, because
+those are a documented part of `GameEvents` and this field is not.
+
+```ts
+readIsInOnlineLoop: () => boolean
+```
+
+## `readSnapshot`
+
+`function`
+
+Builds a complete observation of the game.
+
+Must not be called while offline progress is resolving — the character is mid
+catch-up and about to change underneath the snapshot. The runtime enforces
+this; this function does not guard, so that it stays pure and cheap.
+
+```ts
+readSnapshot: () => StateSnapshot
+```
+
+## `readTotalLevel`
+
+`function`
+
+Total skill level, summed from the skills themselves rather than inferred.
+
+```ts
+readTotalLevel: () => number
+```
+
+## `selectTree`
+
+`function`
+
+Selects a tree for cutting.
+
+`Woodcutting.selectTree` returns `void` and behaves as a toggle — calling it
+on an already-selected tree deselects it. So there is no return value to
+check and a naive retry actively undoes the work. Both facts are why this
+observes `activeTrees` rather than trusting the call.
+
+```ts
+selectTree: (treeId: string, isSuspended: () => boolean) => ActionResult<WoodcuttingProjection>
+```
+
+## `SkillState`
+
+`type`
+
+```ts
+SkillState: any
+```
+
+## `startWoodcutting`
+
+`function`
+
+Starts the woodcutting skill with whatever trees are currently selected.
+
+`GatheringSkill.start()` returns a boolean, but a `true` return still does
+not prove the game entered the action, so the transition of
+`game.activeAction` is what is verified.
+
+```ts
+startWoodcutting: (isSuspended: () => boolean) => ActionResult<WoodcuttingProjection>
+```
+
+## `StateSnapshot`
+
+`type`
+
+```ts
+StateSnapshot: any
+```
+
+## `stopWoodcutting`
+
+`function`
+
+Stops the woodcutting skill.
+
+```ts
+stopWoodcutting: (isSuspended: () => boolean) => ActionResult<WoodcuttingProjection>
+```
+
+## `Subscriptions`
+
+`class`
+
+Collects disposers so a single call tears everything down.
+
+Disposal is best-effort and never throws: the kill switch must always
+complete, even if one listener was already removed.
+
+```ts
+Subscriptions: typeof Subscriptions
+```
