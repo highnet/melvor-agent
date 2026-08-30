@@ -16,3 +16,5 @@ logs/
 
 # esbuild fallback output when MELVOR_CT_DIR is unset
 packages/mod/dist-local/
+data-smoke/
+data/

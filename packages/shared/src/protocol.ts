@@ -93,7 +93,12 @@ export type PlannerRequest = z.infer<typeof plannerRequestSchema>;
  * capability registry before anything reaches a game function.
  */
 export const plannerResponseSchema = z.object({
-  objectives: z.array(objectiveSchema).min(1),
+  /**
+   * May be empty. "Nothing is reachable right now" is a legitimate answer, and
+   * forcing at least one objective would push the planner into inventing work
+   * — exactly the failure the candidate-selection design exists to prevent.
+   */
+  objectives: z.array(objectiveSchema),
   reasoning: z.string(),
 });
 export type PlannerResponse = z.infer<typeof plannerResponseSchema>;
