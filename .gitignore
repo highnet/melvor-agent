@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+
+# knowledge/ holds build artifacts (dump.json, distilled wiki md).
+# The dump is machine/save-specific and regenerated per game version.
+knowledge/dump.json
+knowledge/.cache/
+
+# runtime logs written by the planner service
+logs/
+*.log

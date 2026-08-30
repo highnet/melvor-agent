@@ -1,0 +1,10 @@
+declare const missingLangStrings: Record<string, string>;
+declare let englishLangJson: LanguageData;
+declare function addMissingLangString(identifier: string, langString: string): void;
+declare function getMissingLanguageStrings(): Promise<void>;
+declare function formatStringForCSV(text: string): string;
+declare function buildCSVFile(headers: string[], rows: string[][]): string;
+declare function convertMissingStringsToCSV(): Promise<string>;
+declare function addMissingLoreStrings(): void;
+declare function addMissingModifierStrings(): void;
+declare function addMissingStringsFromDataPackage(dataPackage: GameDataPackage): void;
