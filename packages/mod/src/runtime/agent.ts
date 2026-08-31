@@ -74,6 +74,7 @@ import {
 } from '../adapter/index.js';
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
+import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
 import type { PolicyAction } from '../policy/types.js';
 import { refillFood } from './combat-reflex.js';
 import type { Logger } from './logger.js';
@@ -162,6 +163,9 @@ export class Agent {
   private lastReflexAt = 0;
   private lastSnapshot: StateSnapshot | null = null;
   /** Cached fight enumeration; see {@link combatEnumeration}. */
+  /** When the agent last found itself with no objective. Null while it has one. */
+  private objectivelessSince: number | null = null;
+
   private combatCache: {
     at: number;
     candidates: Candidate[];
@@ -421,6 +425,50 @@ export class Agent {
     this.notify();
   }
 
+  /**
+   * Acts anyway when no planning session has answered.
+   *
+   * The agent is planned, not scored — that stays true. What this fixes is the
+   * failure mode when nobody is listening: an unplanned agent stood still, so
+   * every gap in planner coverage became hours of nothing. A short, clearly
+   * labelled stopgap makes the floor "some progress", and expires on its own so
+   * a session that arrives later takes over.
+   *
+   * The wait is what makes this safe to have at all. Acting immediately would
+   * race every planning session and make the stopgap the normal path rather
+   * than the exception.
+   */
+  private adoptStopgap(): Objective | null {
+    const now = Date.now();
+
+    if (this.objectivelessSince === null) {
+      this.objectivelessSince = now;
+      return null;
+    }
+    if (now - this.objectivelessSince < STOPGAP_DELAY_MS) return null;
+
+    const objective = chooseStopgap(this.safeCandidates(), now);
+    if (objective === null) {
+      // Nothing sustained is available — usually mid offline catch-up, or a
+      // character with no unlocked skills. Saying so beats silence, but only
+      // once per wait period, which resetting the clock achieves.
+      this.log.warn('policy', 'no planning session and nothing sustained to fall back on');
+      this.objectivelessSince = now;
+      return null;
+    }
+
+    this.settings = { ...this.settings, objective };
+    this.objectiveStartedAt = now;
+    this.objectivelessSince = null;
+    this.deathsSinceStart = 0;
+    this.consecutiveActionFailures = 0;
+    this.log.warn('policy', `stopgap adopted: ${objective.rationale}`);
+    this.requestReplan('objective_completed');
+    this.notify();
+
+    return objective;
+  }
+
   /** Records that a replan is owed, with the trigger that caused it. */
   requestReplan(trigger: string): void {
     this.replanPending = trigger;
@@ -477,6 +525,9 @@ export class Agent {
 
     this.settings = { ...this.settings, objective: usable };
     this.objectiveStartedAt = Date.now();
+    // A real plan arrived, so the stopgap clock starts again from scratch next
+    // time rather than firing immediately after this objective ends.
+    this.objectivelessSince = null;
     this.deathsSinceStart = 0;
     this.consecutiveActionFailures = 0;
     this.log.info('planner', `new objective (${trigger}): ${usable.rationale}`, {
@@ -561,7 +612,7 @@ export class Agent {
       });
     }
 
-    const objective = this.settings.objective;
+    const objective = this.settings.objective ?? this.adoptStopgap();
     if (objective === null) {
       void this.pushReport();
       return;
@@ -1095,6 +1146,7 @@ export class Agent {
         }
         this.settings = { ...this.settings, objective: command.objective };
         this.objectiveStartedAt = Date.now();
+        this.objectivelessSince = null;
         this.deathsSinceStart = 0;
         this.consecutiveActionFailures = 0;
         this.log.info('operator', `objective set: ${command.objective.rationale}`);
