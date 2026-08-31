@@ -20,3 +20,15 @@ data-smoke/
 data/
 melvor-agent-mod.zip
 packages/mcp/dist/
+
+# Agent memory. The *content* is personal running state, not code: what the
+# planner learned about this save, the operator's standing directives, and the
+# consolidation diary. Committing it would leak play history and make every
+# planning turn a diff.
+#
+# The templates (*.example.md) ARE tracked, so a fresh clone knows the shape.
+MEMORY.md
+USER.md
+DREAMS.md
+memory/
+!*.example.md

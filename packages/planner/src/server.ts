@@ -9,6 +9,7 @@ import {
 } from '@melvor-agent/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import { plan, plannerStatus } from './plan.js';
 import { Store } from './store.js';
 
@@ -23,6 +24,9 @@ const PORT = Number(process.env.PORT ?? 8787);
  * root. Resolving from this file's location makes the location the same however
  * the service is launched.
  */
+/** Where USER.md, MEMORY.md and memory/ live. */
+const MEMORY_ROOT = process.env.MELVOR_AGENT_MEMORY ?? process.cwd();
+
 const DATA_DIR =
   process.env.MELVOR_AGENT_DATA ??
   resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
@@ -145,6 +149,39 @@ app.post('/plan', async (c) => {
     return c.json({ error: 'invalid planner request', issues: parsed.error.issues }, 400);
   }
   return c.json(await plan(parsed.data));
+});
+
+/**
+ * Curated memory, for inspection.
+ *
+ * Daily notes are deliberately not served here: the episodic tier is reachable
+ * only through the search endpoint, so nothing can accidentally treat a note as
+ * established fact by fetching "memory".
+ */
+app.get('/memory', async (c) => c.json(await loadMemory(MEMORY_ROOT)));
+
+/** Explicit episodic search. Results carry their origin so callers can weigh it. */
+app.get('/memory/search', async (c) => {
+  const query = c.req.query('q') ?? '';
+  if (query.trim() === '') return c.json({ error: 'q is required' }, 400);
+  return c.json({ hits: await searchEpisodic(MEMORY_ROOT, query) });
+});
+
+/**
+ * Appends an observation to today's note.
+ *
+ * Origin is assigned here rather than accepted from the caller for anything
+ * privileged: a request over HTTP is not the operator typing in a trusted
+ * channel, so the most it can claim is `agent`.
+ */
+app.post('/memory/note', async (c) => {
+  const body = (await c.req.json()) as { note?: string; origin?: string };
+  if (typeof body.note !== 'string' || body.note.trim() === '') {
+    return c.json({ error: 'note is required' }, 400);
+  }
+  const origin = body.origin === 'untrusted' ? 'untrusted' : 'agent';
+  await appendDailyNote(MEMORY_ROOT, origin, body.note);
+  return c.json({ ok: true, origin });
 });
 
 app.get('/health', (c) => c.json({ ok: true, dataDir: DATA_DIR, planner: plannerStatus() }));

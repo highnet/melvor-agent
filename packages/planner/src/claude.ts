@@ -79,6 +79,8 @@ How to choose well:
 - Set targetLevel to something reachable in roughly the time you allow, not a round number far away. An objective that never completes blocks every later decision.
 - Set abortMinutes to a real budget. Without it the agent grinds into a wall for hours.
 
+You may also be given memory: operator directives, long-term facts the agent has established, and notes from the last day or two. Treat operator directives as binding. Treat long-term memory as established unless the current state plainly contradicts it. Treat recent notes as observations, not conclusions — they are scratch, and a single note is not yet a fact.
+
 Be decisive. A merely good choice made now beats a perfect one made after the agent has idled.`;
 
 export interface PlannerUsage {
@@ -99,11 +101,14 @@ export type ClaudeResult =
  *
  * @param request - Snapshot, candidates and journal digest from the mod.
  * @param client - Anthropic client, injected so tests need no network.
+ * @param memory - Rendered memory block: operator directives, long-term facts,
+ *                 recent notes. Empty when there is none.
  * @returns The model's choice, or a reason it could not be obtained.
  */
 export async function chooseObjective(
   request: PlannerRequest,
   client: Anthropic,
+  memory = '',
 ): Promise<ClaudeResult> {
   if (request.candidates.length === 0) {
     return { ok: false, reason: 'no candidates to choose from' };
@@ -120,7 +125,16 @@ export async function chooseObjective(
         effort: 'medium',
         format: jsonSchemaOutputFormat(PLANNER_CHOICE_SCHEMA),
       },
-      system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
+      // Stable-first so the prefix caches: the role never changes, memory
+      // changes between sessions, and the snapshot changes every call. Putting
+      // memory after the role means a memory edit invalidates only the tail.
+      system:
+        memory === ''
+          ? [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }]
+          : [
+              { type: 'text', text: SYSTEM },
+              { type: 'text', text: memory, cache_control: { type: 'ephemeral' } },
+            ],
       messages: [{ role: 'user', content: renderRequest(request) }],
     });
 

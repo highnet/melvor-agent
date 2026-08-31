@@ -8,11 +8,15 @@ import type {
 } from '@melvor-agent/shared';
 import { plannerResponseSchema } from '@melvor-agent/shared';
 import { chooseObjective } from './claude.js';
+import { loadMemory, renderMemory } from './memory.js';
 
 const GP_CURRENCY_ID = 'melvorD:GP';
 
 /** Reported on /health so it is obvious which planner is actually deciding. */
 const MODEL_LABEL = process.env.PLANNER_MODEL ?? 'claude-opus-5';
+
+/** Where USER.md, MEMORY.md and memory/ live. */
+const MEMORY_ROOT = process.env.MELVOR_AGENT_MEMORY ?? process.cwd();
 
 /**
  * Daily output-token ceiling for planning.
@@ -108,7 +112,13 @@ export async function plan(request: PlannerRequest): Promise<PlannerResponse> {
     return declineToPlan('planner unavailable: no client');
   }
 
-  const result = await chooseObjective(request, client);
+  // Best-effort: a memory read that fails degrades the plan, never blocks it.
+  // Curated core only — daily notes are structurally barred from this path.
+  const memory = await loadMemory(MEMORY_ROOT)
+    .then(renderMemory)
+    .catch(() => '');
+
+  const result = await chooseObjective(request, client, memory);
 
   if (!result.ok) {
     consecutiveFailures += 1;
