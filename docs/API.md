@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-125 exports.
+127 exports.
 
 ## `act`
 
@@ -1003,6 +1003,16 @@ Skills whose mastery pool has XP worth spending.
 readMasteryCandidates: () => Candidate[]
 ```
 
+## `readPaperCandidates`
+
+`function`
+
+Paper the character has the materials to make.
+
+```ts
+readPaperCandidates: () => Candidate[]
+```
+
 ## `readPassiveCookingCandidates`
 
 `function`
@@ -1416,8 +1426,9 @@ Every skill the agent can start.
 Deliberately excludes: the combat skills, which are started through the
 combat manager and are gated on the Phase 2 survivability check; Farming,
 which is plant-then-harvest rather than a continuous action and deserves its
-own objective kind; and Township, Cartography and Archaeology, whose flows
-are management interfaces rather than a single startable action.
+own objective kind; and Township, Cartography and Archaeology, which are not
+recipe-shaped at all — a hex is a position, a dig site consumes a map, a town
+is built — and so have their own capabilities instead.
 
 ```ts
 STARTABLE_SKILL_IDS: readonly string[]
@@ -1478,6 +1489,24 @@ unmet, so the evidence is the raid actually running afterwards.
 
 ```ts
 startGolbinRaid: (difficulty: string, isSuspended: () => boolean) => ActionResult<RaidProjection>
+```
+
+## `startPaperMaking`
+
+`function`
+
+Makes paper.
+
+The bottom of the Cartography chain: paper makes maps, maps make dig sites
+excavatable. Surveying without ever making paper produces discoveries that
+cannot be acted on, which is a slower and less obvious way of getting stuck
+than simply not surveying.
+
+`startMakingPaper` returns a boolean, so the skill actually running its paper
+action is the evidence taken instead.
+
+```ts
+startPaperMaking: (recipeId: string, isSuspended: () => boolean) => ActionResult<{ recipeId: string | null; active: boolean; }>
 ```
 
 ## `startPassiveCooking`

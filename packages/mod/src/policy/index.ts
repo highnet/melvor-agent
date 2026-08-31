@@ -40,6 +40,7 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   repair_township: manage,
   survey_hex: explore,
   excavate_dig_site: explore,
+  make_paper: explore,
   run_golbin_raid: runGolbinRaid,
   build_obstacle: manage,
   upgrade_constellation: manage,

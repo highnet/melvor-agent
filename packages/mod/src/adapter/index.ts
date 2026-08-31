@@ -141,6 +141,8 @@ export {
   excavateDigSite,
   readDigSiteSetupCandidates,
   readExplorationCandidates,
+  readPaperCandidates,
+  startPaperMaking,
   selectDigSiteMap,
   selectDigSiteTool,
   surveyBestHex,

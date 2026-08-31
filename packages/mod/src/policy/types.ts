@@ -56,6 +56,7 @@ export type PolicyAction =
   | { type: 'restore_town_health'; resourceId: string; amount: number }
   | { type: 'upgrade_item'; upgradedItemId: string; quantity: number }
   | { type: 'select_worship'; worshipId: string }
+  | { type: 'make_paper'; recipeId: string }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

@@ -59,6 +59,7 @@ const DESCRIPTIONS: Record<string, string> = {
   passive_cook: 'Start passive cooking, which runs behind everything else',
   run_golbin_raid: 'Play a Golbin Raid, answering each choice it stops on',
   select_worship: "Choose the town's worship while it is still free",
+  make_paper: 'Make Cartography paper, which is what maps are made from',
 };
 
 /** Systems with no capability, and why that is the right call. */

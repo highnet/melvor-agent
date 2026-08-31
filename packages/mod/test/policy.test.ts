@@ -40,6 +40,7 @@ describe('capability registry', () => {
       'excavate_dig_site',
       'fight_monster',
       'gather_resource',
+      'make_paper',
       'new_slayer_task',
       'passive_cook',
       'repair_township',

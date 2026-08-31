@@ -95,8 +95,9 @@ export function startGathering(
  * Deliberately excludes: the combat skills, which are started through the
  * combat manager and are gated on the Phase 2 survivability check; Farming,
  * which is plant-then-harvest rather than a continuous action and deserves its
- * own objective kind; and Township, Cartography and Archaeology, whose flows
- * are management interfaces rather than a single startable action.
+ * own objective kind; and Township, Cartography and Archaeology, which are not
+ * recipe-shaped at all — a hex is a position, a dig site consumes a map, a town
+ * is built — and so have their own capabilities instead.
  */
 export const STARTABLE_SKILL_IDS: readonly string[] = [
   ...GATHERING_SKILL_IDS,

@@ -17,7 +17,11 @@ export const explore: PolicyExecutor = (context: PolicyContext): PolicyDecision 
   const { snapshot, objective, now, objectiveStartedAt, deathsSinceStart } = context;
   const params = objective.params;
 
-  if (params.kind !== 'survey_hex' && params.kind !== 'excavate_dig_site') {
+  if (
+    params.kind !== 'survey_hex' &&
+    params.kind !== 'excavate_dig_site' &&
+    params.kind !== 'make_paper'
+  ) {
     return {
       kind: 'abort',
       outcome: 'failed_precondition',
@@ -63,6 +67,25 @@ export const explore: PolicyExecutor = (context: PolicyContext): PolicyDecision 
       kind: 'act',
       actions: [{ type: 'survey_hex' }],
       reason: 'surveying the best hex in range',
+    };
+  }
+
+  if (params.kind === 'make_paper') {
+    // Paper making is Cartography's other action, so "already surveying" and
+    // "already making paper" are the same skill holding the slot; only the
+    // recipe distinguishes them.
+    if (active !== null && active.id === 'melvorAoD:Cartography') {
+      return {
+        kind: 'idle',
+        reason: 'already_running',
+        detail: 'Cartography already holds the action slot',
+      };
+    }
+
+    return {
+      kind: 'act',
+      actions: [{ type: 'make_paper', recipeId: params.recipeId }],
+      reason: `making ${params.recipeId}`,
     };
   }
 

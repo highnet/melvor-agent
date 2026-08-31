@@ -366,3 +366,84 @@ export function readDigSiteSetupCandidates(): Candidate[] {
 
   return candidates;
 }
+
+// --- paper making ----------------------------------------------------------
+
+/**
+ * Makes paper.
+ *
+ * The bottom of the Cartography chain: paper makes maps, maps make dig sites
+ * excavatable. Surveying without ever making paper produces discoveries that
+ * cannot be acted on, which is a slower and less obvious way of getting stuck
+ * than simply not surveying.
+ *
+ * `startMakingPaper` returns a boolean, so the skill actually running its paper
+ * action is the evidence taken instead.
+ *
+ * @param recipeId - Namespaced `PaperMakingRecipe` id.
+ */
+export function startPaperMaking(
+  recipeId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ recipeId: string | null; active: boolean }> {
+  const cartography = game.cartography;
+  if (cartography === undefined) {
+    return fail('cartography.paper', 'precondition', 'Cartography is not installed');
+  }
+
+  const recipe = cartography.paperRecipes.getObjectByID(recipeId);
+  if (recipe === undefined) {
+    return fail('cartography.paper', 'precondition', `no paper recipe ${recipeId}`);
+  }
+
+  const project = (): { recipeId: string | null; active: boolean } => ({
+    recipeId: cartography.selectedPaperRecipe?.id ?? null,
+    active: cartography.isActive,
+  });
+
+  return act(
+    {
+      name: 'cartography.paper',
+      observe: project,
+      precondition: () => {
+        if (!cartography.getPaperMakingCosts(recipe).checkIfOwned()) {
+          return `missing the materials for ${recipeId}`;
+        }
+        const active = game.activeAction;
+        if (active !== undefined && active.id !== cartography.id) {
+          return `another action is running: ${active.id}`;
+        }
+        return null;
+      },
+      perform: () => cartography.startMakingPaper(recipe),
+      changed: (_before, after) => after.active && after.recipeId === recipeId,
+    },
+    isSuspended,
+  );
+}
+
+/** Paper the character has the materials to make. */
+export function readPaperCandidates(): Candidate[] {
+  const cartography = game.cartography;
+  if (cartography === undefined) return [];
+
+  const candidates: Candidate[] = [];
+
+  for (const recipe of cartography.paperRecipes.allObjects) {
+    try {
+      if (recipe.level > cartography.level) continue;
+      if (!cartography.getPaperMakingCosts(recipe).checkIfOwned()) continue;
+
+      candidates.push({
+        kind: 'make_paper',
+        params: { kind: 'make_paper', recipeId: recipe.id },
+        label: `Make ${recipe.product.name} — paper makes maps, and maps are what dig sites need`,
+        available: true,
+      });
+    } catch {
+      // A recipe that cannot price itself is not a candidate.
+    }
+  }
+
+  return candidates;
+}

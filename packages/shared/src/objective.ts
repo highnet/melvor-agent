@@ -45,6 +45,7 @@ export const objectiveKindSchema = z.enum([
   'restore_town_health',
   'upgrade_item',
   'select_worship',
+  'make_paper',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -218,6 +219,11 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     /** Free the first time; 50M GP and every worship building to change later. */
     kind: z.literal('select_worship'),
     worshipId: gameIdSchema,
+  }),
+  z.object({
+    /** Paper makes maps, and maps are what make dig sites excavatable. */
+    kind: z.literal('make_paper'),
+    recipeId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('toggle_curse'),

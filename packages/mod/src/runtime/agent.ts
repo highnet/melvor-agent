@@ -45,6 +45,7 @@ import {
   readLevelCapCandidates,
   readLoadoutCandidates,
   readMasteryCandidates,
+  readPaperCandidates,
   readPassiveCookingCandidates,
   readRaidCandidates,
   readSellCandidates,
@@ -69,6 +70,7 @@ import {
   startDungeon,
   startGathering,
   startGolbinRaid,
+  startPaperMaking,
   startPassiveCooking,
   stopGathering,
   stopGolbinRaid,
@@ -817,6 +819,8 @@ export class Agent {
         return upgradeBankItem(action.upgradedItemId, action.quantity, isSuspended);
       case 'select_worship':
         return selectTownshipWorship(action.worshipId, isSuspended);
+      case 'make_paper':
+        return startPaperMaking(action.recipeId, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1034,6 +1038,7 @@ export class Agent {
       ['township', readTownshipCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
+      ['paper', readPaperCandidates],
       ['loadout', readLoadoutCandidates],
       ['dig site setup', readDigSiteSetupCandidates],
       ['synergy', readSynergyCandidates],
