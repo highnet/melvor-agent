@@ -21,6 +21,14 @@ export {
   readCombatGateInputs,
   type CombatProjection,
 } from './combat.js';
+export {
+  FARMING_ID,
+  harvestFarmPlot,
+  plantFarmPlot,
+  readFarmPlots,
+  readPlantableSeeds,
+  type FarmPlotState,
+} from './farming.js';
 export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
 export {
   readGatherCandidates,

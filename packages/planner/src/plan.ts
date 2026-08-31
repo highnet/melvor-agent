@@ -111,6 +111,17 @@ function successFor(params: ObjectiveParams, request: PlannerRequest): SuccessCr
         amount: Math.max(1, Math.floor(currentGp(request) * 1.5)),
       };
     }
+    case 'tend_farm': {
+      // Farming completes on Farming level, which rises from harvesting and is
+      // the only signal that does not depend on which crop was chosen.
+      const current =
+        request.snapshot.skills.find((skill) => skill.id === 'melvorD:Farming')?.level ?? 1;
+      return {
+        type: 'skill_level_at_least',
+        skillId: 'melvorD:Farming',
+        level: Math.min(120, current + 1),
+      };
+    }
     case 'fight_monster': {
       // Combat objectives are measured in Hitpoints levels, which rise from any
       // combat style and so do not assume a particular one.

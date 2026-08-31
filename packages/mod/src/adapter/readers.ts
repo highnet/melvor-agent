@@ -1,3 +1,4 @@
+import { readFarmPlots } from './farming.js';
 import type { ActiveActionState, SkillState, StateSnapshot } from './surface.js';
 
 /**
@@ -123,6 +124,7 @@ export function readSnapshot(): StateSnapshot {
       })),
     },
     activeAction: readActiveAction(),
+    farm: readFarmPlots(),
     combat: {
       inCombat: manager.isActive,
       hitpoints: player.hitpoints,

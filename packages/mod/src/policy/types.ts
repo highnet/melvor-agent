@@ -22,7 +22,9 @@ export type PolicyAction =
    * survivability verdict, so the intent alone never authorises a fight.
    */
   | { type: 'engage'; monsterId: string; areaId: string }
-  | { type: 'disengage' };
+  | { type: 'disengage' }
+  | { type: 'harvest_plot'; plotId: string }
+  | { type: 'plant_plot'; plotId: string; recipeId: string };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

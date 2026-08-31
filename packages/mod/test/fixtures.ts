@@ -32,6 +32,7 @@ export function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot 
       items: [{ id: NORMAL_LOGS, name: 'Normal Logs', qty: 40 }],
     },
     activeAction: null,
+    farm: [],
     combat: {
       inCombat: false,
       hitpoints: 100,

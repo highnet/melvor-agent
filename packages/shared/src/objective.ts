@@ -15,6 +15,7 @@ export const objectiveKindSchema = z.enum([
   'sell_items',
   'buy_shop_upgrade',
   'fight_monster',
+  'tend_farm',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -33,6 +34,14 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     quantity: z.number().int().positive(),
     /** Never spend below this. The floor is the objective's, not a global. */
     gpFloor: z.number().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal('tend_farm'),
+    /**
+     * Seed to replant with. Optional: when absent the agent harvests but does
+     * not replant, which is the right behaviour when seeds have run out.
+     */
+    seedRecipeId: gameIdSchema.optional(),
   }),
   z.object({
     kind: z.literal('fight_monster'),

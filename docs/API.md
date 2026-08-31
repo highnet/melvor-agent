@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-57 exports.
+63 exports.
 
 ## `act`
 
@@ -289,6 +289,22 @@ exportSave: () => { ok: true; save: string; } | { ok: false; detail: string; }
 FailureReason: any
 ```
 
+## `FARMING_ID`
+
+`const`
+
+```ts
+FARMING_ID: "melvorD:Farming"
+```
+
+## `FarmPlotState`
+
+`interface`
+
+```ts
+FarmPlotState: any
+```
+
 ## `FISHING_ID`
 
 `const`
@@ -316,6 +332,20 @@ though the underlying selection state differs wildly.
 
 ```ts
 GatheringProjection: any
+```
+
+## `harvestFarmPlot`
+
+`function`
+
+Harvests one plot.
+
+`harvestPlot` returns a boolean, but a `true` return does not prove the plot
+actually emptied, so the state transition is what is verified. Dead crops are
+harvested too — that is how the plot is cleared for replanting.
+
+```ts
+harvestFarmPlot: (plotId: string, isSuspended: () => boolean) => ActionResult<{ state: string; recipeId: string | null; }>
 ```
 
 ## `isArtisanSkill`
@@ -436,6 +466,20 @@ PanelHandle: any
 PersistenceHealth: any
 ```
 
+## `plantFarmPlot`
+
+`function`
+
+Plants a seed in one plot.
+
+`plantPlot` returns a number rather than a boolean, and what that number
+means is not documented in the typings — another reason the observed state
+change is the verdict rather than the return value.
+
+```ts
+plantFarmPlot: (plotId: string, recipeId: string, isSuspended: () => boolean) => ActionResult<{ state: string; recipeId: string | null; }>
+```
+
 ## `PurchaseProjection`
 
 `interface`
@@ -499,6 +543,21 @@ Amount of a currency by namespaced id, or 0 when it is not registered.
 readCurrency: (currencyId: string) => number
 ```
 
+## `readFarmPlots`
+
+`function`
+
+Reads every farming plot.
+
+Farming is the clearest case of the transitions this agent exists for: a plot
+is planted, ignored for a long time, then harvested and replanted. The game's
+offline progress grows the crops but never replants them, so an unattended
+player loses every cycle after the first.
+
+```ts
+readFarmPlots: () => FarmPlotState[]
+```
+
 ## `readGameVersion`
 
 `function`
@@ -537,6 +596,19 @@ those are a documented part of `GameEvents` and this field is not.
 
 ```ts
 readIsInOnlineLoop: () => boolean
+```
+
+## `readPlantableSeeds`
+
+`function`
+
+Seeds that could be planted right now, best XP first.
+
+Only seeds actually held in the bank are offered — an unplantable seed is a
+planner trap, not a choice.
+
+```ts
+readPlantableSeeds: () => { recipeId: string; name: string; categoryId: string; level: number; xp: number; seedsHeld: number; }[]
 ```
 
 ## `readSellCandidates`

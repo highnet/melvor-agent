@@ -1,5 +1,6 @@
 import type { Objective, ObjectiveKind } from '@melvor-agent/shared';
 import { buyShopUpgrade } from './buy.js';
+import { tendFarm } from './farm.js';
 import { fightMonster } from './fight.js';
 import { gatherResource } from './gather.js';
 import { sellItems } from './sell.js';
@@ -22,6 +23,7 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   sell_items: sellItems,
   buy_shop_upgrade: buyShopUpgrade,
   fight_monster: fightMonster,
+  tend_farm: tendFarm,
 };
 
 /** Whether the policy layer can execute this objective kind at all. */
@@ -48,6 +50,7 @@ export function executorFor(objective: Objective): PolicyExecutor | null {
 export { buyShopUpgrade } from './buy.js';
 export { assessSurvivability, normaliseFraction } from './combat-gate.js';
 export { fightMonster } from './fight.js';
+export { tendFarm } from './farm.js';
 export { gatherResource } from './gather.js';
 export { sellItems } from './sell.js';
 export * from './criteria.js';

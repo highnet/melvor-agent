@@ -102,6 +102,15 @@ export const currencyStateSchema = z.object({
  * captured mid offline-catch-up describes a character that is about to change
  * underneath us.
  */
+export const farmPlotStateSchema = z.object({
+  id: gameIdSchema,
+  state: z.enum(['locked', 'empty', 'growing', 'grown', 'dead']),
+  plantedRecipeId: gameIdSchema.nullable(),
+  plantedName: z.string().nullable(),
+  categoryId: gameIdSchema,
+});
+export type FarmPlot = z.infer<typeof farmPlotStateSchema>;
+
 export const stateSnapshotSchema = z.object({
   /** Milliseconds since epoch, from the wall clock at capture. */
   capturedAt: z.number().int().positive(),
@@ -119,6 +128,12 @@ export const stateSnapshotSchema = z.object({
   bank: bankStateSchema,
   activeAction: activeActionStateSchema,
   combat: combatStateSchema,
+  /**
+   * Farming plots. Present in the snapshot because farming is decided entirely
+   * from state — which plots are grown, which are empty — and the policy tier
+   * is pure, so it cannot read the game itself.
+   */
+  farm: z.array(farmPlotStateSchema),
 });
 export type StateSnapshot = z.infer<typeof stateSnapshotSchema>;
 

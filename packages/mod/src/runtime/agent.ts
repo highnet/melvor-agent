@@ -18,7 +18,9 @@ import {
   dumpRegistries,
   engageMonster,
   exportSave,
+  harvestFarmPlot,
   onGameEvent,
+  plantFarmPlot,
   readCombatGateInputs,
   readGameVersion,
   readGatherCandidates,
@@ -388,6 +390,10 @@ export class Agent {
         return this.engageIfSurvivable(action.monsterId, action.areaId, isSuspended);
       case 'disengage':
         return disengageCombat(isSuspended);
+      case 'harvest_plot':
+        return harvestFarmPlot(action.plotId, isSuspended);
+      case 'plant_plot':
+        return plantFarmPlot(action.plotId, action.recipeId, isSuspended);
     }
   }
 

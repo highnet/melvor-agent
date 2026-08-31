@@ -21,6 +21,7 @@ const snapshot = {
   skills: [{ id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true }],
   bank: { slotsUsed: 4, slotsMax: 20, items: [] },
   activeAction: { id: 'melvorD:Woodcutting', name: 'Woodcutting', isActive: true },
+  farm: [],
   combat: {
     inCombat: false,
     hitpoints: 100,

@@ -34,6 +34,7 @@ describe('capability registry', () => {
       'fight_monster',
       'gather_resource',
       'sell_items',
+      'tend_farm',
     ]);
     for (const kind of supportedKinds()) {
       expect(isSupportedKind(kind)).toBe(true);
