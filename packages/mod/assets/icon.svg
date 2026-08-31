@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Play Agent">
+  <title>Play Agent</title>
+  <!--
+    Deliberately flat and single-hued: the sidebar renders this at ~20px against
+    a dark panel, where gradients and fine detail turn to mush. currentColor is
+    not used because the game sets no colour on sidebar icons.
+  -->
+  <defs>
+    <linearGradient id="pa-g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7dd3fc" />
+      <stop offset="1" stop-color="#38bdf8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Head: a blunt rounded square reads as a robot at small sizes. -->
+  <rect x="12" y="18" width="40" height="32" rx="8" fill="url(#pa-g)" />
+
+  <!-- Antenna, which is what actually makes it legible as a bot in silhouette. -->
+  <circle cx="32" cy="8" r="4" fill="#7dd3fc" />
+  <rect x="30" y="10" width="4" height="9" rx="2" fill="#7dd3fc" />
+
+  <!-- Eyes: dark cut-outs rather than added shapes, so they survive downscaling. -->
+  <circle cx="23" cy="31" r="4.5" fill="#0f172a" />
+  <circle cx="41" cy="31" r="4.5" fill="#0f172a" />
+
+  <!-- A single mouth bar; anything more detailed disappears at 20px. -->
+  <rect x="22" y="40" width="20" height="4" rx="2" fill="#0f172a" opacity="0.75" />
+</svg>

@@ -56,6 +56,8 @@ export function setup(ctx: Modding.ModContext): void {
       categoryId: 'Modding',
       itemId: 'Play Agent',
       name: 'Play Agent',
+      ctx,
+      iconPath: 'assets/icon.svg',
       onClick: () => panel?.toggle(),
     });
 

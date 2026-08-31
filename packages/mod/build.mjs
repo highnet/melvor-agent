@@ -78,6 +78,7 @@ function assertSetupExport() {
 function copyStaticAssets(target) {
   cpSync(join(here, 'manifest.json'), join(target, 'manifest.json'));
   cpSync(join(here, 'src/ui/style.css'), join(target, 'dist/style.css'));
+  cpSync(join(here, 'assets'), join(target, 'assets'), { recursive: true });
 
   // Ships only what the game needs; without this the Directory Link zip would
   // include node_modules and sources on every reload.
@@ -101,6 +102,12 @@ function copyStaticAssets(target) {
       `manifest "namespace" must be alphanumeric plus underscores, got ${JSON.stringify(namespace)}`,
     );
   }
+  // The icon path in the manifest has to resolve inside the packaged mod, and a
+  // missing one fails silently as a blank sidebar entry.
+  if (typeof manifest.icon === 'string' && !existsSync(join(target, manifest.icon))) {
+    throw new Error(`manifest "icon" is ${manifest.icon}, which is not in the build output`);
+  }
+
   if (/^melvor/i.test(namespace)) {
     throw new Error(
       `manifest "namespace" is "${namespace}", but a namespace may not start with "melvor" — that prefix is reserved for the game data shipped with Melvor.`,
