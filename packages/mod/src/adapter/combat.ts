@@ -42,9 +42,9 @@ function project(): CombatProjection {
  * ticked, rendered or attached to combat; only `setStatsFromMonster` and
  * `computeCombatStats` are called on it.
  *
- * **Unverified in-game.** Constructing an `Enemy` may have side effects the
- * typings do not describe. Until this has been watched in a real session, the
- * gate defaults to advisory (dry-run) mode — see `assessTarget`.
+ * **Unverified in-game.** Constructing an `Enemy` bound to the live manager may
+ * have side effects the typings do not describe. A failed probe returns null,
+ * which the gate treats as a refusal — so the untested path fails closed.
  *
  * @param monster - The monster to measure.
  * @returns Its max hit and attack interval, or null if the probe failed.
