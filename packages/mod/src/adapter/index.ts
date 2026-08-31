@@ -31,6 +31,7 @@ export {
 } from './farming.js';
 export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
 export {
+  readBlockedOpportunities,
   readGatherCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,

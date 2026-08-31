@@ -75,7 +75,7 @@ server.registerTool(
   {
     title: 'List candidate objectives',
     description:
-      'Everything the agent has proven it can do right now — requirements met, materials affordable, recipe unlocked — with measured XP/hr and GP/hr. Choose from these by index; nothing outside this list is currently possible.',
+      'Everything the agent has proven it can do right now, with measured XP/hr and GP/hr, plus a second list of higher-value options it is BLOCKED from doing and what input each is missing. Choose by index from the first list only — but read the second, because the best move is often to produce an input for something better.',
     inputSchema: {},
   },
   async () => {

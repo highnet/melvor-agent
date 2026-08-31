@@ -319,3 +319,98 @@ export function readShopObjectiveCandidates(): Candidate[] {
     available: true as const,
   }));
 }
+
+/**
+ * High-value recipes the agent is level-unlocked for but cannot currently do,
+ * with the input it is missing.
+ *
+ * This is the prerequisite half of planning. A candidate list alone answers
+ * "what can I do now", which is not enough to play well: the best move is often
+ * to produce the input for something better. Firemaking Oak Logs is worth six
+ * times Woodcutting Oak Trees, but only once you have oak logs — and the agent
+ * discovered that chain by accident, because cutting oak happened to be the
+ * highest-XP thing it *could* do.
+ *
+ * These are deliberately NOT candidates. A candidate is something the agent has
+ * proven it can execute, and keeping that guarantee absolute is what makes
+ * choosing by index safe. These are context for the planner: read them, then
+ * pick a real candidate that produces the missing input.
+ *
+ * @returns Blocked options with their missing inputs, best XP first.
+ */
+export function readBlockedOpportunities(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  const blocked: ReturnType<typeof readBlockedOpportunities> = [];
+
+  for (const skillId of STARTABLE_SKILL_IDS) {
+    const skill = game.skills.getObjectByID(skillId);
+    if (skill === undefined) continue;
+
+    const withActions = skill as AnySkill & {
+      actions?: { allObjects: RecipeLike[] };
+      actionInterval?: number;
+      isMasteryActionUnlocked?: (recipe: object) => boolean;
+      getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean };
+    };
+
+    const recipes = safeRecipes(withActions);
+    if (recipes === null) continue;
+
+    const interval = safeNumber(() => withActions.actionInterval, 3000);
+    const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
+
+    for (const recipe of recipes) {
+      try {
+        if (skill.level < recipe.level) continue;
+        if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
+        // Only the ones we cannot do: the rest are already real candidates.
+        if (canAfford(withActions, recipe)) continue;
+
+        const missing = missingInputs(recipe);
+        if (missing.length === 0) continue;
+
+        blocked.push({
+          label: `${skill.name}: ${recipe.name}`,
+          xpPerHour: actionsPerHour * recipe.baseExperience,
+          missing,
+        });
+      } catch {
+        // Same reasoning as enumeration: an unreadable recipe is skipped, not
+        // reported as an opportunity we cannot describe.
+      }
+    }
+  }
+
+  return blocked.sort((a, b) => b.xpPerHour - a.xpPerHour).slice(0, 12);
+}
+
+/** The items a recipe consumes that the bank does not currently hold enough of. */
+function missingInputs(
+  recipe: object,
+): { itemId: string; name: string; need: number; have: number }[] {
+  const consumes = recipe as {
+    log?: AnyItem;
+    itemCosts?: { item: AnyItem; quantity: number }[];
+  };
+
+  if (consumes.log !== undefined) {
+    const have = game.bank.getQty(consumes.log);
+    return have > 0 ? [] : [{ itemId: consumes.log.id, name: consumes.log.name, need: 1, have }];
+  }
+
+  if (Array.isArray(consumes.itemCosts)) {
+    return consumes.itemCosts
+      .map((cost) => ({
+        itemId: cost.item.id,
+        name: cost.item.name,
+        need: cost.quantity,
+        have: game.bank.getQty(cost.item),
+      }))
+      .filter((entry) => entry.have < entry.need);
+  }
+
+  return [];
+}

@@ -21,6 +21,7 @@ import {
   harvestFarmPlot,
   onGameEvent,
   plantFarmPlot,
+  readBlockedOpportunities,
   readCombatGateInputs,
   readGameVersion,
   readGatherCandidates,
@@ -325,6 +326,7 @@ export class Agent {
     const response = await this.transport.plan({
       snapshot,
       candidates: this.safeCandidates(),
+      blockedOpportunities: this.safeBlocked(),
       digest: { recent: [], aggregates: [] },
       trigger: KNOWN_TRIGGERS.has(trigger) ? trigger : 'operator',
     });
@@ -646,6 +648,7 @@ export class Agent {
       snapshot: this.lastSnapshot,
       objective: this.settings.objective,
       candidates: this.state === 'killed' ? [] : this.safeCandidates(),
+      blockedOpportunities: this.state === 'killed' ? [] : this.safeBlocked(),
       logs,
       quality: this.quality.slice(-120),
       blockedReason: this.blockedReason,
@@ -670,6 +673,20 @@ export class Agent {
    * take the whole report down — a planner with a short menu still works, a
    * planner with no report does not.
    */
+  /**
+   * Blocked opportunities, or nothing if enumeration throws.
+   *
+   * Never fatal: this is planning context, and losing it should not cost the
+   * agent its report.
+   */
+  private safeBlocked(): ReturnType<typeof readBlockedOpportunities> {
+    try {
+      return readBlockedOpportunities();
+    } catch {
+      return [];
+    }
+  }
+
   private safeCandidates(): Candidate[] {
     const candidates: Candidate[] = [];
     for (const [name, read] of [

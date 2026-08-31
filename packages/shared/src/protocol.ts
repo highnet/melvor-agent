@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { journalDigestSchema, logRecordSchema } from './journal.js';
 import { candidateSchema, objectiveSchema } from './objective.js';
-import { qualitySampleSchema, stateSnapshotSchema } from './snapshot.js';
+import { gameIdSchema, qualitySampleSchema, stateSnapshotSchema } from './snapshot.js';
 
 /**
  * The agent's lifecycle. All three tiers are gated on this.
@@ -37,12 +37,39 @@ export const commandSchema = z.discriminatedUnion('type', [
 ]);
 export type Command = z.infer<typeof commandSchema>;
 
+/**
+ * Something the agent is level-unlocked for but cannot do for want of an input.
+ *
+ * Shared by the report and the planner request: the planner needs it to reason
+ * about prerequisites, which a candidate list alone cannot express.
+ */
+export const blockedOpportunitySchema = z.object({
+  label: z.string(),
+  xpPerHour: z.number().nonnegative(),
+  missing: z.array(
+    z.object({
+      itemId: gameIdSchema,
+      name: z.string(),
+      need: z.number().nonnegative(),
+      have: z.number().nonnegative(),
+    }),
+  ),
+});
+export type BlockedOpportunity = z.infer<typeof blockedOpportunitySchema>;
+
 /** mod -> service. Posted on every policy tick. */
 export const agentReportSchema = z.object({
   runState: runStateSchema,
   snapshot: stateSnapshotSchema.nullable(),
   objective: objectiveSchema.nullable(),
   candidates: z.array(candidateSchema),
+  /**
+   * Things the agent is level-unlocked for but lacks the inputs to do, with the
+   * missing item named. Context for the planner, never selectable: the best
+   * move is often to produce the input for something better, and a candidate
+   * list alone cannot express that.
+   */
+  blockedOpportunities: z.array(blockedOpportunitySchema).default([]),
   logs: z.array(logRecordSchema),
   quality: z.array(qualitySampleSchema),
   /** Non-null while the agent is refusing to arm; rendered verbatim by the TUI. */
@@ -72,6 +99,8 @@ export type Dashboard = z.infer<typeof dashboardSchema>;
 export const plannerRequestSchema = z.object({
   snapshot: stateSnapshotSchema,
   candidates: z.array(candidateSchema),
+  /** Higher-value options blocked on a missing input. Context, not choices. */
+  blockedOpportunities: z.array(blockedOpportunitySchema).default([]),
   digest: journalDigestSchema,
   trigger: z.enum([
     'game_start',

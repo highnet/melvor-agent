@@ -73,6 +73,7 @@ You will be given a list of candidate objectives. Every candidate is something t
 
 How to choose well:
 - Prefer a transition that unlocks or enables something over raw XP rate. Burning logs you just gathered beats cutting more logs you cannot use.
+- Read the BLOCKED list. If a much better option is missing only an input you can produce, produce that input — even if it scores lower on its own. That two-step is usually the highest-value move available, and it is invisible if you only compare the candidates' own rates.
 - Watch for a resource piling up unused in the bank. That is usually a signal to process or sell it.
 - Do not re-propose something the journal shows was recently abandoned, unless the state that caused the abort has clearly changed.
 - Set targetLevel to something reachable in roughly the time you allow, not a round number far away. An objective that never completes blocks every later decision.
@@ -197,9 +198,38 @@ function renderRequest(request: PlannerRequest): string {
     '## Candidates (choose one by index)',
     ...request.candidates.map((candidate, index) => `${index}. ${describeCandidate(candidate)}`),
     '',
+    ...renderBlocked(request.blockedOpportunities ?? []),
     '## Recent history',
     renderDigest(request.digest),
   ].join('\n');
+}
+
+/**
+ * Renders the blocked list.
+ *
+ * This is what lets the planner reason about prerequisites. Without it the best
+ * available move often looks worse than it is: cutting oak scores 13k xp/h on
+ * its own and is worth far more once you see it unlocks burning oak at 72k.
+ */
+function renderBlocked(
+  blocked: {
+    label: string;
+    xpPerHour: number;
+    missing: { name: string; need: number; have: number }[];
+  }[],
+): string[] {
+  if (blocked.length === 0) return [];
+  return [
+    '## Blocked — higher value, missing an input (NOT selectable)',
+    'Producing one of these inputs is often the best move available.',
+    ...blocked.map(
+      (entry) =>
+        `- ${entry.label} — ${Math.round(entry.xpPerHour).toLocaleString()} xp/h — needs ${entry.missing
+          .map((m) => `${m.need}x ${m.name} (have ${m.have})`)
+          .join(', ')}`,
+    ),
+    '',
+  ];
 }
 
 function describeCandidate(candidate: Candidate): string {

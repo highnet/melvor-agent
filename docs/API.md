@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-63 exports.
+64 exports.
 
 ## `act`
 
@@ -498,6 +498,29 @@ Quantity of an item held in the bank.
 
 ```ts
 readBankQuantity: (itemId: string) => number
+```
+
+## `readBlockedOpportunities`
+
+`function`
+
+High-value recipes the agent is level-unlocked for but cannot currently do,
+with the input it is missing.
+
+This is the prerequisite half of planning. A candidate list alone answers
+"what can I do now", which is not enough to play well: the best move is often
+to produce the input for something better. Firemaking Oak Logs is worth six
+times Woodcutting Oak Trees, but only once you have oak logs — and the agent
+discovered that chain by accident, because cutting oak happened to be the
+highest-XP thing it *could* do.
+
+These are deliberately NOT candidates. A candidate is something the agent has
+proven it can execute, and keeping that guarantee absolute is what makes
+choosing by index safe. These are context for the planner: read them, then
+pick a real candidate that produces the missing input.
+
+```ts
+readBlockedOpportunities: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readCharacterName`
