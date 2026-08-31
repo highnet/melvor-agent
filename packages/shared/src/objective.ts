@@ -43,6 +43,7 @@ export const objectiveKindSchema = z.enum([
   'compost_plot',
   'passive_cook',
   'restore_town_health',
+  'upgrade_item',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -202,6 +203,15 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('restore_town_health'),
     resourceId: gameIdSchema,
     amount: z.number().int().positive(),
+  }),
+  z.object({
+    /**
+     * Named by its result: `ItemUpgrade` has no id, so the upgraded item is the
+     * only stable name the pair has.
+     */
+    kind: z.literal('upgrade_item'),
+    upgradedItemId: gameIdSchema,
+    quantity: z.number().int().positive(),
   }),
   z.object({
     kind: z.literal('toggle_curse'),

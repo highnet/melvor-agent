@@ -61,6 +61,7 @@ describe('capability registry', () => {
       'toggle_prayer',
       'unlock_skill_node',
       'upgrade_constellation',
+      'upgrade_item',
       'use_potion',
     ]);
     for (const kind of supportedKinds()) {

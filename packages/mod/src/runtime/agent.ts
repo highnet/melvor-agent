@@ -55,6 +55,7 @@ import {
   readSynergyCandidates,
   readTownHealthCandidates,
   readTownshipCandidates,
+  readUpgradeCandidates,
   repairTownshipBuilding,
   selectAttackSpell,
   selectDigSiteMap,
@@ -75,6 +76,7 @@ import {
   toggleCurse,
   togglePrayer,
   unlockSkillTreeNode,
+  upgradeBankItem,
   upgradeConstellation,
   usePotion,
 } from '../adapter/index.js';
@@ -789,6 +791,8 @@ export class Agent {
         return startPassiveCooking(action.categoryId, isSuspended);
       case 'restore_town_health':
         return increaseTownHealth(action.resourceId, action.amount, isSuspended);
+      case 'upgrade_item':
+        return upgradeBankItem(action.upgradedItemId, action.quantity, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1013,6 +1017,7 @@ export class Agent {
       ['astrology', readAstrologyCandidates],
       ['compost', readCompostCandidates],
       ['passive cooking', readPassiveCookingCandidates],
+      ['item upgrades', readUpgradeCandidates],
       ['town health', readTownHealthCandidates],
       ['skill tree', readSkillTreeCandidates],
       ['level cap', readLevelCapCandidates],

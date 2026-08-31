@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-120 exports.
+123 exports.
 
 ## `act`
 
@@ -1197,6 +1197,24 @@ nothing per hour no matter how many buildings it has.
 readTownshipSummary: () => TownshipSummary | null
 ```
 
+## `readUpgradeCandidates`
+
+`function`
+
+Upgrades the bank can currently afford.
+
+Downgrades are excluded outright — they exist for players who want a
+cosmetic or a refund, and doing one unattended destroys the better item for
+nothing.
+
+The full cost goes in the label because the trade-off is the whole decision:
+an upgrade is usually worth it, but not while the materials are earmarked
+for something else.
+
+```ts
+readUpgradeCandidates: () => Candidate[]
+```
+
 ## `repairTownshipBuilding`
 
 `function`
@@ -1596,6 +1614,19 @@ available is spending points on a cheaper node than the one worth saving for
 unlockSkillTreeNode: (skillId: string, treeId: string, nodeId: string, isSuspended: () => boolean) => ActionResult<{ nodeId: string; unlocked: boolean; pointsLeft: number; }>
 ```
 
+## `upgradeBankItem`
+
+`function`
+
+Upgrades an item in the bank.
+
+Identified by the *result*, not by a recipe id, because `ItemUpgrade` has no
+id of its own — the upgraded item is the only stable name the pair has.
+
+```ts
+upgradeBankItem: (upgradedItemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<UpgradeProjection>
+```
+
 ## `upgradeConstellation`
 
 `function`
@@ -1607,6 +1638,16 @@ short, so `timesBought` is observed either side.
 
 ```ts
 upgradeConstellation: (constellationId: string, kind: ModifierKind, index: number, isSuspended: () => boolean) => ActionResult<AstrologyProjection>
+```
+
+## `UpgradeProjection`
+
+`interface`
+
+What upgrading claims to change: how many of the upgraded item exist.
+
+```ts
+UpgradeProjection: any
 ```
 
 ## `usePotion`

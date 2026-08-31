@@ -170,6 +170,16 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `restoring town health with ${params.resourceId}`,
       );
 
+    case 'upgrade_item':
+      return act(
+        {
+          type: 'upgrade_item',
+          upgradedItemId: params.upgradedItemId,
+          quantity: params.quantity,
+        },
+        `upgrading into ${params.upgradedItemId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

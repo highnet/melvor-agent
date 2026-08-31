@@ -97,6 +97,11 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  readUpgradeCandidates,
+  upgradeBankItem,
+  type UpgradeProjection,
+} from './upgrade.js';
+export {
   increaseTownHealth,
   readPassiveCookingCandidates,
   readTownHealthCandidates,
