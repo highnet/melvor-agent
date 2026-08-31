@@ -133,6 +133,12 @@ To inspect what was captured:
 pnpm knowledge:dump
 ```
 
+**Planning is session-driven.** Objectives come from a Claude Code session
+attached over MCP — there is no API key and nothing plans autonomously. When no
+session is attached the service returns no objectives and the mod keeps
+executing the one it already has, so the agent never stops playing; it just
+stops changing its mind.
+
 **It acts for real.** There is no dry-run mode: arming means the agent plays, and
 combat engages whenever the survivability gate passes. The gate itself still
 runs on every fight and refuses anything it cannot prove survivable — that is

@@ -10,7 +10,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.122.0",
     "@hono/node-server": "^1.13.7",
     "@melvor-agent/shared": "workspace:*",
     "hono": "^4.6.14",

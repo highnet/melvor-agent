@@ -62,11 +62,11 @@ function request(candidates: ReturnType<typeof candidate>[]) {
 }
 
 describe('plan', () => {
-  it('declines to choose when no agent is available, rather than falling back', async () => {
-    // The point of the whole project is the judgement a rate comparison cannot
-    // make. A heuristic that grabs the highest XP/hr is not a degraded planner,
-    // it is the anti-goal — the game already gives that away for free offline.
-    // With no ANTHROPIC_API_KEY in the test environment, no agent can answer.
+  it('waits for a session rather than choosing', async () => {
+    // Objectives come from an attached Claude Code session over MCP. This
+    // endpoint's only job is to say no well, and to say *why* — an operator
+    // reading "waiting for a planning session" knows to attach one, where
+    // "no objectives" tells them nothing.
     const response = await plan(
       request([
         candidate('Normal', 100, 'melvorD:Normal_Tree'),
@@ -75,13 +75,15 @@ describe('plan', () => {
     );
 
     expect(response.objectives).toEqual([]);
-    expect(response.reasoning).toMatch(/unavailable|failed/i);
+    expect(response.reasoning).toMatch(/waiting for a planning session/i);
+    expect(response.reasoning).toContain('2 candidates');
   });
 
-  it('declines rather than picking the best-scoring candidate', async () => {
+  it('never picks the best-scoring candidate on its own', async () => {
     // Guards the specific regression: an empty response means "keep the current
-    // objective", which is a real decision someone made. Silently starting the
-    // top-rate candidate is not.
+    // objective", which is a real decision an agent made. Silently starting the
+    // top-rate candidate is not — and that heuristic once chose Firemaking with
+    // no logs banked and failed once per tick for ten minutes.
     const response = await plan(request([candidate('Oak', 999_999, 'melvorD:Oak_Tree')]));
     expect(response.objectives).toHaveLength(0);
   });
