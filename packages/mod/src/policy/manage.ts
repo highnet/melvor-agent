@@ -158,6 +158,18 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `composting ${params.plotId}`,
       );
 
+    case 'passive_cook':
+      return act(
+        { type: 'passive_cook', categoryId: params.categoryId },
+        `starting passive cooking in ${params.categoryId}`,
+      );
+
+    case 'restore_town_health':
+      return act(
+        { type: 'restore_town_health', resourceId: params.resourceId, amount: params.amount },
+        `restoring town health with ${params.resourceId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

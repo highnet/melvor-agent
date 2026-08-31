@@ -41,6 +41,8 @@ export const objectiveKindSchema = z.enum([
   'unlock_skill_node',
   'change_equipment_set',
   'compost_plot',
+  'passive_cook',
+  'restore_town_health',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -189,6 +191,16 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('compost_plot'),
     plotId: gameIdSchema,
     compostId: gameIdSchema,
+    amount: z.number().int().positive(),
+  }),
+  z.object({
+    /** The only genuinely parallel production: it runs behind everything else. */
+    kind: z.literal('passive_cook'),
+    categoryId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('restore_town_health'),
+    resourceId: gameIdSchema,
     amount: z.number().int().positive(),
   }),
   z.object({

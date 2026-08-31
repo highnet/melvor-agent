@@ -97,6 +97,13 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  increaseTownHealth,
+  readPassiveCookingCandidates,
+  readTownHealthCandidates,
+  startPassiveCooking,
+  type PassiveCookProjection,
+} from './passive.js';
+export {
   readAstrologyCandidates,
   readSkillTreeCandidates,
   unlockSkillTreeNode,

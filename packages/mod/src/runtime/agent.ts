@@ -27,6 +27,7 @@ import {
   excavateDigSite,
   exportSave,
   harvestFarmPlot,
+  increaseTownHealth,
   newSlayerTask,
   onGameEvent,
   plantFarmPlot,
@@ -44,6 +45,7 @@ import {
   readLevelCapCandidates,
   readLoadoutCandidates,
   readMasteryCandidates,
+  readPassiveCookingCandidates,
   readRaidCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
@@ -51,6 +53,7 @@ import {
   readSnapshot,
   readSpellCandidates,
   readSynergyCandidates,
+  readTownHealthCandidates,
   readTownshipCandidates,
   repairTownshipBuilding,
   selectAttackSpell,
@@ -63,6 +66,7 @@ import {
   startDungeon,
   startGathering,
   startGolbinRaid,
+  startPassiveCooking,
   stopGathering,
   stopGolbinRaid,
   surveyBestHex,
@@ -781,6 +785,10 @@ export class Agent {
         return changeEquipmentSet(action.setIndex, isSuspended);
       case 'compost_plot':
         return compostFarmPlot(action.plotId, action.compostId, action.amount, isSuspended);
+      case 'passive_cook':
+        return startPassiveCooking(action.categoryId, isSuspended);
+      case 'restore_town_health':
+        return increaseTownHealth(action.resourceId, action.amount, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1004,6 +1012,8 @@ export class Agent {
       ['agility', readAgilityCandidates],
       ['astrology', readAstrologyCandidates],
       ['compost', readCompostCandidates],
+      ['passive cooking', readPassiveCookingCandidates],
+      ['town health', readTownHealthCandidates],
       ['skill tree', readSkillTreeCandidates],
       ['level cap', readLevelCapCandidates],
       ['combat', () => this.combatCandidates()],

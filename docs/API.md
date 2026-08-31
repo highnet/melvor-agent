@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-115 exports.
+120 exports.
 
 ## `act`
 
@@ -503,6 +503,21 @@ harvested too — that is how the plot is cleared for replanting.
 harvestFarmPlot: (plotId: string, isSuspended: () => boolean) => ActionResult<{ state: string; recipeId: string | null; }>
 ```
 
+## `increaseTownHealth`
+
+`function`
+
+Spends a resource to restore town health.
+
+Health decays continuously and drags every rate in the town down with it, so
+a town left alone for a week produces a fraction of what its buildings say it
+should. Restoring it is cheap and the effect is immediate — the definition of
+upkeep a human does without thinking about it.
+
+```ts
+increaseTownHealth: (resourceId: string, amount: number, isSuspended: () => boolean) => ActionResult<{ healthPercent: number; }>
+```
+
 ## `isArtisanSkill`
 
 `function`
@@ -645,6 +660,16 @@ Lets callers remove the sidebar entry again; the kill switch uses it.
 
 ```ts
 PanelHandle: any
+```
+
+## `PassiveCookProjection`
+
+`interface`
+
+What starting passive cooking claims to change.
+
+```ts
+PassiveCookProjection: any
 ```
 
 ## `PersistenceHealth`
@@ -978,6 +1003,16 @@ Skills whose mastery pool has XP worth spending.
 readMasteryCandidates: () => Candidate[]
 ```
 
+## `readPassiveCookingCandidates`
+
+`function`
+
+Cooking categories that have a recipe selected but are not cooking.
+
+```ts
+readPassiveCookingCandidates: () => Candidate[]
+```
+
 ## `readPlantableSeeds`
 
 `function`
@@ -1117,6 +1152,16 @@ Total skill level, summed from the skills themselves rather than inferred.
 
 ```ts
 readTotalLevel: () => number
+```
+
+## `readTownHealthCandidates`
+
+`function`
+
+Town health worth restoring, when the town can pay for it.
+
+```ts
+readTownHealthCandidates: () => Candidate[]
 ```
 
 ## `readTownshipCandidates`
@@ -1377,6 +1422,23 @@ unmet, so the evidence is the raid actually running afterwards.
 
 ```ts
 startGolbinRaid: (difficulty: string, isSuspended: () => boolean) => ActionResult<RaidProjection>
+```
+
+## `startPassiveCooking`
+
+`function`
+
+Starts passive cooking in a category.
+
+The only genuinely *parallel* production in the game: it fills a stockpile
+while the character mines, fights or chops. Leaving it off costs nothing
+visible, which is exactly why it stays off forever without someone to notice.
+
+Food is also the input to the survivability gate, so a stockpile filling in
+the background is what eventually makes combat possible.
+
+```ts
+startPassiveCooking: (categoryId: string, isSuspended: () => boolean) => ActionResult<PassiveCookProjection>
 ```
 
 ## `StateSnapshot`
