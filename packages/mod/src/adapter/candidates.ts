@@ -16,9 +16,9 @@ const MS_PER_HOUR = 3_600_000;
  */
 export function readGatherCandidates(): Candidate[] {
   return [
-    ...woodcuttingCandidates(),
-    ...miningCandidates(),
-    ...fishingCandidates(),
+    ...safely('woodcutting', woodcuttingCandidates),
+    ...safely('mining', miningCandidates),
+    ...safely('fishing', fishingCandidates),
     ...genericSkillCandidates(),
   ].sort((a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0));
 }
@@ -128,16 +128,34 @@ function woodcuttingCandidates(): Candidate[] {
     );
 }
 
+/**
+ * Runs one skill's enumeration, returning nothing if it throws.
+ *
+ * Game getters are not uniformly safe to read in an arbitrary state — Mining's
+ * `actionInterval` throws with no rock selected, and others may too. Without
+ * this, one such getter empties the entire candidate list and the agent has
+ * nothing at all to do, which is a far worse outcome than losing one skill.
+ */
+function safely(name: string, enumerate: () => Candidate[]): Candidate[] {
+  try {
+    return enumerate();
+  } catch (error) {
+    console.warn(`[play-agent] ${name} candidates unavailable:`, error);
+    return [];
+  }
+}
+
 function miningCandidates(): Candidate[] {
   const skill = game.mining;
   return skill.actions.allObjects
     .filter((rock) => skill.canMineOre(rock))
     .map((rock) =>
-      // Mining has no per-rock interval getter; `actionInterval` is the skill's
-      // current modified interval. Using it means the rate is a good estimate
-      // for the *selected* rock and an approximation for the others — better
-      // than inventing a per-rock formula the game does not expose.
-      candidate(MINING_ID, skill.name, rock, skill.actionInterval, gpValue(rock.product)),
+      // `baseInterval` is a readonly constant on the skill. The obvious choice,
+      // `actionInterval`, reads `activeRock` and **throws** when no rock is
+      // selected — which is exactly the state candidate enumeration runs in.
+      // So this understates the real rate (it ignores modifiers) but it is
+      // always readable, and a candidate list that throws is worth nothing.
+      candidate(MINING_ID, skill.name, rock, skill.baseInterval, gpValue(rock.product)),
     );
 }
 

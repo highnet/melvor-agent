@@ -32,8 +32,30 @@ await store.init();
 
 const app = new Hono();
 
-// The mod runs inside the game client, a different origin. Scoped to localhost
-// because this service is local-only and never exposed.
+/**
+ * Chrome's Private Network Access handshake.
+ *
+ * The Steam client loads the game from https://melvoridle.com — a *public*
+ * origin — and this service listens on localhost, which Chrome classifies as
+ * the *private* address space. Since Chrome 104 such a request is blocked
+ * unless the preflight explicitly opts in, and the page sees only a bare
+ * "Failed to fetch": CORS itself passed, so there is no CORS error to read.
+ *
+ * Registered *before* `cors()` and written on the way back out, because
+ * `cors()` answers OPTIONS itself and returns before any later middleware runs.
+ *
+ * Safe here: the service is local-only, so the only pages that can reach it are
+ * already running on this machine.
+ */
+app.use('/*', async (c, next) => {
+  const asked = c.req.header('Access-Control-Request-Private-Network') === 'true';
+  await next();
+  if (asked) {
+    c.res.headers.set('Access-Control-Allow-Private-Network', 'true');
+  }
+});
+
+// The mod runs inside the game client, a different origin.
 app.use('/*', cors({ origin: (origin) => origin ?? '*' }));
 
 /**
