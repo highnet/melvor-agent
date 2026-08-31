@@ -164,8 +164,15 @@ export const stateSnapshotSchema = z.object({
    * is pure, so it cannot read the game itself.
    */
   farm: z.array(farmPlotStateSchema),
-  /** Null until the town has been created, which is a one-time human decision. */
-  township: townshipStateSchema.nullable(),
+  /**
+   * Null until the town has been created, which is a one-time human decision.
+   *
+   * Defaulted rather than required so a mod build older than the service still
+   * validates: the two halves are deployed independently — the service reloads
+   * on save, the mod only when the game is reloaded — so every snapshot field
+   * added from here on has to be optional or it breaks the running game.
+   */
+  township: townshipStateSchema.nullable().default(null),
 });
 export type StateSnapshot = z.infer<typeof stateSnapshotSchema>;
 

@@ -71,6 +71,23 @@ export function createPanel(agent: Agent, log: Logger): PanelHandles {
   };
 }
 
+/**
+ * Turns a transport failure into the fix for it.
+ *
+ * A rejected request and an unanswered one look identical in the panel and have
+ * opposite remedies. An HTTP status means the service is running and refused
+ * what it was sent — in practice, that the mod and the service disagree about
+ * the snapshot, because the service reloads on save while the mod only reloads
+ * with the game. Telling the operator to start a service that is already
+ * running sends them to fix the wrong thing.
+ */
+function describeServiceError(error: string, serviceUrl: string): string {
+  if (/HTTP [0-9]{3}/.test(error)) {
+    return `Planner service at ${serviceUrl} rejected the request — ${error}. The service is running, so this is usually the mod being older than it: reload the game to pick up the current build.`;
+  }
+  return `Planner service unreachable at ${serviceUrl} — ${error}. Start it with: pnpm planner`;
+}
+
 function renderContent(agent: Agent, log: Logger): HTMLElement[] {
   const header = el('div', 'block-header block-header-default');
   header.appendChild(el('h3', 'block-title', 'Play Agent'));
@@ -86,7 +103,7 @@ function renderContent(agent: Agent, log: Logger): HTMLElement[] {
       el(
         'div',
         'alert alert-danger',
-        `Planner service unreachable at ${agent.currentSettings.serviceUrl} — ${agent.serviceError}. Start it with: pnpm planner`,
+        describeServiceError(agent.serviceError, agent.currentSettings.serviceUrl),
       ),
     );
   }
