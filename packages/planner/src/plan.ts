@@ -11,12 +11,15 @@ import { chooseObjective } from './claude.js';
 
 const GP_CURRENCY_ID = 'melvorD:GP';
 
+/** Reported on /health so it is obvious which planner is actually deciding. */
+const MODEL_LABEL = process.env.PLANNER_MODEL ?? 'claude-opus-5';
+
 /**
  * Daily output-token ceiling for planning.
  *
  * The agent runs for days and replans on every completion, abort and offline
- * exit, so an unbounded planner is an unbounded bill. Past the cap it falls
- * back to the heuristic and keeps playing.
+ * exit, so an unbounded planner is an unbounded bill. Past the cap the planner
+ * declines to choose and the mod keeps running its current objective.
  */
 const DAILY_TOKEN_BUDGET = Number(process.env.PLANNER_DAILY_TOKEN_BUDGET ?? 200_000);
 
@@ -32,7 +35,7 @@ let consecutiveFailures = 0;
 /** Live planner health, surfaced on /health so it is visible without digging. */
 export function plannerStatus() {
   return {
-    model: client === null ? 'heuristic (no ANTHROPIC_API_KEY)' : 'claude',
+    model: client === null ? 'none (no ANTHROPIC_API_KEY)' : MODEL_LABEL,
     tokensUsedToday,
     dailyTokenBudget: DAILY_TOKEN_BUDGET,
     consecutiveFailures,
@@ -55,7 +58,7 @@ function modelAvailable(): string | null {
     return `daily token budget spent (${tokensUsedToday}/${DAILY_TOKEN_BUDGET})`;
   }
   // Degrade, never halt: after repeated failures stop paying for calls that are
-  // not working and let the heuristic carry the agent until the next day.
+  // not working. The agent keeps its current objective until the next day.
   if (consecutiveFailures >= FAILURE_THRESHOLD) {
     return `planner degraded after ${consecutiveFailures} consecutive failures`;
   }
@@ -65,92 +68,101 @@ function modelAvailable(): string | null {
 /**
  * Selects and orders objectives.
  *
- * Phase 1 makes no model calls. This stub picks the highest-XP candidate the
- * mod reported, which exercises the full contract — request parsed, response
- * validated against the same schema a model response would face — without
- * introducing an external dependency before the mechanics are proven.
+ * **An agent decides, or nothing does.** There is no heuristic fallback that
+ * invents an objective, because a heuristic that picks the highest XP/hr is not
+ * a worse planner — it is the *anti-goal*. The game already gives away 24 hours
+ * of one skill for free, so "always run the best-rate skill" adds nothing over
+ * closing the client. Every bit of this project's value is in the judgement
+ * calls a rate comparison cannot make: burn the logs you just cut, buy the
+ * upgrade that unlocks the next tier, stop farming something the bank is
+ * drowning in.
  *
- * The shape of the eventual model call is fixed by this signature: the planner
- * only ever *chooses among* `request.candidates`. It cannot author an objective
- * of its own, and it never fetches a URL during a planning call.
+ * So when no agent can answer, the response is **empty**, and the mod keeps
+ * executing the objective it already has. That is the watchdog behaviour the
+ * brief asks for — degrade, never halt — and it is meaningfully different from
+ * falling back to a heuristic: the agent keeps doing the last thing a planner
+ * actually chose, rather than starting something no planner ever endorsed.
+ *
+ * The safety property is unchanged: the model picks an index into
+ * `request.candidates` and the params are copied from the candidate verbatim,
+ * so it chooses *which*, never *what*.
  *
  * @param request - Snapshot, candidates and journal digest from the mod.
- * @returns A validated planner response.
+ * @returns A validated response, empty when no agent could choose.
  */
 export async function plan(request: PlannerRequest): Promise<PlannerResponse> {
-  const unavailable = modelAvailable();
-
-  if (unavailable === null && client !== null) {
-    const result = await chooseObjective(request, client);
-
-    if (result.ok) {
-      consecutiveFailures = 0;
-      tokensUsedToday += result.usage.outputTokens;
-
-      const chosen = request.candidates[result.choice.candidateIndex];
-      if (chosen !== undefined) {
-        // Params are copied from the candidate, never from the model. The model
-        // chose *which*; it cannot choose *what*.
-        return plannerResponseSchema.parse({
-          objectives: [
-            {
-              id: `claude-${request.trigger}-${request.snapshot.capturedAt}`,
-              kind: chosen.kind,
-              params: chosen.params,
-              successWhen: [successForChoice(chosen, result.choice.targetLevel, request)],
-              abortWhen: { minutesExceed: result.choice.abortMinutes },
-              expectedDurationMin: Math.min(result.choice.abortMinutes, 60),
-              rationale: result.choice.rationale,
-            },
-          ],
-          reasoning: result.choice.reasoning,
-        });
-      }
-    } else {
-      consecutiveFailures += 1;
-      console.warn(`[planner] model call failed (${consecutiveFailures}): ${result.reason}`);
-    }
-  } else if (unavailable !== null) {
-    console.log(`[planner] using heuristic: ${unavailable}`);
-  }
-
-  const best = [...request.candidates].sort((a, b) => score(b) - score(a))[0];
-
-  if (best === undefined) {
-    // An empty candidate list is a legitimate state — nothing is reachable
-    // right now — and must not be papered over with an invented objective.
+  if (request.candidates.length === 0) {
+    // A legitimate state — nothing is reachable right now — and one that must
+    // not be papered over with an invented objective.
     return plannerResponseSchema.parse({
       objectives: [],
       reasoning: 'no candidates were available',
     });
   }
 
-  const response: PlannerResponse = {
+  const unavailable = modelAvailable();
+  if (unavailable !== null) {
+    return declineToPlan(`planner unavailable: ${unavailable}`);
+  }
+  if (client === null) {
+    return declineToPlan('planner unavailable: no client');
+  }
+
+  const result = await chooseObjective(request, client);
+
+  if (!result.ok) {
+    consecutiveFailures += 1;
+    console.warn(`[planner] model call failed (${consecutiveFailures}): ${result.reason}`);
+    return declineToPlan(`planner failed: ${result.reason}`);
+  }
+
+  consecutiveFailures = 0;
+  tokensUsedToday += result.usage.outputTokens;
+
+  const chosen = request.candidates[result.choice.candidateIndex];
+  if (chosen === undefined) {
+    // chooseObjective already range-checks; reaching here means the list moved
+    // underneath the call, which is not something to guess around.
+    return declineToPlan(`chosen index ${result.choice.candidateIndex} no longer exists`);
+  }
+
+  return plannerResponseSchema.parse({
     objectives: [
       {
-        id: `stub-${request.trigger}-${request.snapshot.capturedAt}`,
-        kind: best.kind,
-        params: best.params,
-        successWhen: [successFor(best.params, request)],
-        abortWhen: { minutesExceed: 120 },
-        expectedDurationMin: 60,
-        rationale: `stub planner: best-scoring candidate (${best.label})`,
+        id: `claude-${request.trigger}-${request.snapshot.capturedAt}`,
+        kind: chosen.kind,
+        // Params are copied from the candidate, never from the model.
+        params: chosen.params,
+        successWhen: [successForChoice(chosen, result.choice.targetLevel, request)],
+        abortWhen: { minutesExceed: result.choice.abortMinutes },
+        expectedDurationMin: Math.min(result.choice.abortMinutes, 60),
+        rationale: result.choice.rationale,
       },
     ],
-    reasoning: `Chose ${best.label} from ${request.candidates.length} candidates. Trigger: ${request.trigger}.`,
-  };
+    reasoning: result.choice.reasoning,
+  });
+}
 
-  // Validated on the way out too, so the stub cannot emit something the mod
-  // would reject — the failure would otherwise only surface in the game.
-  return plannerResponseSchema.parse(response);
+/**
+ * Returns no objectives, loudly.
+ *
+ * The mod treats an empty response as "keep the current objective", so this is
+ * the degrade path rather than a halt. It is logged at warn because an agent
+ * planning nothing for a long stretch is a condition the operator should see.
+ */
+function declineToPlan(reason: string): PlannerResponse {
+  console.warn(`[planner] ${reason} — keeping the current objective`);
+  return plannerResponseSchema.parse({ objectives: [], reasoning: reason });
 }
 
 /**
  * Success criterion for a model-chosen candidate.
  *
- * Uses the chosen level where the candidate names a skill, and falls back to
- * the heuristic's own criterion otherwise — a sale or a purchase has no level
- * to reach.
+ * Differs from {@link successFor} in one way that matters: the model supplies
+ * the target level, so a skill objective uses *its* judgement of what is
+ * reachable in the budget it also chose, rather than a mechanical next-multiple
+ * -of-five. Non-skill kinds have no level to reach, so they fall through to the
+ * derived criterion.
  */
 function successForChoice(
   candidate: Candidate,
@@ -158,22 +170,10 @@ function successForChoice(
   request: PlannerRequest,
 ): SuccessCriterion {
   const params = candidate.params;
-  if ('skillId' in params) {
+  if (params.kind === 'gather_resource') {
     return { type: 'skill_level_at_least', skillId: params.skillId, level: targetLevel };
   }
   return successFor(params, request);
-}
-
-/**
- * Ranks candidates.
- *
- * Gathering is ranked on XP/hr and selling on nothing yet — a sale is a one-off
- * with no duration, so it has no rate to compare against a rate. Ordering the
- * two against each other is exactly the judgement the model is for; until then
- * the stub prefers gathering so the agent always has something to run.
- */
-function score(candidate: Candidate): number {
-  return candidate.kind === 'gather_resource' ? (candidate.xpPerHour ?? 0) : -1;
 }
 
 /** Current GP in the snapshot, or 0. */

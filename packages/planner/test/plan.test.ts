@@ -62,23 +62,28 @@ function request(candidates: ReturnType<typeof candidate>[]) {
 }
 
 describe('plan', () => {
-  it('chooses the highest XP/hr candidate', async () => {
+  it('declines to choose when no agent is available, rather than falling back', async () => {
+    // The point of the whole project is the judgement a rate comparison cannot
+    // make. A heuristic that grabs the highest XP/hr is not a degraded planner,
+    // it is the anti-goal — the game already gives that away for free offline.
+    // With no ANTHROPIC_API_KEY in the test environment, no agent can answer.
     const response = await plan(
       request([
         candidate('Normal', 100, 'melvorD:Normal_Tree'),
         candidate('Oak', 300, 'melvorD:Oak_Tree'),
       ]),
     );
-    expect(response.objectives).toHaveLength(1);
-    expect(response.objectives[0]?.params).toMatchObject({ recipeId: 'melvorD:Oak_Tree' });
+
+    expect(response.objectives).toEqual([]);
+    expect(response.reasoning).toMatch(/unavailable|failed/i);
   });
 
-  it('emits only objectives whose params came from a candidate', async () => {
-    // The planner chooses among candidates; it must never author params of its
-    // own. Anything else is a capability the policy layer may not have.
-    const only = candidate('Normal', 100, 'melvorD:Normal_Tree');
-    const response = await plan(request([only]));
-    expect(response.objectives[0]?.params).toEqual(only.params);
+  it('declines rather than picking the best-scoring candidate', async () => {
+    // Guards the specific regression: an empty response means "keep the current
+    // objective", which is a real decision someone made. Silently starting the
+    // top-rate candidate is not.
+    const response = await plan(request([candidate('Oak', 999_999, 'melvorD:Oak_Tree')]));
+    expect(response.objectives).toHaveLength(0);
   });
 
   it('returns no objectives rather than inventing one when nothing is reachable', async () => {
@@ -88,12 +93,16 @@ describe('plan', () => {
   });
 
   it('produces responses that survive the same validation the mod applies', async () => {
+    // Holds for the declined case too: an empty objective list is still a valid
+    // response, which is what makes "keep going" expressible at all.
     const response = await plan(request([candidate('Normal', 100, 'melvorD:Normal_Tree')]));
     expect(plannerResponseSchema.safeParse(response).success).toBe(true);
   });
 
   it('sets a time budget on every objective it emits', async () => {
-    // Without abort conditions the agent grinds into a wall for six hours.
+    // Vacuous while the planner is declining, but it is the invariant that must
+    // hold the moment an agent does emit one: without abort conditions the agent
+    // grinds into a wall for hours.
     const response = await plan(request([candidate('Normal', 100, 'melvorD:Normal_Tree')]));
     for (const objective of response.objectives) {
       expect(objective.abortWhen.minutesExceed).toBeGreaterThan(0);
