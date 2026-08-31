@@ -2,7 +2,5 @@
   "namespace": "playAgent",
   "icon": "assets/icon.svg",
   "setup": "dist/setup.js",
-  "load": [
-    "dist/style.css"
-  ]
+  "load": ["dist/style.css"]
 }
