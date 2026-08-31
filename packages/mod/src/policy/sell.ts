@@ -59,9 +59,13 @@ export const sellItems: PolicyExecutor = (context: PolicyContext): PolicyDecisio
     };
   }
 
+  // Done once the surplus is gone. Without this the objective sold its stack
+  // and then idled out the rest of its budget with nothing left to sell, which
+  // reads as "working" in the panel and is indistinguishable from stuck.
   return {
     kind: 'act',
     actions: [{ type: 'sell', itemId, quantity: surplus }],
     reason: `selling ${surplus} of ${itemId}, keeping ${keepQuantity}`,
+    completeAfter: true,
   };
 };
