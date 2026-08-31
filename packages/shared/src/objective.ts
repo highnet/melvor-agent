@@ -46,6 +46,8 @@ export const objectiveKindSchema = z.enum([
   'upgrade_item',
   'select_worship',
   'make_paper',
+  'claim_township_task',
+  'claim_casual_task',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -230,6 +232,16 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     /** Paper makes maps, and maps are what make dig sites excavatable. */
     kind: z.literal('make_paper'),
     recipeId: gameIdSchema,
+  }),
+  z.object({
+    /** The work is already done; the reward waits until someone claims it. */
+    kind: z.literal('claim_township_task'),
+    taskId: gameIdSchema,
+  }),
+  z.object({
+    /** Unclaimed casual tasks hold one of five slots and block the next one. */
+    kind: z.literal('claim_casual_task'),
+    taskId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('toggle_curse'),

@@ -187,6 +187,18 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `setting the town's worship to ${params.worshipId}`,
       );
 
+    case 'claim_township_task':
+      return act(
+        { type: 'claim_township_task', taskId: params.taskId },
+        `claiming the township task ${params.taskId}`,
+      );
+
+    case 'claim_casual_task':
+      return act(
+        { type: 'claim_casual_task', taskId: params.taskId },
+        `claiming the casual task ${params.taskId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

@@ -373,3 +373,136 @@ export function readWorshipCandidates(): Candidate[] {
 
   return candidates;
 }
+
+// --- township tasks --------------------------------------------------------
+
+/**
+ * Claims a completed Township task.
+ *
+ * Tasks are the town's reward loop: they complete themselves as the character
+ * plays, and then sit there paying nothing until someone presses claim. A human
+ * collects them in passing; an agent that never does accumulates finished tasks
+ * indefinitely, which is a pure loss — the work is already done.
+ *
+ * `completeTask` takes `giveRewards` and `forceComplete` flags. Rewards are
+ * requested and forcing is not: forcing would claim a task whose goals are
+ * unmet, which is cheating the game rather than playing it.
+ *
+ * @param taskId - Namespaced `TownshipTask` id.
+ */
+export function claimTownshipTask(
+  taskId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ taskId: string; claimed: boolean }> {
+  const tasks = game.township.tasks;
+  const task = tasks.tasks.getObjectByID(taskId);
+  if (task === undefined) {
+    return fail('township.claimTask', 'precondition', `no township task ${taskId}`);
+  }
+
+  const project = (): { taskId: string; claimed: boolean } => ({
+    taskId,
+    claimed: tasks.completedTasks.has(task),
+  });
+
+  return act(
+    {
+      name: 'township.claimTask',
+      observe: project,
+      precondition: () => {
+        if (project().claimed) return `${taskId} has already been claimed`;
+        if (!task.goals.checkIfMet()) return `the goals for ${taskId} are not met yet`;
+        return null;
+      },
+      // Rewards yes, force no: forcing claims a task whose goals are unmet,
+      // which is cheating the game rather than playing it.
+      perform: () => tasks.completeTask(task, true, false),
+      changed: (_before, after) => after.claimed,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Claims a completed casual (daily) task.
+ *
+ * Separate registry, separate completion call, and a five-task limit that
+ * *blocks new ones* — an unclaimed casual task does not just withhold its own
+ * reward, it stops the next task from arriving. That makes claiming these more
+ * urgent than the permanent ones.
+ */
+export function claimCasualTask(
+  taskId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ taskId: string; remaining: number }> {
+  const casual = game.township.casualTasks;
+  const task = casual.allCasualTasks.getObjectByID(taskId);
+  if (task === undefined) {
+    return fail('township.claimCasualTask', 'precondition', `no casual task ${taskId}`);
+  }
+
+  const project = (): { taskId: string; remaining: number } => ({
+    taskId,
+    remaining: casual.currentCasualTasks.length,
+  });
+
+  return act(
+    {
+      name: 'township.claimCasualTask',
+      observe: project,
+      precondition: () => {
+        if (!casual.currentCasualTasks.includes(task)) return `${taskId} is not an active task`;
+        if (!casual.isTaskComplete(task)) return `the goals for ${taskId} are not met yet`;
+        return null;
+      },
+      perform: () => casual.completeTask(task),
+      // The claimed task leaves the active list, which is the observable change.
+      changed: (before, after) => after.remaining < before.remaining,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Tasks whose goals are met and whose rewards are waiting.
+ *
+ * Casual tasks are listed first: the five-slot limit means an unclaimed one
+ * blocks the next task from arriving, so it costs more than its own reward.
+ */
+export function readTaskCandidates(): Candidate[] {
+  const township = game.township;
+  if (!township.townData.townCreated) return [];
+
+  const candidates: Candidate[] = [];
+
+  for (const task of township.casualTasks.currentCasualTasks) {
+    try {
+      if (!township.casualTasks.isTaskComplete(task)) continue;
+      candidates.push({
+        kind: 'claim_casual_task',
+        params: { kind: 'claim_casual_task', taskId: task.id },
+        label: `Claim the casual task ${task.name} — done, and it is holding one of five slots`,
+        available: true,
+      });
+    } catch {
+      // A task that cannot report completion is not a candidate.
+    }
+  }
+
+  for (const task of township.tasks.tasks.allObjects) {
+    try {
+      if (township.tasks.completedTasks.has(task)) continue;
+      if (!task.goals.checkIfMet()) continue;
+      candidates.push({
+        kind: 'claim_township_task',
+        params: { kind: 'claim_township_task', taskId: task.id },
+        label: `Claim the Township task ${task.name} — the work is already done`,
+        available: true,
+      });
+    } catch {
+      // A task that cannot report completion is not a candidate.
+    }
+  }
+
+  return candidates;
+}

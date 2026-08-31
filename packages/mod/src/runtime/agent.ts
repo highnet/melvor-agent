@@ -18,6 +18,8 @@ import {
   changeEquipmentSet,
   checkCharacterAllowed,
   checkRealmAllowed,
+  claimCasualTask,
+  claimTownshipTask,
   compostFarmPlot,
   disengageCombat,
   dumpRegistries,
@@ -54,6 +56,7 @@ import {
   readSnapshot,
   readSpellCandidates,
   readSynergyCandidates,
+  readTaskCandidates,
   readTownHealthCandidates,
   readTownshipCandidates,
   readUpgradeCandidates,
@@ -826,6 +829,10 @@ export class Agent {
         return selectTownshipWorship(action.worshipId, isSuspended);
       case 'make_paper':
         return startPaperMaking(action.recipeId, isSuspended);
+      case 'claim_township_task':
+        return claimTownshipTask(action.taskId, isSuspended);
+      case 'claim_casual_task':
+        return claimCasualTask(action.taskId, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1041,6 +1048,7 @@ export class Agent {
       ['mastery', readMasteryCandidates],
       ['spell', readSpellCandidates],
       ['township', readTownshipCandidates],
+      ['township tasks', readTaskCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
       ['paper', readPaperCandidates],

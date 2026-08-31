@@ -57,6 +57,8 @@ export type PolicyAction =
   | { type: 'upgrade_item'; upgradedItemId: string; quantity: number; allowDowngrade: boolean }
   | { type: 'select_worship'; worshipId: string }
   | { type: 'make_paper'; recipeId: string }
+  | { type: 'claim_township_task'; taskId: string }
+  | { type: 'claim_casual_task'; taskId: string }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

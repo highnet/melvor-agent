@@ -50,6 +50,8 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   passive_cook: manage,
   upgrade_item: manage,
   select_worship: manage,
+  claim_township_task: manage,
+  claim_casual_task: manage,
   restore_town_health: manage,
   select_dig_map: manage,
   select_dig_tool: manage,

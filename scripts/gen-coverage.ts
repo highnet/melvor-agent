@@ -60,6 +60,8 @@ const DESCRIPTIONS: Record<string, string> = {
   run_golbin_raid: 'Play a Golbin Raid, answering each choice it stops on',
   select_worship: "Choose the town's worship while it is still free",
   make_paper: 'Make Cartography paper, which is what maps are made from',
+  claim_township_task: 'Claim a finished Township task',
+  claim_casual_task: 'Claim a finished casual task, freeing one of its five slots',
 };
 
 /** Systems with no capability, and why that is the right call. */

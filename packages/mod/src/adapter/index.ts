@@ -89,6 +89,9 @@ export {
 } from './readers.js';
 export {
   buildTownshipBuilding,
+  claimCasualTask,
+  claimTownshipTask,
+  readTaskCandidates,
   readTownshipCandidates,
   readWorshipCandidates,
   selectTownshipWorship,

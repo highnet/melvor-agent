@@ -34,6 +34,8 @@ describe('capability registry', () => {
       'build_township',
       'buy_shop_upgrade',
       'change_equipment_set',
+      'claim_casual_task',
+      'claim_township_task',
       'compost_plot',
       'equip_food',
       'equip_item',

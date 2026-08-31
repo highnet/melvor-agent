@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-127 exports.
+130 exports.
 
 ## `act`
 
@@ -266,6 +266,40 @@ Whether the currently selected realm is refused.
 
 ```ts
 checkRealmAllowed: () => string | null
+```
+
+## `claimCasualTask`
+
+`function`
+
+Claims a completed casual (daily) task.
+
+Separate registry, separate completion call, and a five-task limit that
+*blocks new ones* — an unclaimed casual task does not just withhold its own
+reward, it stops the next task from arriving. That makes claiming these more
+urgent than the permanent ones.
+
+```ts
+claimCasualTask: (taskId: string, isSuspended: () => boolean) => ActionResult<{ taskId: string; remaining: number; }>
+```
+
+## `claimTownshipTask`
+
+`function`
+
+Claims a completed Township task.
+
+Tasks are the town's reward loop: they complete themselves as the character
+plays, and then sit there paying nothing until someone presses claim. A human
+collects them in passing; an agent that never does accumulates finished tasks
+indefinitely, which is a pure loss — the work is already done.
+
+`completeTask` takes `giveRewards` and `forceComplete` flags. Rewards are
+requested and forcing is not: forcing would claim a task whose goals are
+unmet, which is cheating the game rather than playing it.
+
+```ts
+claimTownshipTask: (taskId: string, isSuspended: () => boolean) => ActionResult<{ taskId: string; claimed: boolean; }>
 ```
 
 ## `CombatProjection`
@@ -1152,6 +1186,19 @@ are offered, and only the half that is missing from the slots.
 
 ```ts
 readSynergyCandidates: () => Candidate[]
+```
+
+## `readTaskCandidates`
+
+`function`
+
+Tasks whose goals are met and whose rewards are waiting.
+
+Casual tasks are listed first: the five-slot limit means an unclaimed one
+blocks the next task from arriving, so it costs more than its own reward.
+
+```ts
+readTaskCandidates: () => Candidate[]
 ```
 
 ## `readTotalLevel`
