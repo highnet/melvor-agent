@@ -1,4 +1,4 @@
-import type { ActionResult } from '@melvor-agent/shared';
+import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 
@@ -193,4 +193,101 @@ export function readPlantableSeeds(): {
     }))
     .filter((entry) => entry.seedsHeld > 0)
     .sort((a, b) => b.xp - a.xp);
+}
+
+/**
+ * Applies compost to a plot.
+ *
+ * Compost raises the harvest yield and, more importantly, stops crops dying —
+ * a dead plot is the whole growth cycle wasted, and an unattended agent is
+ * exactly who cannot notice one. Buying compost and never applying it, which
+ * is what the shop capability alone allowed, is strictly worse than not buying
+ * it.
+ *
+ * `compostPlot` returns a boolean, so the plot's compost level is observed
+ * either side instead.
+ *
+ * @param plotId - Namespaced `FarmingPlot` id.
+ * @param compostId - Namespaced `CompostItem` id, already in the bank.
+ * @param amount - How many to apply; the game caps the level at 100.
+ */
+export function compostFarmPlot(
+  plotId: string,
+  compostId: string,
+  amount: number,
+  isSuspended: () => boolean,
+): ActionResult<{ plotId: string; compostLevel: number }> {
+  const farming = game.farming;
+  const plot = farming.plots.getObjectByID(plotId);
+  if (plot === undefined) {
+    return fail('farming.compost', 'precondition', `no farming plot ${plotId}`);
+  }
+
+  const compost = farming.composts.getObjectByID(compostId);
+  if (compost === undefined) {
+    return fail('farming.compost', 'precondition', `no compost item ${compostId}`);
+  }
+
+  const project = (): { plotId: string; compostLevel: number } => ({
+    plotId,
+    compostLevel: plot.compostLevel,
+  });
+
+  return act(
+    {
+      name: 'farming.compost',
+      observe: project,
+      precondition: () => {
+        if (plot.compostLevel >= 100) return `plot ${plotId} is already fully composted`;
+        if (game.bank.getQty(compost) <= 0) return `bank holds no ${compostId}`;
+        if (!Number.isInteger(amount) || amount <= 0) {
+          return `amount must be a positive integer, got ${amount}`;
+        }
+        return null;
+      },
+      perform: () => farming.compostPlot(plot, compost, amount),
+      changed: (before, after) => after.compostLevel > before.compostLevel,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Plots worth composting.
+ *
+ * Only planted, uncomposted plots: composting an empty plot is not wrong, but
+ * it is worth nothing until something is growing in it, and the compost is
+ * consumed either way.
+ */
+export function readCompostCandidates(): Candidate[] {
+  const farming = game.farming;
+  const candidates: Candidate[] = [];
+
+  const affordable = farming.composts.allObjects.find((item) => game.bank.getQty(item) > 0);
+  if (affordable === undefined) return [];
+
+  for (const plot of farming.plots.allObjects) {
+    try {
+      // Ambient const enums are unavailable under verbatimModuleSyntax, so
+      // the shared string mapping is the honest way to ask this question.
+      if (describeState(plot.state) !== 'growing') continue;
+      if (plot.compostLevel >= 100) continue;
+
+      candidates.push({
+        kind: 'compost_plot',
+        params: {
+          kind: 'compost_plot',
+          plotId: plot.id,
+          compostId: affordable.id,
+          amount: Math.min(5, game.bank.getQty(affordable)),
+        },
+        label: `Compost ${plot.plantedRecipe?.name ?? 'the crop'} in ${plot.id} with ${affordable.name} (${plot.compostLevel}% — protects against the crop dying)`,
+        available: true,
+      });
+    } catch {
+      // A plot that cannot report its state is not a candidate.
+    }
+  }
+
+  return candidates;
 }

@@ -40,6 +40,7 @@ export const objectiveKindSchema = z.enum([
   'upgrade_constellation',
   'unlock_skill_node',
   'change_equipment_set',
+  'compost_plot',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -182,6 +183,13 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('change_equipment_set'),
     setIndex: z.number().int().nonnegative(),
+  }),
+  z.object({
+    /** Compost stops crops dying, which an unattended agent cannot notice. */
+    kind: z.literal('compost_plot'),
+    plotId: gameIdSchema,
+    compostId: gameIdSchema,
+    amount: z.number().int().positive(),
   }),
   z.object({
     kind: z.literal('toggle_curse'),

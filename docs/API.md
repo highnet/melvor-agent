@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-113 exports.
+115 exports.
 
 ## `act`
 
@@ -284,6 +284,25 @@ CombatProjection: any
 
 ```ts
 CombatState: any
+```
+
+## `compostFarmPlot`
+
+`function`
+
+Applies compost to a plot.
+
+Compost raises the harvest yield and, more importantly, stops crops dying —
+a dead plot is the whole growth cycle wasted, and an unattended agent is
+exactly who cannot notice one. Buying compost and never applying it, which
+is what the shop capability alone allowed, is strictly worse than not buying
+it.
+
+`compostPlot` returns a boolean, so the plot's compost level is observed
+either side instead.
+
+```ts
+compostFarmPlot: (plotId: string, compostId: string, amount: number, isSuspended: () => boolean) => ActionResult<{ plotId: string; compostLevel: number; }>
 ```
 
 ## `disengageCombat`
@@ -797,6 +816,20 @@ Overall completion percentage across every category.
 
 ```ts
 readCompletionPercent: () => number
+```
+
+## `readCompostCandidates`
+
+`function`
+
+Plots worth composting.
+
+Only planted, uncomposted plots: composting an empty plot is not wrong, but
+it is worth nothing until something is growing in it, and the compost is
+consumed either way.
+
+```ts
+readCompostCandidates: () => Candidate[]
 ```
 
 ## `readCurrency`

@@ -147,6 +147,17 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `switching to equipment set ${params.setIndex}`,
       );
 
+    case 'compost_plot':
+      return act(
+        {
+          type: 'compost_plot',
+          plotId: params.plotId,
+          compostId: params.compostId,
+          amount: params.amount,
+        },
+        `composting ${params.plotId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

@@ -27,7 +27,9 @@ export {
 } from './combat.js';
 export {
   FARMING_ID,
+  compostFarmPlot,
   harvestFarmPlot,
+  readCompostCandidates,
   plantFarmPlot,
   readFarmPlots,
   readPlantableSeeds,

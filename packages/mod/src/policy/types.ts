@@ -51,6 +51,7 @@ export type PolicyAction =
     }
   | { type: 'unlock_skill_node'; skillId: string; treeId: string; nodeId: string }
   | { type: 'change_equipment_set'; setIndex: number }
+  | { type: 'compost_plot'; plotId: string; compostId: string; amount: number }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

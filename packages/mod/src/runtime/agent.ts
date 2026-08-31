@@ -18,6 +18,7 @@ import {
   changeEquipmentSet,
   checkCharacterAllowed,
   checkRealmAllowed,
+  compostFarmPlot,
   disengageCombat,
   dumpRegistries,
   engageMonster,
@@ -34,6 +35,7 @@ import {
   readBlockedOpportunities,
   readCombatGateInputs,
   readCombatTargets,
+  readCompostCandidates,
   readDigSiteSetupCandidates,
   readEquipCandidates,
   readExplorationCandidates,
@@ -777,6 +779,8 @@ export class Agent {
         return unlockSkillTreeNode(action.skillId, action.treeId, action.nodeId, isSuspended);
       case 'change_equipment_set':
         return changeEquipmentSet(action.setIndex, isSuspended);
+      case 'compost_plot':
+        return compostFarmPlot(action.plotId, action.compostId, action.amount, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -999,6 +1003,7 @@ export class Agent {
       ['raid', readRaidCandidates],
       ['agility', readAgilityCandidates],
       ['astrology', readAstrologyCandidates],
+      ['compost', readCompostCandidates],
       ['skill tree', readSkillTreeCandidates],
       ['level cap', readLevelCapCandidates],
       ['combat', () => this.combatCandidates()],
