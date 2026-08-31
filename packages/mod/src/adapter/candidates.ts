@@ -94,3 +94,28 @@ function fishingCandidates(): Candidate[] {
       ),
     );
 }
+
+/**
+ * Enumerates sellable surplus in the bank.
+ *
+ * Mirrors the refusals in {@link sellItem} exactly — locked items and
+ * zero-value items are absent rather than offered and then rejected. A
+ * candidate the adapter would refuse is a planner trap, not a choice.
+ *
+ * @returns One candidate per sellable stack, most valuable first.
+ */
+export function readSellCandidates(): Candidate[] {
+  return [...game.bank.items.values()]
+    .filter((entry) => !game.bank.lockedItems.has(entry.item))
+    .filter((entry) => gpValue(entry.item) > 0)
+    .map((entry) => ({
+      kind: 'sell_items' as const,
+      params: { kind: 'sell_items' as const, itemId: entry.item.id, keepQuantity: 0 },
+      label: `Sell ${entry.quantity}x ${entry.item.name}`,
+      // Not a rate: this is the one-off value of clearing the stack. Left off
+      // gpPerHour deliberately, since a sale has no duration to divide by.
+      gpPerHour: 0,
+      available: true as const,
+    }))
+    .sort((a, b) => b.label.localeCompare(a.label));
+}

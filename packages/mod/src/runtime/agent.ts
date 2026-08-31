@@ -1,6 +1,7 @@
 import { checkDumpFreshness } from '@melvor-agent/knowledge';
 import type {
   ActionResult,
+  Candidate,
   Command,
   Objective,
   QualitySample,
@@ -17,7 +18,9 @@ import {
   onGameEvent,
   readGameVersion,
   readGatherCandidates,
+  readSellCandidates,
   readSnapshot,
+  sellItem,
   startGathering,
   stopGathering,
 } from '../adapter/index.js';
@@ -343,6 +346,8 @@ export class Agent {
         return startGathering(action.skillId, action.recipeId, isSuspended);
       case 'stop_gathering':
         return stopGathering(action.skillId, isSuspended);
+      case 'sell':
+        return sellItem(action.itemId, action.quantity, isSuspended);
     }
   }
 
@@ -433,13 +438,26 @@ export class Agent {
     }
   }
 
-  private safeCandidates(): ReturnType<typeof readGatherCandidates> {
-    try {
-      return readGatherCandidates();
-    } catch (error) {
-      this.log.warn('adapter', `candidate enumeration failed: ${String(error)}`);
-      return [];
+  /**
+   * Everything the agent can currently do, with real numbers attached.
+   *
+   * Enumeration is wrapped because a single malformed registry entry must not
+   * take the whole report down — a planner with a short menu still works, a
+   * planner with no report does not.
+   */
+  private safeCandidates(): Candidate[] {
+    const candidates: Candidate[] = [];
+    for (const [name, read] of [
+      ['gather', readGatherCandidates],
+      ['sell', readSellCandidates],
+    ] as const) {
+      try {
+        candidates.push(...read());
+      } catch (error) {
+        this.log.warn('adapter', `${name} candidate enumeration failed: ${String(error)}`);
+      }
     }
+    return candidates;
   }
 
   /** Applies one operator command from the TUI or the panel. */

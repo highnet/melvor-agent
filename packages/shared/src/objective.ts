@@ -9,9 +9,8 @@ import { gameIdSchema } from './snapshot.js';
  * "the planner must never emit an action the policy layer couldn't perform"
  * is a runtime assertion, not a convention.
  *
- * Phase 1 ships exactly one.
  */
-export const objectiveKindSchema = z.enum(['gather_resource']);
+export const objectiveKindSchema = z.enum(['gather_resource', 'sell_items']);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
 /** Params are a discriminated union keyed by the same `kind`. */
@@ -22,6 +21,17 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     skillId: gameIdSchema,
     /** The recipe/node within that skill, e.g. a `WoodcuttingTree` id. */
     recipeId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('sell_items'),
+    /**
+     * Exactly one item id. Deliberately not a list or a filter: selling is the
+     * first capability that destroys something, and a bad plan should be able
+     * to lose one stack, never a bank.
+     */
+    itemId: gameIdSchema,
+    /** Leave this many in the bank. Lets an objective bank surplus only. */
+    keepQuantity: z.number().int().nonnegative(),
   }),
 ]);
 export type ObjectiveParams = z.infer<typeof objectiveParamsSchema>;

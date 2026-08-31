@@ -13,7 +13,9 @@ import type { Objective, StateSnapshot } from '@melvor-agent/shared';
 export type PolicyAction =
   /** Be gathering this recipe with this skill. One intent, not select-then-start. */
   | { type: 'gather'; skillId: string; recipeId: string }
-  | { type: 'stop_gathering'; skillId: string };
+  | { type: 'stop_gathering'; skillId: string }
+  /** Sell a named quantity of one item. Never a filter, never the whole bank. */
+  | { type: 'sell'; itemId: string; quantity: number };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

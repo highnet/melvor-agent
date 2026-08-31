@@ -1,5 +1,6 @@
 import type { Objective, ObjectiveKind } from '@melvor-agent/shared';
 import { gatherResource } from './gather.js';
+import { sellItems } from './sell.js';
 import type { PolicyExecutor } from './types.js';
 
 /**
@@ -16,6 +17,7 @@ import type { PolicyExecutor } from './types.js';
  */
 const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   gather_resource: gatherResource,
+  sell_items: sellItems,
 };
 
 /** Whether the policy layer can execute this objective kind at all. */
@@ -40,5 +42,6 @@ export function executorFor(objective: Objective): PolicyExecutor | null {
 }
 
 export { gatherResource } from './gather.js';
+export { sellItems } from './sell.js';
 export * from './criteria.js';
 export type * from './types.js';

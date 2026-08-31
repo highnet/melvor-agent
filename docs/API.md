@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-40 exports.
+44 exports.
 
 ## `act`
 
@@ -320,6 +320,16 @@ PanelHandle: any
 PersistenceHealth: any
 ```
 
+## `readBankQuantity`
+
+`function`
+
+Quantity of an item held in the bank.
+
+```ts
+readBankQuantity: (itemId: string) => number
+```
+
 ## `readCharacterName`
 
 `function`
@@ -390,6 +400,20 @@ those are a documented part of `GameEvents` and this field is not.
 readIsInOnlineLoop: () => boolean
 ```
 
+## `readSellCandidates`
+
+`function`
+
+Enumerates sellable surplus in the bank.
+
+Mirrors the refusals in {@link sellItem } exactly — locked items and
+zero-value items are absent rather than offered and then rejected. A
+candidate the adapter would refuse is a planner trap, not a choice.
+
+```ts
+readSellCandidates: () => Candidate[]
+```
+
 ## `readSnapshot`
 
 `function`
@@ -412,6 +436,44 @@ Total skill level, summed from the skills themselves rather than inferred.
 
 ```ts
 readTotalLevel: () => number
+```
+
+## `SaleProjection`
+
+`interface`
+
+What selling claims to change: less of the item, more of the currency.
+
+```ts
+SaleProjection: any
+```
+
+## `sellItem`
+
+`function`
+
+Sells items from the bank.
+
+Selling is permitted — the agent may spend and consume — but it is the first
+capability that destroys something, so the guards are structural rather than
+advisory:
+
+- **Locked items are never sold.** `bank.lockedItems` is the operator's own
+  marking, made in the game's UI, and it is the one signal that reliably means
+  "not this". Honouring it costs nothing and is the cheapest protection
+  against losing something irreplaceable.
+- **Zero-value items are never sold.** An item that yields nothing is being
+  destroyed for no gain, and a zero sell value is a common marker for quest
+  and unique items.
+- **The item must be named explicitly.** There is deliberately no "sell
+  everything" or "sell by filter" action, so a bad plan can lose one stack,
+  never a bank.
+
+`Bank.processItemSale` returns `void`, so success is established by observing
+both sides of the trade: the stack shrank *and* the currency grew.
+
+```ts
+sellItem: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<SaleProjection>
 ```
 
 ## `SkillState`

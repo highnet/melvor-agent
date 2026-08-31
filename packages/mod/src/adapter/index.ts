@@ -14,7 +14,8 @@
  */
 
 export { act, type ActSpec } from './act.js';
-export { readGatherCandidates } from './candidates.js';
+export { readBankQuantity, sellItem, type SaleProjection } from './bank.js';
+export { readGatherCandidates, readSellCandidates } from './candidates.js';
 export {
   FISHING_ID,
   GATHERING_SKILL_IDS,
