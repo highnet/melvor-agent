@@ -1,5 +1,5 @@
-import type { AgentReply, AgentReport } from '@melvor-agent/shared';
-import { agentReplySchema } from '@melvor-agent/shared';
+import type { AgentReply, AgentReport, PlannerResponse } from '@melvor-agent/shared';
+import { agentReplySchema, plannerResponseSchema } from '@melvor-agent/shared';
 import { isNodeHttpAvailable, nodeHttpRequest } from './node-http.js';
 
 /**
@@ -89,6 +89,25 @@ export class Transport {
   /** Uploads a save string for the service to write to disk. */
   async uploadSave(save: string, reason: string): Promise<boolean> {
     return (await this.post('/agent/save', { save, reason, at: Date.now() })) !== null;
+  }
+
+  /**
+   * Asks the planner for objectives.
+   *
+   * Returns null when the service is unreachable or answers with something the
+   * schema rejects. The caller keeps its current objective in that case:
+   * degrade, never halt.
+   */
+  async plan(request: unknown): Promise<PlannerResponse | null> {
+    const body = await this.post('/plan', request);
+    if (body === null) return null;
+
+    const parsed = plannerResponseSchema.safeParse(body);
+    if (!parsed.success) {
+      this.lastError = `malformed plan: ${parsed.error.issues[0]?.message ?? 'unknown'}`;
+      return null;
+    }
+    return parsed.data;
   }
 
   /** Uploads a knowledge dump for the service to write to disk. */

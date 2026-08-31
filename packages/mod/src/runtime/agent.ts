@@ -48,6 +48,25 @@ const STUCK_AFTER_MS = 15 * 60_000;
 
 const GP_CURRENCY_ID = 'melvorD:GP';
 
+/**
+ * Triggers the planner request schema accepts.
+ *
+ * An unrecognised trigger would fail validation at the service and cost a
+ * planning round trip, so anything else is reported as `operator`.
+ */
+const KNOWN_TRIGGERS = new Set([
+  'game_start',
+  'offline_loop_exited',
+  'objective_completed',
+  'objective_aborted',
+  'unlock_acquired',
+  'death',
+  'resource_exhausted',
+  'budget_exceeded',
+  'stuck_detected',
+  'operator',
+]);
+
 export interface AgentSettings extends Record<string, unknown> {
   enabled: boolean;
   characterAllowlist: string[];
@@ -85,6 +104,8 @@ export class Agent {
   private lastProgressAt = Date.now();
   private lastProgressMarker = -1;
   private replanPending: string | null = null;
+  /** Guards against overlapping planner calls while one is in flight. */
+  private replanning = false;
   private readonly changeListeners = new Set<() => void>();
 
   constructor(
@@ -267,6 +288,63 @@ export class Agent {
     this.replanPending = trigger;
   }
 
+  /**
+   * Asks the planner for a new objective and adopts the first one it returns.
+   *
+   * This is what closes the autonomy loop. Without it an objective completes,
+   * clears itself, and the agent sits idle forever — which is exactly what
+   * happened on the first live run.
+   *
+   * Two guards, both load-bearing:
+   *
+   * - The response is schema-parsed by the transport, then every objective's
+   *   kind is checked against the capability registry here. An objective the
+   *   policy layer cannot execute is rejected at the door rather than failing
+   *   later against a game function.
+   * - A failed or empty plan leaves the current objective untouched. Degrade,
+   *   never halt.
+   */
+  private async replan(trigger: string): Promise<void> {
+    const snapshot = this.lastSnapshot;
+    if (snapshot === null) return;
+
+    const response = await this.transport.plan({
+      snapshot,
+      candidates: this.safeCandidates(),
+      digest: { recent: [], aggregates: [] },
+      trigger: KNOWN_TRIGGERS.has(trigger) ? trigger : 'operator',
+    });
+
+    if (response === null) {
+      this.log.warn('planner', `replan (${trigger}) failed; keeping the current objective`);
+      return;
+    }
+
+    const usable = response.objectives.find((objective) => isSupportedKind(objective.kind));
+
+    if (usable === undefined) {
+      if (response.objectives.length > 0) {
+        // The planner proposed something the policy layer cannot perform. That
+        // is a planner bug, and saying so is more useful than silently idling.
+        this.log.error(
+          'planner',
+          `rejected ${response.objectives.length} objective(s): no executor for ${response.objectives.map((o) => o.kind).join(', ')}`,
+        );
+      } else {
+        this.log.info('planner', `no objectives available (${response.reasoning})`);
+      }
+      return;
+    }
+
+    this.settings = { ...this.settings, objective: usable };
+    this.objectiveStartedAt = Date.now();
+    this.deathsSinceStart = 0;
+    this.log.info('planner', `new objective (${trigger}): ${usable.rationale}`, {
+      reasoning: response.reasoning,
+    });
+    this.notify();
+  }
+
   private async checkGuards(): Promise<string | null> {
     const realmRefusal = checkRealmAllowed();
     if (realmRefusal !== null) return realmRefusal;
@@ -309,9 +387,23 @@ export class Agent {
       return;
     }
 
+    // An objective that completed or aborted cleared itself; ask for another
+    // rather than idling. This is the loop that makes the agent autonomous.
+    if (this.settings.objective === null && this.replanPending === null) {
+      this.requestReplan('objective_completed');
+    }
+
+    if (this.replanPending !== null && !this.replanning) {
+      const trigger = this.replanPending;
+      this.replanPending = null;
+      this.replanning = true;
+      void this.replan(trigger).finally(() => {
+        this.replanning = false;
+      });
+    }
+
     const objective = this.settings.objective;
     if (objective === null) {
-      this.log.info('policy', 'no objective set; nothing to execute');
       void this.pushReport();
       return;
     }
