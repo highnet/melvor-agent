@@ -33,6 +33,8 @@ import {
   readExplorationCandidates,
   readGameVersion,
   readGatherCandidates,
+  readLevelCapCandidates,
+  readLoadoutCandidates,
   readMasteryCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
@@ -41,6 +43,7 @@ import {
   readTownshipCandidates,
   repairTownshipBuilding,
   selectAttackSpell,
+  selectLevelCapIncrease,
   sellItem,
   setAttackStyle,
   spendMasteryPool,
@@ -48,12 +51,16 @@ import {
   startGathering,
   stopGathering,
   surveyBestHex,
+  toggleAurora,
+  toggleBankLock,
+  toggleCurse,
   togglePrayer,
   usePotion,
 } from '../adapter/index.js';
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import type { PolicyAction } from '../policy/types.js';
+import { refillFood } from './combat-reflex.js';
 import type { Logger } from './logger.js';
 import type { Transport } from './transport.js';
 
@@ -264,6 +271,50 @@ export class Agent {
     if (now - this.lastReflexAt < REFLEX_THROTTLE_MS) return;
     this.lastReflexAt = now;
     this.detectStuck(now);
+    this.runCombatReflexes();
+  }
+
+  /**
+   * Mid-fight reactions, run from the tick loop.
+   *
+   * These cannot wait for the policy tier: auto-eat can empty a food slot in
+   * seconds, and the survivability gate's argument — "this fight is winnable
+   * because there is food" — stops being true the moment it does. Topping the
+   * slot back up keeps that argument true instead of abandoning the fight.
+   *
+   * Failures are logged and swallowed. A reflex that cannot fire must never
+   * take the tick loop down with it; the policy tier's HP and food floors are
+   * still there, and they end the fight safely on their own.
+   */
+  private runCombatReflexes(): void {
+    const snapshot = this.lastSnapshot;
+    if (snapshot === null || !snapshot.combat.inCombat) return;
+
+    const isSuspended = (): boolean => this.state === 'suspended';
+    const slot =
+      snapshot.combat.food[snapshot.combat.selectedEquipmentSet] ?? snapshot.combat.food[0];
+
+    const outcomes = [
+      refillFood(
+        {
+          inCombat: snapshot.combat.inCombat,
+          equippedFoodId: slot?.itemId ?? null,
+          equippedFoodQty: slot?.qty ?? 0,
+          bankQuantityOf: (itemId) =>
+            snapshot.bank.items.find((entry) => entry.id === itemId)?.qty ?? 0,
+        },
+        (itemId, quantity) => equipFood(itemId, quantity, isSuspended),
+      ),
+    ];
+
+    for (const outcome of outcomes) {
+      if (outcome === null) continue;
+      if (outcome.result.ok) {
+        this.log.info('reflex', `${outcome.name} fired`);
+      } else {
+        this.log.warn('reflex', `${outcome.name}: ${outcome.result.detail}`);
+      }
+    }
   }
 
   private startClocks(): void {
@@ -611,6 +662,14 @@ export class Agent {
         return surveyBestHex(isSuspended);
       case 'excavate_dig_site':
         return excavateDigSite(action.digSiteId, isSuspended);
+      case 'toggle_curse':
+        return toggleCurse(action.curseId, isSuspended);
+      case 'toggle_aurora':
+        return toggleAurora(action.auroraId, isSuspended);
+      case 'toggle_bank_lock':
+        return toggleBankLock(action.itemId, isSuspended);
+      case 'select_level_cap':
+        return selectLevelCapIncrease(action.capIncreaseId, action.skillId, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':
@@ -819,6 +878,8 @@ export class Agent {
       ['spell', readSpellCandidates],
       ['township', readTownshipCandidates],
       ['exploration', readExplorationCandidates],
+      ['loadout', readLoadoutCandidates],
+      ['level cap', readLevelCapCandidates],
       ['combat', () => this.combatCandidates()],
     ] as const) {
       try {

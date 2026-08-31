@@ -72,9 +72,11 @@ export function equipItem(
           return `${itemId} cannot go in slot ${slot}`;
         }
         if (projectSlot(slot).itemId === itemId) return `${itemId} is already equipped`;
-        // Equipping mid-fight is a different, riskier operation: it can leave
-        // the character briefly without the gear the survivability gate assumed.
-        if (game.combat.isActive) return 'in combat; refusing to swap equipment';
+        // Mid-fight swaps are allowed: a human switches gear when the enemy
+        // changes damage type, and refusing meant the agent could not play
+        // dungeons properly. The survivability gate proved the fight winnable
+        // with the *old* gear, so the policy tier's HP and food floors are what
+        // catch a swap that made things worse.
         return null;
       },
       perform: () => player.equipItem(item, player.selectedEquipmentSet, item.validSlots[0], 1),

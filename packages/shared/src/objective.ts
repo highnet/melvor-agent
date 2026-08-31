@@ -29,6 +29,10 @@ export const objectiveKindSchema = z.enum([
   'repair_township',
   'survey_hex',
   'excavate_dig_site',
+  'toggle_curse',
+  'toggle_aurora',
+  'toggle_bank_lock',
+  'select_level_cap',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -130,6 +134,29 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('excavate_dig_site'),
     digSiteId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('toggle_curse'),
+    curseId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('toggle_aurora'),
+    auroraId: gameIdSchema,
+  }),
+  z.object({
+    /** Locking is the agent's own guard rail against its one destructive verb. */
+    kind: z.literal('toggle_bank_lock'),
+    itemId: gameIdSchema,
+  }),
+  z.object({
+    /**
+     * A permanent choice: the raised cap cannot be moved afterwards. Named by
+     * skill rather than by index so a stale plan cannot raise the cap of
+     * whichever skill happens to be offered third.
+     */
+    kind: z.literal('select_level_cap'),
+    capIncreaseId: gameIdSchema,
+    skillId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('sell_items'),

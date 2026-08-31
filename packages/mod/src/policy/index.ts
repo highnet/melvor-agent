@@ -39,6 +39,10 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   repair_township: manage,
   survey_hex: explore,
   excavate_dig_site: explore,
+  toggle_curse: manage,
+  toggle_aurora: manage,
+  toggle_bank_lock: manage,
+  select_level_cap: manage,
   run_dungeon: fightMonster,
 };
 

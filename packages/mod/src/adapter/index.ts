@@ -93,6 +93,14 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  readLevelCapCandidates,
+  readLoadoutCandidates,
+  selectLevelCapIncrease,
+  toggleAurora,
+  toggleBankLock,
+  toggleCurse,
+} from './loadout.js';
+export {
   excavateDigSite,
   readExplorationCandidates,
   surveyBestHex,

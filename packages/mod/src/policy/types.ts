@@ -37,7 +37,11 @@ export type PolicyAction =
   | { type: 'build_township'; buildingId: string; biomeId: string }
   | { type: 'repair_township'; buildingId: string; biomeId: string }
   | { type: 'survey_hex' }
-  | { type: 'excavate_dig_site'; digSiteId: string };
+  | { type: 'excavate_dig_site'; digSiteId: string }
+  | { type: 'toggle_curse'; curseId: string }
+  | { type: 'toggle_aurora'; auroraId: string }
+  | { type: 'toggle_bank_lock'; itemId: string }
+  | { type: 'select_level_cap'; capIncreaseId: string; skillId: string };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

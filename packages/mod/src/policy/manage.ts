@@ -101,6 +101,33 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `repairing ${params.buildingId} in ${params.biomeId}`,
       );
 
+    case 'toggle_curse':
+      return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
+
+    case 'toggle_aurora':
+      return act(
+        { type: 'toggle_aurora', auroraId: params.auroraId },
+        `toggling ${params.auroraId}`,
+      );
+
+    case 'toggle_bank_lock':
+      return act(
+        { type: 'toggle_bank_lock', itemId: params.itemId },
+        `toggling the bank lock on ${params.itemId}`,
+      );
+
+    case 'select_level_cap':
+      // Permanent, and the alternatives are lost with it — but an unchosen
+      // increase leaves the character stuck at its cap forever, which is worse.
+      return act(
+        {
+          type: 'select_level_cap',
+          capIncreaseId: params.capIncreaseId,
+          skillId: params.skillId,
+        },
+        `raising the ${params.skillId} level cap`,
+      );
+
     default:
       return {
         kind: 'abort',

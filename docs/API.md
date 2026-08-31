@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-89 exports.
+95 exports.
 
 ## `act`
 
@@ -786,6 +786,31 @@ those are a documented part of `GameEvents` and this field is not.
 readIsInOnlineLoop: () => boolean
 ```
 
+## `readLevelCapCandidates`
+
+`function`
+
+Pending level cap increases, one candidate per skill on offer.
+
+```ts
+readLevelCapCandidates: () => Candidate[]
+```
+
+## `readLoadoutCandidates`
+
+`function`
+
+Loadout decisions that are currently possible.
+
+Curses and auroras are offered only when castable *now* — `canUseCombatSpell`
+accounts for runes, so an offer here means the runes exist. Offering one the
+character cannot cast would produce a selection that silently does nothing,
+which is the worst failure mode in combat: invisible until the fight is lost.
+
+```ts
+readLoadoutCandidates: () => Candidate[]
+```
+
 ## `readMasteryCandidates`
 
 `function`
@@ -965,6 +990,25 @@ or the runes are missing, so the selection is observed either side.
 selectAttackSpell: (spellId: string, isSuspended: () => boolean) => ActionResult<{ spellId: string | null; }>
 ```
 
+## `selectLevelCapIncrease`
+
+`function`
+
+Chooses a pending level cap increase.
+
+This is a *permanent* choice: the raised cap cannot be moved to another skill
+afterwards. It is still the agent's to make — an unchosen increase leaves the
+character sitting at its cap indefinitely, and refusing on the grounds of
+irreversibility would make the agent unable to play the part of the game that
+exists after 99.
+
+The choice is expressed as a skill id rather than an index, so a stale plan
+cannot silently raise the cap of whichever skill happens to be listed third.
+
+```ts
+selectLevelCapIncrease: (capIncreaseId: string, skillId: string, isSuspended: () => boolean) => ActionResult<{ skillId: string; levelCap: number; pending: number; }>
+```
+
 ## `sellItem`
 
 `function`
@@ -1136,6 +1180,47 @@ being active on the hex we chose.
 
 ```ts
 surveyBestHex: (isSuspended: () => boolean) => ActionResult<{ surveying: boolean; hex: string | null; }>
+```
+
+## `toggleAurora`
+
+`function`
+
+Turns an aurora on or off. Same shape and same reasoning as {@link toggleCurse}.
+
+```ts
+toggleAurora: (auroraId: string, isSuspended: () => boolean) => ActionResult<SpellSlots>
+```
+
+## `toggleBankLock`
+
+`function`
+
+Locks or unlocks a bank item.
+
+The one guard rail the agent can give itself. Selling is the only capability
+that destroys something, and the loss is silent — a sold rare drop looks
+exactly like a successful transition in the journal. Locking is cheap,
+reversible and, unlike a refusal baked into the sell path, it is a decision
+the planner can make about specific items it has reason to keep.
+
+```ts
+toggleBankLock: (itemId: string, isSuspended: () => boolean) => ActionResult<{ itemId: string; locked: boolean; }>
+```
+
+## `toggleCurse`
+
+`function`
+
+Turns a curse on or off.
+
+`toggleCurse` returns `void` and refuses silently when the level or the runes
+are missing, so the selection is observed either side. `canUseCombatSpell` is
+the game's own requirement check, and reusing it is the only way to be right
+about a rule set that spans levels, runes and equipped items.
+
+```ts
+toggleCurse: (curseId: string, isSuspended: () => boolean) => ActionResult<SpellSlots>
 ```
 
 ## `togglePrayer`
