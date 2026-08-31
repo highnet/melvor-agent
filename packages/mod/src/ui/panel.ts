@@ -196,7 +196,7 @@ function renderSnapshot(agent: Agent): HTMLElement {
     ['Realm', snapshot.currentRealmId],
     ['Offline loop', snapshot.isOfflineLoop ? 'YES — suspended' : 'no'],
     ['Objective', agent.currentSettings.objective?.rationale ?? 'none'],
-    ['Service', agent.serviceError === null ? 'connected' : 'UNREACHABLE'],
+    ['Service', agent.serviceError === null ? (agent.serviceBase ?? 'connected') : 'UNREACHABLE'],
     [
       'Allowlisted',
       agent.currentSettings.characterAllowlist.includes(snapshot.characterName) ? 'yes' : 'NO',

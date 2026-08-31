@@ -55,8 +55,17 @@ app.use('/*', async (c, next) => {
   }
 });
 
-// The mod runs inside the game client, a different origin.
-app.use('/*', cors({ origin: (origin) => origin ?? '*' }));
+/**
+ * Wide-open CORS, deliberately.
+ *
+ * Reflecting the request origin looks tidier but breaks the case that matters:
+ * a page on a `file://`-style origin sends `Origin: null`, and reflecting the
+ * literal string `null` is rejected by Chrome. `*` is accepted from every
+ * origin including opaque ones, and costs nothing here — the service binds
+ * localhost and carries no credentials, so the only pages that can reach it are
+ * already running on this machine.
+ */
+app.use('/*', cors({ origin: '*' }));
 
 /**
  * The mod's heartbeat: it posts state and collects queued operator commands.
@@ -160,7 +169,64 @@ function rates(current: Store): Pick<Dashboard, 'levelsPerHour' | 'gpPerHour'> {
   };
 }
 
-serve({ fetch: app.fetch, port: PORT }, (info) => {
-  console.log(`[planner] listening on http://localhost:${info.port}`);
-  console.log(`[planner] data dir: ${DATA_DIR}`);
-});
+/**
+ * Starts the server, tolerating an instance that is already running.
+ *
+ * Without this, a second `pnpm planner` dies on an unhandled EADDRINUSE with a
+ * raw stack trace, and the operator cannot tell whether the port is held by a
+ * healthy copy of this service or by something else entirely. Since the service
+ * is stateless between requests, a second start is almost always a mistake
+ * rather than an intent — so it probes the port and exits quietly if the thing
+ * already there is us.
+ */
+async function start(): Promise<void> {
+  const existing = await probeExisting();
+
+  if (existing === 'ours') {
+    console.log(`[planner] already running on http://localhost:${PORT} — nothing to do`);
+    return;
+  }
+
+  if (existing === 'foreign') {
+    console.error(`[planner] port ${PORT} is held by something that is not this service.`);
+    console.error('[planner] set PORT to use a different one, or stop whatever is there.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const server = serve({ fetch: app.fetch, port: PORT }, (info) => {
+    console.log(`[planner] listening on http://localhost:${info.port}`);
+    console.log(`[planner] data dir: ${DATA_DIR}`);
+  });
+
+  // Release the port on the way out. Without this a killed terminal can leave
+  // the listener holding the port until the process is reaped, which is exactly
+  // the confusion this whole function exists to avoid.
+  const shutdown = (signal: string) => {
+    console.log(`[planner] ${signal} — shutting down`);
+    server.close(() => process.exit(0));
+    // Do not hang forever on a wedged connection.
+    setTimeout(() => process.exit(0), 2000).unref();
+  };
+
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+}
+
+/** Whether the port is free, held by this service, or held by something else. */
+async function probeExisting(): Promise<'free' | 'ours' | 'foreign'> {
+  try {
+    const response = await fetch(`http://localhost:${PORT}/health`, {
+      signal: AbortSignal.timeout(1500),
+    });
+    if (!response.ok) return 'foreign';
+    const body = (await response.json()) as { ok?: boolean; dataDir?: string };
+    return body.ok === true && typeof body.dataDir === 'string' ? 'ours' : 'foreign';
+  } catch {
+    // Nothing answered, so either the port is free or whatever holds it does
+    // not speak HTTP. `serve` below will surface the latter.
+    return 'free';
+  }
+}
+
+await start();

@@ -12,10 +12,36 @@ export class Transport {
   private consecutiveFailures = 0;
   private lastError: string | null = null;
 
+  /** Set once a host is known to work, so the fallback is tried only until it does. */
+  private workingBase: string | null = null;
+
   constructor(
     private readonly baseUrl: string,
     private readonly timeoutMs = 4000,
   ) {}
+
+  /**
+   * Hosts to try, in order.
+   *
+   * `localhost` and `127.0.0.1` are not interchangeable inside a packaged
+   * Chromium: name resolution, IPv6 (`::1`) vs IPv4, and Private Network Access
+   * classification can each differ between them, and the page sees only a bare
+   * "Failed to fetch" either way. Trying both removes a whole class of
+   * environment guesswork that is otherwise invisible from inside the game.
+   */
+  private candidateBases(): string[] {
+    if (this.workingBase !== null) return [this.workingBase];
+
+    const alternates = new Set<string>([this.baseUrl]);
+    alternates.add(this.baseUrl.replace('//localhost', '//127.0.0.1'));
+    alternates.add(this.baseUrl.replace('//127.0.0.1', '//localhost'));
+    return [...alternates];
+  }
+
+  /** Which host actually worked, for the panel. Null until one does. */
+  get resolvedBase(): string | null {
+    return this.workingBase;
+  }
 
   /** True once the service has failed enough times to be considered down. */
   get isDegraded(): boolean {
@@ -45,8 +71,6 @@ export class Transport {
       return null;
     }
 
-    this.consecutiveFailures = 0;
-    this.lastError = null;
     return parsed.data;
   }
 
@@ -94,26 +118,37 @@ export class Transport {
   }
 
   private async request(path: string, init: RequestInit): Promise<unknown | null> {
-    // AbortSignal.timeout keeps a hung service from stalling the policy tick.
-    try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
-        ...init,
-        headers: { 'content-type': 'application/json' },
-        signal: AbortSignal.timeout(this.timeoutMs),
-      });
+    const errors: string[] = [];
 
-      if (!response.ok) {
-        this.consecutiveFailures += 1;
-        this.lastError = `${init.method} ${path} -> HTTP ${response.status}`;
-        return null;
+    for (const base of this.candidateBases()) {
+      // AbortSignal.timeout keeps a hung service from stalling the policy tick.
+      try {
+        const response = await fetch(`${base}${path}`, {
+          ...init,
+          headers: { 'content-type': 'application/json' },
+          signal: AbortSignal.timeout(this.timeoutMs),
+        });
+
+        if (!response.ok) {
+          // A reachable service answering badly is not a host problem, so stop
+          // rather than trying the alternate and muddying the error.
+          this.workingBase = base;
+          this.consecutiveFailures += 1;
+          this.lastError = `${init.method} ${path} -> HTTP ${response.status}`;
+          return null;
+        }
+
+        this.workingBase = base;
+        this.consecutiveFailures = 0;
+        this.lastError = null;
+        return await response.json();
+      } catch (error) {
+        errors.push(`${base}: ${error instanceof Error ? error.message : String(error)}`);
       }
-
-      return await response.json();
-    } catch (error) {
-      this.consecutiveFailures += 1;
-      this.lastError =
-        error instanceof Error ? `${init.method} ${path} -> ${error.message}` : String(error);
-      return null;
     }
+
+    this.consecutiveFailures += 1;
+    this.lastError = `${init.method} ${path} -> ${errors.join(' | ')}`;
+    return null;
   }
 }

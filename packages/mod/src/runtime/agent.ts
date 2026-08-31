@@ -120,6 +120,11 @@ export class Agent {
     return this.transport.error;
   }
 
+  /** Which host the transport actually reached, once one works. */
+  get serviceBase(): string | null {
+    return this.transport.resolvedBase;
+  }
+
   /** Whether the service has failed enough times to be considered down. */
   get serviceDegraded(): boolean {
     return this.transport.isDegraded;
