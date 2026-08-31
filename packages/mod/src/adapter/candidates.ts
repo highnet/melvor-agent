@@ -1,5 +1,11 @@
 import type { Candidate } from '@melvor-agent/shared';
-import { FISHING_ID, MINING_ID, STARTABLE_SKILL_IDS, WOODCUTTING_ID } from './gathering.js';
+import {
+  FISHING_ID,
+  MINING_ID,
+  STARTABLE_SKILL_IDS,
+  THIEVING_ID,
+  WOODCUTTING_ID,
+} from './gathering.js';
 import { readShopCandidates } from './shop.js';
 
 const MS_PER_HOUR = 3_600_000;
@@ -19,6 +25,7 @@ export function readGatherCandidates(): Candidate[] {
     ...safely('woodcutting', woodcuttingCandidates),
     ...safely('mining', miningCandidates),
     ...safely('fishing', fishingCandidates),
+    ...safely('thieving', thievingCandidates),
     ...safely('other skills', genericSkillCandidates),
   ].sort((a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0));
 }
@@ -57,8 +64,15 @@ function genericSkillCandidates(): Candidate[] {
   const candidates: Candidate[] = [];
 
   for (const skillId of STARTABLE_SKILL_IDS) {
-    // The three gathering skills have their own, more accurate enumerations.
-    if (skillId === WOODCUTTING_ID || skillId === MINING_ID || skillId === FISHING_ID) continue;
+    // Skills with their own, more accurate enumerations.
+    if (
+      skillId === WOODCUTTING_ID ||
+      skillId === MINING_ID ||
+      skillId === FISHING_ID ||
+      skillId === THIEVING_ID
+    ) {
+      continue;
+    }
 
     const skill = game.skills.getObjectByID(skillId);
     if (skill === undefined) continue;
@@ -250,6 +264,69 @@ function miningCandidates(): Candidate[] {
       // always readable, and a candidate list that throws is worth nothing.
       candidate(MINING_ID, skill.name, rock, skill.baseInterval, gpValue(rock.product)),
     );
+}
+
+/**
+ * Thieving, with its GP actually visible.
+ *
+ * This existed in the generic path and was therefore scored at zero GP/hr,
+ * because a thieving payout is a `currencyDrops` entry on the NPC rather than a
+ * product item that gets sold. The effect was not cosmetic: Thieving is one of
+ * the few things that turns time directly into money with no input, and a
+ * planner comparing candidates on GP/hr could not see it at all. Every
+ * money-making decision was made from a list where the money option read as
+ * worthless.
+ *
+ * The rate is expected value, not best case: the payout is multiplied by the
+ * game's own success rate, because a failed pickpocket earns nothing and
+ * quoting the max would make Thieving look better than it is at low levels.
+ *
+ * **Gated on food.** A failed pickpocket deals damage, so Thieving without food
+ * equipped is a slow death rather than an income — the same class of hazard as
+ * combat, and it does not announce itself, because the first hour looks like it
+ * is working. Offering it foodless would hand the planner an option that ends
+ * with a dead character, so no candidates are emitted at all.
+ *
+ * The stricter check — whether healing outpaces damage for a *specific* NPC —
+ * belongs with the combat gate's survivability math and is not duplicated here.
+ * This is the floor: no food, no thieving.
+ */
+function thievingCandidates(): Candidate[] {
+  const skill = game.thieving;
+  const player = game.combat.player;
+
+  const foodQuantity = player.food.slots.reduce(
+    (sum, slot) => sum + (slot.item === game.emptyFoodItem ? 0 : slot.quantity),
+    0,
+  );
+  if (foodQuantity <= 0) return [];
+
+  return skill.actions.allObjects
+    .filter((npc) => npc.level <= skill.level)
+    .map((npc) => {
+      const intervalMs = safeNumber(() => skill.actionInterval, 3000);
+      const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
+      const successRate = Math.max(0, Math.min(1, skill.getNPCSuccessRate(npc) / 100));
+
+      const gpPerAction = npc.currencyDrops
+        .filter((drop) => drop.currency === game.gp)
+        // `quantity` is the maximum roll, so the mean is about half of it.
+        .reduce((sum, drop) => sum + drop.quantity / 2, 0);
+
+      return {
+        kind: 'gather_resource' as const,
+        params: {
+          kind: 'gather_resource' as const,
+          skillId: THIEVING_ID,
+          recipeId: npc.id,
+        },
+        label: `Thieving: ${npc.name}`,
+        xpPerHour: actionsPerHour * npc.baseExperience * successRate,
+        gpPerHour: actionsPerHour * gpPerAction * successRate,
+        requiresLevel: npc.level,
+        available: true as const,
+      };
+    });
 }
 
 function fishingCandidates(): Candidate[] {

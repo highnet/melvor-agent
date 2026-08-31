@@ -18,6 +18,7 @@ import { isMiscSkill, startMiscSkill, stopMiscSkill } from './skills-misc.js';
  */
 export const WOODCUTTING_ID = 'melvorD:Woodcutting';
 export const MINING_ID = 'melvorD:Mining';
+export const THIEVING_ID = 'melvorD:Thieving';
 export const FISHING_ID = 'melvorD:Fishing';
 
 export const GATHERING_SKILL_IDS = [WOODCUTTING_ID, MINING_ID, FISHING_ID] as const;
