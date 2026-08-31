@@ -125,6 +125,11 @@ export class Agent {
     return this.transport.resolvedBase;
   }
 
+  /** Whether requests go through Node or Chromium's fetch. */
+  get transportKind(): 'node' | 'fetch' {
+    return this.transport.transportKind;
+  }
+
   /** Whether the service has failed enough times to be considered down. */
   get serviceDegraded(): boolean {
     return this.transport.isDegraded;

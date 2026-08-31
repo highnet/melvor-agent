@@ -1,5 +1,6 @@
 import type { AgentReply, AgentReport } from '@melvor-agent/shared';
 import { agentReplySchema } from '@melvor-agent/shared';
+import { isNodeHttpAvailable, nodeHttpRequest } from './node-http.js';
 
 /**
  * HTTP client for the local planner service.
@@ -41,6 +42,17 @@ export class Transport {
   /** Which host actually worked, for the panel. Null until one does. */
   get resolvedBase(): string | null {
     return this.workingBase;
+  }
+
+  /**
+   * How requests are being made.
+   *
+   * Worth surfacing: `fetch` failing while `node` works is the difference
+   * between a broken service and a browser policy, and the two need completely
+   * different fixes.
+   */
+  get transportKind(): 'node' | 'fetch' {
+    return isNodeHttpAvailable() ? 'node' : 'fetch';
   }
 
   /** True once the service has failed enough times to be considered down. */
@@ -109,6 +121,32 @@ export class Transport {
     return this.get('/agent/dump');
   }
 
+  /**
+   * Issues one request, preferring Node over `fetch`.
+   *
+   * Node's `http` sidesteps Chromium entirely — no CORS, no mixed content, no
+   * Private Network Access — which matters because the mod runs in an iframe
+   * served from `https://steam.melvoridle.com` and is therefore a public secure
+   * origin reaching into `http://localhost`. `fetch` remains the path in a
+   * plain browser, where Node is absent.
+   */
+  private async send(url: string, init: RequestInit): Promise<{ status: number; body: string }> {
+    const method = init.method ?? 'GET';
+    const body = typeof init.body === 'string' ? init.body : undefined;
+
+    if (isNodeHttpAvailable()) {
+      return nodeHttpRequest(url, method, body, this.timeoutMs);
+    }
+
+    // AbortSignal.timeout keeps a hung service from stalling the policy tick.
+    const response = await fetch(url, {
+      ...init,
+      headers: { 'content-type': 'application/json' },
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    return { status: response.status, body: await response.text() };
+  }
+
   private async post(path: string, payload: unknown): Promise<unknown | null> {
     return this.request(path, { method: 'POST', body: JSON.stringify(payload) });
   }
@@ -121,27 +159,22 @@ export class Transport {
     const errors: string[] = [];
 
     for (const base of this.candidateBases()) {
-      // AbortSignal.timeout keeps a hung service from stalling the policy tick.
       try {
-        const response = await fetch(`${base}${path}`, {
-          ...init,
-          headers: { 'content-type': 'application/json' },
-          signal: AbortSignal.timeout(this.timeoutMs),
-        });
+        const { status, body } = await this.send(`${base}${path}`, init);
 
-        if (!response.ok) {
+        if (status < 200 || status >= 300) {
           // A reachable service answering badly is not a host problem, so stop
           // rather than trying the alternate and muddying the error.
           this.workingBase = base;
           this.consecutiveFailures += 1;
-          this.lastError = `${init.method} ${path} -> HTTP ${response.status}`;
+          this.lastError = `${init.method} ${path} -> HTTP ${status}`;
           return null;
         }
 
         this.workingBase = base;
         this.consecutiveFailures = 0;
         this.lastError = null;
-        return await response.json();
+        return body === '' ? null : JSON.parse(body);
       } catch (error) {
         errors.push(`${base}: ${error instanceof Error ? error.message : String(error)}`);
       }

@@ -165,3 +165,47 @@ nothing. And the message never says the value came from `manifest.json`.
 
 `build.mjs` now validates the namespace, so it fails at build time with a message
 that names the file.
+
+## The Steam client is an iframe on a public HTTPS origin — `fetch` to localhost is blocked
+
+`package.nw/index.html` is a local page whose entire body is:
+
+```html
+<iframe id="game" src="https://steam.melvoridle.com" ...></iframe>
+```
+
+Mods run inside that iframe, so the page origin is **`https://steam.melvoridle.com`** —
+public and secure. A request to `http://localhost:8787` is therefore a public
+secure page reaching into the private, insecure address space, which Chrome
+gates behind Private Network Access.
+
+The symptom is a bare **`Failed to fetch`** with no CORS error, because CORS is
+not the problem — which sends you debugging the wrong layer for a long time.
+Answering the PNA preflight (`Access-Control-Allow-Private-Network: true`, which
+must be set *before* Hono's `cors()` since that answers `OPTIONS` itself) helps
+on some Chromium builds and not others, and the feature's roadmap is toward
+blocking the combination outright.
+
+**The fix is to leave Chromium's network stack entirely.** The same manifest says:
+
+```json
+"nodejs": true,
+"node-remote": ["https://*.melvoridle.com/*"]
+```
+
+`steam.melvoridle.com` matches, so the game frame has full Node integration and
+`require('http')` works. Node's HTTP client has no CORS, no mixed content and no
+PNA. Verified end to end: GET, POST with a body, and both `localhost` and
+`127.0.0.1`.
+
+```ts
+const require_ = (globalThis as any).require ?? (globalThis as any).nw?.require;
+const http = require_('http');   // no browser policy applies
+```
+
+Feature-detect it and keep `fetch` as the fallback, so the mod still works in a
+plain browser where Node is absent.
+
+Related: `localhost` and `127.0.0.1` are not interchangeable in a packaged
+Chromium — name resolution, IPv6 vs IPv4, and PNA classification can each
+differ, and every failure looks identical. Try both.
