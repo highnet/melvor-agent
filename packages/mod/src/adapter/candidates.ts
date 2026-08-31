@@ -19,8 +19,24 @@ export function readGatherCandidates(): Candidate[] {
     ...safely('woodcutting', woodcuttingCandidates),
     ...safely('mining', miningCandidates),
     ...safely('fishing', fishingCandidates),
-    ...genericSkillCandidates(),
+    ...safely('other skills', genericSkillCandidates),
   ].sort((a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0));
+}
+
+/** Recipe list for a skill, or null when the skill does not expose one. */
+function safeRecipes(skill: { actions?: { allObjects: RecipeLike[] } }): RecipeLike[] | null {
+  try {
+    return skill.actions?.allObjects ?? null;
+  } catch {
+    return null;
+  }
+}
+
+interface RecipeLike {
+  id: string;
+  name: string;
+  level: number;
+  baseExperience: number;
 }
 
 /**
@@ -48,25 +64,33 @@ function genericSkillCandidates(): Candidate[] {
     if (skill === undefined) continue;
 
     const withActions = skill as AnySkill & {
-      actions?: {
-        allObjects: { id: string; name: string; level: number; baseExperience: number }[];
-      };
+      actions?: { allObjects: RecipeLike[] };
       actionInterval?: number;
       isMasteryActionUnlocked?: (recipe: object) => boolean;
       getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean };
     };
 
-    const recipes = withActions.actions?.allObjects;
-    if (recipes === undefined) continue;
+    const recipes = safeRecipes(withActions);
+    if (recipes === null) continue;
 
-    const interval = withActions.actionInterval ?? 0;
+    // Throws on the artisan skills when no recipe is selected. A nominal 3s
+    // keeps every recipe comparable to the others rather than dropping the
+    // whole skill; it is an approximation either way, since this is the skill's
+    // current interval and not a per-recipe one.
+    const interval = safeNumber(() => withActions.actionInterval, 3000);
     const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
     for (const recipe of recipes) {
-      if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
-      // Costs exist only on the crafting-style skills; where present, an
-      // unaffordable recipe is not a real option.
-      if (withActions.getRecipeCosts?.(recipe).checkIfOwned() === false) continue;
+      try {
+        if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
+        // Costs exist only on the crafting-style skills; where present, an
+        // unaffordable recipe is not a real option.
+        if (withActions.getRecipeCosts?.(recipe).checkIfOwned() === false) continue;
+      } catch {
+        // A recipe whose availability cannot be determined is not offered:
+        // a candidate the adapter would then refuse is a planner trap.
+        continue;
+      }
 
       candidates.push({
         kind: 'gather_resource',
@@ -131,10 +155,17 @@ function woodcuttingCandidates(): Candidate[] {
 /**
  * Runs one skill's enumeration, returning nothing if it throws.
  *
- * Game getters are not uniformly safe to read in an arbitrary state — Mining's
- * `actionInterval` throws with no rock selected, and others may too. Without
- * this, one such getter empties the entire candidate list and the agent has
- * nothing at all to do, which is a far worse outcome than losing one skill.
+ * Game getters are not uniformly safe to read in an arbitrary state, and this
+ * is not a rare edge: candidate enumeration runs precisely when *nothing* is
+ * selected, which is the state several getters refuse to answer in. Observed in
+ * a real session:
+ *
+ * - `Mining.actionInterval` — "Tried to get active rock data, but none is selected"
+ * - artisan `actionInterval` — "Tried to access active recipe, but none is selected"
+ *
+ * Without per-skill isolation one such getter empties the entire candidate list
+ * and the agent has nothing at all to do — a far worse outcome than losing one
+ * skill's options.
  */
 function safely(name: string, enumerate: () => Candidate[]): Candidate[] {
   try {
@@ -142,6 +173,20 @@ function safely(name: string, enumerate: () => Candidate[]): Candidate[] {
   } catch (error) {
     console.warn(`[play-agent] ${name} candidates unavailable:`, error);
     return [];
+  }
+}
+
+/**
+ * Reads a getter that may throw when the game has nothing selected.
+ *
+ * Returns the fallback rather than propagating, because "this number is
+ * currently unknowable" is a normal state here, not an error.
+ */
+function safeNumber(read: () => number | undefined, fallback: number): number {
+  try {
+    return read() ?? fallback;
+  } catch {
+    return fallback;
   }
 }
 
