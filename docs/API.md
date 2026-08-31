@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-44 exports.
+49 exports.
 
 ## `act`
 
@@ -81,6 +81,22 @@ re-registers will configure the existing entry rather than duplicating it.
 
 ```ts
 addSidebarPanel: (options: SidebarPanelOptions) => PanelHandle
+```
+
+## `ARTISAN_SKILL_IDS`
+
+`const`
+
+The six skills that inherit `ArtisanSkill`.
+
+Unlike the gathering skills, these genuinely do share one API — `ArtisanSkill`
+defines `selectRecipeOnClick`, `selectedRecipe`, `createButtonOnClick` and
+`getRecipeCosts` for all of them — so one verified routine covers all six.
+This is a real shared base class in the game's own hierarchy, not an
+abstraction invented here.
+
+```ts
+ARTISAN_SKILL_IDS: readonly ["melvorD:Smithing", "melvorD:Crafting", "melvorD:Fletching", "melvorD:Herblore", "melvorD:Runecrafting", "melvorD:Summoning"]
 ```
 
 ## `BankState`
@@ -239,6 +255,26 @@ though the underlying selection state differs wildly.
 GatheringProjection: any
 ```
 
+## `isArtisanSkill`
+
+`function`
+
+Whether an id names one of the artisan skills.
+
+```ts
+isArtisanSkill: (skillId: string) => skillId is ArtisanSkillId
+```
+
+## `isMiscSkill`
+
+`function`
+
+Whether an id names one of the individually-routed skills.
+
+```ts
+isMiscSkill: (skillId: string) => skillId is MiscSkillId
+```
+
 ## `isRefusedRealm`
 
 `function`
@@ -255,6 +291,23 @@ isRefusedRealm: (realmId: string) => boolean
 
 ```ts
 MINING_ID: "melvorD:Mining"
+```
+
+## `MISC_SKILL_IDS`
+
+`const`
+
+Skills that share no base class with anything else and need their own routine.
+
+Each entry below was read out of the typings individually. The variety is the
+point: Firemaking selects a log then burns it, Cooking selects per *category*
+and starts per category, Thieving takes an area and an NPC together, Astrology
+has a single study call, Agility runs a whole prebuilt course with no per-item
+selection at all, and Harvesting clicks a vein. Any shared abstraction across
+these would be invented rather than observed.
+
+```ts
+MISC_SKILL_IDS: readonly ["melvorD:Firemaking", "melvorD:Cooking", "melvorD:Thieving", "melvorD:Astrology", "melvorD:Agility", "melvorD:AltMagic", "melvorItA:Harvesting"]
 ```
 
 ## `Objective`
@@ -482,6 +535,22 @@ sellItem: (itemId: string, quantity: number, isSuspended: () => boolean) => Acti
 
 ```ts
 SkillState: any
+```
+
+## `STARTABLE_SKILL_IDS`
+
+`const`
+
+Every skill the agent can start.
+
+Deliberately excludes: the combat skills, which are started through the
+combat manager and are gated on the Phase 2 survivability check; Farming,
+which is plant-then-harvest rather than a continuous action and deserves its
+own objective kind; and Township, Cartography and Archaeology, whose flows
+are management interfaces rather than a single startable action.
+
+```ts
+STARTABLE_SKILL_IDS: readonly string[]
 ```
 
 ## `startGathering`

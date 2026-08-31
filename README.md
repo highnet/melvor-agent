@@ -161,6 +161,30 @@ Documented conventions rot. These are checked:
 - **The build asserts its own output exports `setup`.** A wrong esbuild format
   produces a mod that loads and silently never runs.
 
+## Skill coverage
+
+16 skills can be started, stopped and verified:
+
+| Family | Skills | Routing |
+|---|---|---|
+| Gathering | Woodcutting, Mining, Fishing | one routine each — the selection APIs differ completely |
+| Artisan | Smithing, Crafting, Fletching, Herblore, Runecrafting, Summoning | **one shared routine** — they inherit `ArtisanSkill` |
+| Individual | Firemaking, Cooking, Thieving, Astrology, Agility, Alt Magic, Harvesting | one routine each |
+
+Deliberately excluded, with reasons:
+
+- **Combat skills** (Attack, Strength, Defence, Hitpoints, Ranged, Magic, Prayer,
+  Slayer) — started through the combat manager and gated on the Phase 2
+  survivability check. Enabling them before that gate exists would be the one
+  way this agent can lose something irreversible.
+- **Farming** — plant-then-wait-then-harvest, not a continuous action. It needs
+  its own objective kind rather than being forced into `gather_resource`.
+- **Township, Cartography, Archaeology** — management interfaces rather than a
+  single startable action.
+- **Alt Magic spells that consume a chosen bank item** — they need a second
+  selection whose correct argument depends on the spell's consumption type.
+  Refused explicitly rather than guessed at.
+
 ## Timescale
 
 **We run at real time — no speedup mod.** The quality metric is progress per

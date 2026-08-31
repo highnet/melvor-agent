@@ -1,6 +1,8 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { isArtisanSkill, startArtisan, stopArtisan } from './artisan.js';
+import { isMiscSkill, startMiscSkill, stopMiscSkill } from './skills-misc.js';
 
 /**
  * Namespaced ids of the gathering skills with a verified executor.
@@ -74,13 +76,43 @@ export function startGathering(
     case FISHING_ID:
       return startFishingOn(recipeId, isSuspended);
     default:
+      // Artisan skills share a real base class in the game's hierarchy;
+      // everything else is routed individually.
+      if (isArtisanSkill(skillId)) return startArtisan(skillId, recipeId, isSuspended);
+      if (isMiscSkill(skillId)) return startMiscSkill(skillId, recipeId, isSuspended);
       return fail(
-        'gathering.start',
+        'skill.start',
         'precondition',
-        `no verified executor for skill ${skillId}; selection APIs are not uniform, so each needs one`,
+        `no verified routine for skill ${skillId}; selection APIs are not uniform, so each needs one`,
       );
   }
 }
+
+/**
+ * Every skill the agent can start.
+ *
+ * Deliberately excludes: the combat skills, which are started through the
+ * combat manager and are gated on the Phase 2 survivability check; Farming,
+ * which is plant-then-harvest rather than a continuous action and deserves its
+ * own objective kind; and Township, Cartography and Archaeology, whose flows
+ * are management interfaces rather than a single startable action.
+ */
+export const STARTABLE_SKILL_IDS: readonly string[] = [
+  ...GATHERING_SKILL_IDS,
+  'melvorD:Smithing',
+  'melvorD:Crafting',
+  'melvorD:Fletching',
+  'melvorD:Herblore',
+  'melvorD:Runecrafting',
+  'melvorD:Summoning',
+  'melvorD:Firemaking',
+  'melvorD:Cooking',
+  'melvorD:Thieving',
+  'melvorD:Astrology',
+  'melvorD:Agility',
+  'melvorD:AltMagic',
+  'melvorItA:Harvesting',
+];
 
 /** Refuses when another skill already holds the game's single action slot. */
 function actionSlotHeldBy(skillId: string): string | null {
@@ -260,9 +292,12 @@ export function stopGathering(
   skillId: string,
   isSuspended: () => boolean,
 ): ActionResult<GatheringProjection> {
+  if (isArtisanSkill(skillId)) return stopArtisan(skillId, isSuspended);
+  if (isMiscSkill(skillId)) return stopMiscSkill(skillId, isSuspended);
+
   const skill = gatheringSkill(skillId);
   if (skill === null) {
-    return fail('gathering.stop', 'precondition', `no verified executor for skill ${skillId}`);
+    return fail('skill.stop', 'precondition', `no verified routine for skill ${skillId}`);
   }
 
   return act(

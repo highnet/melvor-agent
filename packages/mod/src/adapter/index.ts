@@ -16,9 +16,12 @@
 export { act, type ActSpec } from './act.js';
 export { readBankQuantity, sellItem, type SaleProjection } from './bank.js';
 export { readGatherCandidates, readSellCandidates } from './candidates.js';
+export { ARTISAN_SKILL_IDS, isArtisanSkill } from './artisan.js';
+export { MISC_SKILL_IDS, isMiscSkill } from './skills-misc.js';
 export {
   FISHING_ID,
   GATHERING_SKILL_IDS,
+  STARTABLE_SKILL_IDS,
   MINING_ID,
   WOODCUTTING_ID,
   startGathering,

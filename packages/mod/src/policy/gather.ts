@@ -10,9 +10,25 @@ import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
  * silently disagree about what is executable — only about what is attempted.
  */
 const SUPPORTED_GATHERING_SKILLS: ReadonlySet<string> = new Set([
+  // Gathering
   'melvorD:Woodcutting',
   'melvorD:Mining',
   'melvorD:Fishing',
+  // Artisan (one shared routine — they inherit ArtisanSkill)
+  'melvorD:Smithing',
+  'melvorD:Crafting',
+  'melvorD:Fletching',
+  'melvorD:Herblore',
+  'melvorD:Runecrafting',
+  'melvorD:Summoning',
+  // Individually routed
+  'melvorD:Firemaking',
+  'melvorD:Cooking',
+  'melvorD:Thieving',
+  'melvorD:Astrology',
+  'melvorD:Agility',
+  'melvorD:AltMagic',
+  'melvorItA:Harvesting',
 ]);
 
 /**

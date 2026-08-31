@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { startGathering, stopGathering } from '../src/adapter/gathering.js';
+import { STARTABLE_SKILL_IDS, startGathering, stopGathering } from '../src/adapter/gathering.js';
 
 /**
  * Exercises the observe → verify → act contract against stand-ins for the game.
@@ -284,7 +284,7 @@ describe('startGathering — cross-cutting guards', () => {
     const result = startGathering('melvorD:Township', 'melvorD:Whatever', never);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.detail).toContain('no verified executor');
+    expect(result.detail).toContain('no verified routine');
   });
 
   it('refuses an unregistered recipe id', () => {
@@ -317,5 +317,39 @@ describe('stopGathering', () => {
     if (result.ok) return;
     expect(result.reason).toBe('precondition');
     expect(woodcutting.isActive).toBe(true);
+  });
+});
+
+describe('skill coverage', () => {
+  it('routes every startable skill to a verified routine', () => {
+    // Guards against a skill being listed as supported while its routine was
+    // never written — the list and the router must not drift apart.
+    for (const skillId of STARTABLE_SKILL_IDS) {
+      const result = startGathering(skillId, 'melvorD:Some_Recipe', never);
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      // Any refusal is fine except "no routine": that would mean the skill is
+      // advertised but unroutable.
+      expect(result.detail).not.toContain('no verified routine');
+    }
+  });
+
+  it('excludes combat, Farming, Township, Cartography and Archaeology', () => {
+    // Combat needs the Phase 2 survivability gate; Farming is plant-then-harvest
+    // rather than a continuous action; the rest are management interfaces.
+    for (const excluded of [
+      'melvorD:Attack',
+      'melvorD:Slayer',
+      'melvorD:Farming',
+      'melvorD:Township',
+      'melvorAoD:Cartography',
+      'melvorAoD:Archaeology',
+    ]) {
+      expect(STARTABLE_SKILL_IDS).not.toContain(excluded);
+      const result = startGathering(excluded, 'melvorD:Whatever', never);
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.detail).toContain('no verified routine');
+    }
   });
 });

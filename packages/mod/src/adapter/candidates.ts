@@ -1,5 +1,5 @@
 import type { Candidate } from '@melvor-agent/shared';
-import { FISHING_ID, MINING_ID, WOODCUTTING_ID } from './gathering.js';
+import { FISHING_ID, MINING_ID, STARTABLE_SKILL_IDS, WOODCUTTING_ID } from './gathering.js';
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -14,9 +14,71 @@ const MS_PER_HOUR = 3_600_000;
  * @returns Candidates with XP/hr and GP/hr attached, best XP first.
  */
 export function readGatherCandidates(): Candidate[] {
-  return [...woodcuttingCandidates(), ...miningCandidates(), ...fishingCandidates()].sort(
-    (a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0),
-  );
+  return [
+    ...woodcuttingCandidates(),
+    ...miningCandidates(),
+    ...fishingCandidates(),
+    ...genericSkillCandidates(),
+  ].sort((a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0));
+}
+
+/**
+ * Candidates for every other startable skill.
+ *
+ * These share one shape because `SkillWithMastery` gives them all an `actions`
+ * registry of `BasicSkillRecipe`, which carries `level` and `baseExperience`.
+ * The *rate* is the honest approximation here: `actionInterval` is the skill's
+ * current modified interval rather than a per-recipe one, so XP/hr is exact for
+ * whatever is selected and indicative for the rest. Inventing a per-recipe
+ * interval the game does not expose would be worse than an approximation the
+ * planner can compare consistently.
+ *
+ * Recipes the player cannot currently do are filtered out, so an unaffordable
+ * or locked option is absent rather than offered and then refused.
+ */
+function genericSkillCandidates(): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  for (const skillId of STARTABLE_SKILL_IDS) {
+    // The three gathering skills have their own, more accurate enumerations.
+    if (skillId === WOODCUTTING_ID || skillId === MINING_ID || skillId === FISHING_ID) continue;
+
+    const skill = game.skills.getObjectByID(skillId);
+    if (skill === undefined) continue;
+
+    const withActions = skill as AnySkill & {
+      actions?: {
+        allObjects: { id: string; name: string; level: number; baseExperience: number }[];
+      };
+      actionInterval?: number;
+      isMasteryActionUnlocked?: (recipe: object) => boolean;
+      getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean };
+    };
+
+    const recipes = withActions.actions?.allObjects;
+    if (recipes === undefined) continue;
+
+    const interval = withActions.actionInterval ?? 0;
+    const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
+
+    for (const recipe of recipes) {
+      if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
+      // Costs exist only on the crafting-style skills; where present, an
+      // unaffordable recipe is not a real option.
+      if (withActions.getRecipeCosts?.(recipe).checkIfOwned() === false) continue;
+
+      candidates.push({
+        kind: 'gather_resource',
+        params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
+        label: `${skill.name}: ${recipe.name}`,
+        xpPerHour: actionsPerHour * recipe.baseExperience,
+        requiresLevel: recipe.level,
+        available: true,
+      });
+    }
+  }
+
+  return candidates;
 }
 
 /**
