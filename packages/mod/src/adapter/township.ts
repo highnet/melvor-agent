@@ -282,3 +282,94 @@ export function readTownshipSummary(): TownshipSummary | null {
     })),
   };
 }
+
+/**
+ * Chooses the town's worship.
+ *
+ * Worship is a set of permanent modifiers for the whole town, and the first
+ * choice is free. Changing it afterwards costs 50,000,000 GP *and destroys
+ * every worship building*, which is why the cost is stated plainly in the
+ * candidate label rather than hidden behind a confirmation the agent would
+ * click through.
+ *
+ * Nothing here refuses on the operator's behalf. A town left on no worship
+ * forever is a real loss, and an agent that cannot choose one cannot play
+ * Township properly.
+ *
+ * `selectWorship` only stages the choice; `confirmWorship` applies it. Both are
+ * called, and the town's actual worship is observed either side.
+ */
+export function selectTownshipWorship(
+  worshipId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ worshipId: string }> {
+  const township = game.township;
+  const worship = township.worships.getObjectByID(worshipId);
+  if (worship === undefined) {
+    return fail('township.worship', 'precondition', `no township worship ${worshipId}`);
+  }
+
+  const project = (): { worshipId: string } => ({ worshipId: township.townData.worship.id });
+
+  return act(
+    {
+      name: 'township.worship',
+      observe: project,
+      precondition: () => {
+        if (!township.townData.townCreated) return 'the town has not been created yet';
+        if (project().worshipId === worshipId) return `${worshipId} is already the town's worship`;
+        // `isWorshipUnlocked` lives on the Township *UI* class, not the skill,
+        // so the requirement check is the reachable equivalent.
+        if (!game.checkRequirements(worship.unlockRequirements, false)) {
+          return `${worshipId} is not unlocked`;
+        }
+        // Only a *change* costs anything; the first choice is free.
+        const isChange = township.townData.worship !== township.noWorship;
+        if (isChange && !township.canAffordWorshipChange) {
+          return `changing worship costs ${township.WORSHIP_CHANGE_COST.toLocaleString()} GP and destroys every worship building`;
+        }
+        return null;
+      },
+      perform: () => {
+        township.selectWorship(worship);
+        township.confirmWorship();
+      },
+      changed: (_before, after) => after.worshipId === worshipId,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Worship choices available to the town.
+ *
+ * Only offered while the town has none. Once a worship is set, switching is a
+ * 50M GP decision that also destroys buildings, and putting that in the same
+ * list as "build a hut" invites it to be chosen by a planner skimming labels.
+ * An operator who wants the switch can still ask for it directly.
+ */
+export function readWorshipCandidates(): Candidate[] {
+  const township = game.township;
+  if (!township.townData.townCreated) return [];
+  if (township.townData.worship !== township.noWorship) return [];
+
+  const candidates: Candidate[] = [];
+
+  for (const worship of township.worships.allObjects) {
+    try {
+      if (worship === township.noWorship) continue;
+      if (!game.checkRequirements(worship.unlockRequirements, false)) continue;
+
+      candidates.push({
+        kind: 'select_worship',
+        params: { kind: 'select_worship', worshipId: worship.id },
+        label: `Worship ${worship.name} — free now, 50,000,000 GP to change later`,
+        available: true,
+      });
+    } catch {
+      // A worship that cannot report its unlock state is not a candidate.
+    }
+  }
+
+  return candidates;
+}

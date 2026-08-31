@@ -180,6 +180,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `upgrading into ${params.upgradedItemId}`,
       );
 
+    case 'select_worship':
+      return act(
+        { type: 'select_worship', worshipId: params.worshipId },
+        `setting the town's worship to ${params.worshipId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

@@ -58,6 +58,7 @@ const DESCRIPTIONS: Record<string, string> = {
   select_level_cap: 'Choose which skill a level cap increase raises',
   passive_cook: 'Start passive cooking, which runs behind everything else',
   run_golbin_raid: 'Play a Golbin Raid, answering each choice it stops on',
+  select_worship: "Choose the town's worship while it is still free",
 };
 
 /** Systems with no capability, and why that is the right call. */
@@ -67,8 +68,8 @@ const NOT_COVERED: [string, string][] = [
   ['Mastery checkpoints', 'applied by the game the moment the threshold is crossed'],
   ['Bank tabs and sorting', 'cosmetic; no effect on what the character can do'],
   [
-    'Township worship changes',
-    'costs 50,000,000 GP and destroys every worship building — the one change whose cost dwarfs any plan the agent could form around it',
+    'Switching an existing Township worship',
+    'the first choice is a capability; switching later costs 50,000,000 GP and destroys every worship building, so it is not offered beside "build a hut" where a planner skimming labels could pick it',
   ],
   [
     'Item downgrades',

@@ -56,11 +56,13 @@ import {
   readTownHealthCandidates,
   readTownshipCandidates,
   readUpgradeCandidates,
+  readWorshipCandidates,
   repairTownshipBuilding,
   selectAttackSpell,
   selectDigSiteMap,
   selectDigSiteTool,
   selectLevelCapIncrease,
+  selectTownshipWorship,
   sellItem,
   setAttackStyle,
   spendMasteryPool,
@@ -793,6 +795,8 @@ export class Agent {
         return increaseTownHealth(action.resourceId, action.amount, isSuspended);
       case 'upgrade_item':
         return upgradeBankItem(action.upgradedItemId, action.quantity, isSuspended);
+      case 'select_worship':
+        return selectTownshipWorship(action.worshipId, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1008,6 +1012,7 @@ export class Agent {
       ['mastery', readMasteryCandidates],
       ['spell', readSpellCandidates],
       ['township', readTownshipCandidates],
+      ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
       ['loadout', readLoadoutCandidates],
       ['dig site setup', readDigSiteSetupCandidates],

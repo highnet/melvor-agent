@@ -50,6 +50,7 @@ describe('capability registry', () => {
       'select_dig_tool',
       'select_level_cap',
       'select_spell',
+      'select_worship',
       'sell_items',
       'set_attack_style',
       'spend_mastery',

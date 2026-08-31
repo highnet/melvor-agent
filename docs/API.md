@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-123 exports.
+125 exports.
 
 ## `act`
 
@@ -1215,6 +1215,21 @@ for something else.
 readUpgradeCandidates: () => Candidate[]
 ```
 
+## `readWorshipCandidates`
+
+`function`
+
+Worship choices available to the town.
+
+Only offered while the town has none. Once a worship is set, switching is a
+50M GP decision that also destroys buildings, and putting that in the same
+list as "build a hut" invites it to be chosen by a planner skimming labels.
+An operator who wants the switch can still ask for it directly.
+
+```ts
+readWorshipCandidates: () => Candidate[]
+```
+
 ## `repairTownshipBuilding`
 
 `function`
@@ -1302,6 +1317,29 @@ cannot silently raise the cap of whichever skill happens to be listed third.
 
 ```ts
 selectLevelCapIncrease: (capIncreaseId: string, skillId: string, isSuspended: () => boolean) => ActionResult<{ skillId: string; levelCap: number; pending: number; }>
+```
+
+## `selectTownshipWorship`
+
+`function`
+
+Chooses the town's worship.
+
+Worship is a set of permanent modifiers for the whole town, and the first
+choice is free. Changing it afterwards costs 50,000,000 GP *and destroys
+every worship building*, which is why the cost is stated plainly in the
+candidate label rather than hidden behind a confirmation the agent would
+click through.
+
+Nothing here refuses on the operator's behalf. A town left on no worship
+forever is a real loss, and an agent that cannot choose one cannot play
+Township properly.
+
+`selectWorship` only stages the choice; `confirmWorship` applies it. Both are
+called, and the town's actual worship is observed either side.
+
+```ts
+selectTownshipWorship: (worshipId: string, isSuspended: () => boolean) => ActionResult<{ worshipId: string; }>
 ```
 
 ## `sellItem`

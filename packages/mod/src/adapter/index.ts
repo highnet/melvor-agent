@@ -90,6 +90,8 @@ export {
 export {
   buildTownshipBuilding,
   readTownshipCandidates,
+  readWorshipCandidates,
+  selectTownshipWorship,
   readTownshipSummary,
   repairTownshipBuilding,
   type TownshipProjection,

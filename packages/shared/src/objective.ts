@@ -44,6 +44,7 @@ export const objectiveKindSchema = z.enum([
   'passive_cook',
   'restore_town_health',
   'upgrade_item',
+  'select_worship',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -212,6 +213,11 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('upgrade_item'),
     upgradedItemId: gameIdSchema,
     quantity: z.number().int().positive(),
+  }),
+  z.object({
+    /** Free the first time; 50M GP and every worship building to change later. */
+    kind: z.literal('select_worship'),
+    worshipId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('toggle_curse'),
