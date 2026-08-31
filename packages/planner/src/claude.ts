@@ -1,7 +1,6 @@
 import type Anthropic from '@anthropic-ai/sdk';
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
+import { jsonSchemaOutputFormat } from '@anthropic-ai/sdk/helpers/json-schema';
 import type { Candidate, JournalDigest, PlannerRequest } from '@melvor-agent/shared';
-import { z } from 'zod';
 
 const MODEL = process.env.PLANNER_MODEL ?? 'claude-opus-5';
 
@@ -17,32 +16,45 @@ const MODEL = process.env.PLANNER_MODEL ?? 'claude-opus-5';
  * which matters, because a hand-written id is exactly the mistake that produced
  * "no tree registered with id melvorD:Normal_Tree" on the first live run.
  */
-const plannerChoiceSchema = z.object({
-  candidateIndex: z
-    .number()
-    .int()
-    .describe('Zero-based index into the candidates list. Must be one of the listed indices.'),
-  targetLevel: z
-    .number()
-    .int()
-    .min(1)
-    .max(120)
-    .describe('Skill level to reach before this objective is considered done.'),
-  abortMinutes: z
-    .number()
-    .int()
-    .min(5)
-    .max(720)
-    .describe('Give up after this many minutes even if the target is not reached.'),
-  rationale: z
-    .string()
-    .describe('One sentence, for the operator log, on why this beats the alternatives.'),
-  reasoning: z
-    .string()
-    .describe('Two or three sentences of the actual reasoning, including what was rejected.'),
-});
+const PLANNER_CHOICE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['candidateIndex', 'targetLevel', 'abortMinutes', 'rationale', 'reasoning'],
+  properties: {
+    candidateIndex: {
+      type: 'integer',
+      description: 'Zero-based index into the candidates list. Must be one of the listed indices.',
+    },
+    targetLevel: {
+      type: 'integer',
+      minimum: 1,
+      maximum: 120,
+      description: 'Skill level to reach before this objective is considered done.',
+    },
+    abortMinutes: {
+      type: 'integer',
+      minimum: 5,
+      maximum: 720,
+      description: 'Give up after this many minutes even if the target is not reached.',
+    },
+    rationale: {
+      type: 'string',
+      description: 'One sentence, for the operator log, on why this beats the alternatives.',
+    },
+    reasoning: {
+      type: 'string',
+      description: 'Two or three sentences of the actual reasoning, including what was rejected.',
+    },
+  },
+} as const;
 
-export type PlannerChoice = z.infer<typeof plannerChoiceSchema>;
+export interface PlannerChoice {
+  candidateIndex: number;
+  targetLevel: number;
+  abortMinutes: number;
+  rationale: string;
+  reasoning: string;
+}
 
 /**
  * What the agent is for, stated once.
@@ -105,7 +117,7 @@ export async function chooseObjective(
       // this is the lever to raise if the choices start looking careless.
       output_config: {
         effort: 'medium',
-        format: zodOutputFormat(plannerChoiceSchema),
+        format: jsonSchemaOutputFormat(PLANNER_CHOICE_SCHEMA),
       },
       system: [{ type: 'text', text: SYSTEM, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: renderRequest(request) }],
@@ -120,7 +132,7 @@ export async function chooseObjective(
       };
     }
 
-    const choice = response.parsed_output;
+    const choice = response.parsed_output as PlannerChoice | null | undefined;
     if (choice === null || choice === undefined) {
       return { ok: false, reason: 'model returned no parseable choice' };
     }

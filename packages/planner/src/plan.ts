@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk';
 import type {
   Candidate,
   ObjectiveParams,
@@ -6,8 +7,60 @@ import type {
   SuccessCriterion,
 } from '@melvor-agent/shared';
 import { plannerResponseSchema } from '@melvor-agent/shared';
+import { chooseObjective } from './claude.js';
 
 const GP_CURRENCY_ID = 'melvorD:GP';
+
+/**
+ * Daily output-token ceiling for planning.
+ *
+ * The agent runs for days and replans on every completion, abort and offline
+ * exit, so an unbounded planner is an unbounded bill. Past the cap it falls
+ * back to the heuristic and keeps playing.
+ */
+const DAILY_TOKEN_BUDGET = Number(process.env.PLANNER_DAILY_TOKEN_BUDGET ?? 200_000);
+
+/** Consecutive model failures before the planner is considered unhealthy. */
+const FAILURE_THRESHOLD = 2;
+
+const client = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
+
+let tokensUsedToday = 0;
+let budgetDay = new Date().toISOString().slice(0, 10);
+let consecutiveFailures = 0;
+
+/** Live planner health, surfaced on /health so it is visible without digging. */
+export function plannerStatus() {
+  return {
+    model: client === null ? 'heuristic (no ANTHROPIC_API_KEY)' : 'claude',
+    tokensUsedToday,
+    dailyTokenBudget: DAILY_TOKEN_BUDGET,
+    consecutiveFailures,
+    degraded: consecutiveFailures >= FAILURE_THRESHOLD,
+  };
+}
+
+/** Whether the model should be consulted at all this call. */
+function modelAvailable(): string | null {
+  if (client === null) return 'no ANTHROPIC_API_KEY set';
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (today !== budgetDay) {
+    budgetDay = today;
+    tokensUsedToday = 0;
+    consecutiveFailures = 0;
+  }
+
+  if (tokensUsedToday >= DAILY_TOKEN_BUDGET) {
+    return `daily token budget spent (${tokensUsedToday}/${DAILY_TOKEN_BUDGET})`;
+  }
+  // Degrade, never halt: after repeated failures stop paying for calls that are
+  // not working and let the heuristic carry the agent until the next day.
+  if (consecutiveFailures >= FAILURE_THRESHOLD) {
+    return `planner degraded after ${consecutiveFailures} consecutive failures`;
+  }
+  return null;
+}
 
 /**
  * Selects and orders objectives.
@@ -25,6 +78,42 @@ const GP_CURRENCY_ID = 'melvorD:GP';
  * @returns A validated planner response.
  */
 export async function plan(request: PlannerRequest): Promise<PlannerResponse> {
+  const unavailable = modelAvailable();
+
+  if (unavailable === null && client !== null) {
+    const result = await chooseObjective(request, client);
+
+    if (result.ok) {
+      consecutiveFailures = 0;
+      tokensUsedToday += result.usage.outputTokens;
+
+      const chosen = request.candidates[result.choice.candidateIndex];
+      if (chosen !== undefined) {
+        // Params are copied from the candidate, never from the model. The model
+        // chose *which*; it cannot choose *what*.
+        return plannerResponseSchema.parse({
+          objectives: [
+            {
+              id: `claude-${request.trigger}-${request.snapshot.capturedAt}`,
+              kind: chosen.kind,
+              params: chosen.params,
+              successWhen: [successForChoice(chosen, result.choice.targetLevel, request)],
+              abortWhen: { minutesExceed: result.choice.abortMinutes },
+              expectedDurationMin: Math.min(result.choice.abortMinutes, 60),
+              rationale: result.choice.rationale,
+            },
+          ],
+          reasoning: result.choice.reasoning,
+        });
+      }
+    } else {
+      consecutiveFailures += 1;
+      console.warn(`[planner] model call failed (${consecutiveFailures}): ${result.reason}`);
+    }
+  } else if (unavailable !== null) {
+    console.log(`[planner] using heuristic: ${unavailable}`);
+  }
+
   const best = [...request.candidates].sort((a, b) => score(b) - score(a))[0];
 
   if (best === undefined) {
@@ -54,6 +143,25 @@ export async function plan(request: PlannerRequest): Promise<PlannerResponse> {
   // Validated on the way out too, so the stub cannot emit something the mod
   // would reject — the failure would otherwise only surface in the game.
   return plannerResponseSchema.parse(response);
+}
+
+/**
+ * Success criterion for a model-chosen candidate.
+ *
+ * Uses the chosen level where the candidate names a skill, and falls back to
+ * the heuristic's own criterion otherwise — a sale or a purchase has no level
+ * to reach.
+ */
+function successForChoice(
+  candidate: Candidate,
+  targetLevel: number,
+  request: PlannerRequest,
+): SuccessCriterion {
+  const params = candidate.params;
+  if ('skillId' in params) {
+    return { type: 'skill_level_at_least', skillId: params.skillId, level: targetLevel };
+  }
+  return successFor(params, request);
 }
 
 /**

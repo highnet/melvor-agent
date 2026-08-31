@@ -199,6 +199,28 @@ pnpm verify
 Runs lint, typecheck, the adapter-boundary check, the API docs drift check, and
 the tests.
 
+## How planning works
+
+Three ways to plan, sharing one contract. In every one the mod supplies a list
+of candidates it has **proven it can execute**, and the planner picks an index —
+it never authors skill or recipe ids. A hallucinated objective is structurally
+impossible, not merely discouraged.
+
+**1. A Claude Code session (primary).** `.mcp.json` registers an MCP server
+exposing `get_agent_state`, `list_candidates`, `set_objective`, `get_journal`,
+`get_recent_activity` and `control_agent`. Open a session in this repo and it
+can read the game and decide what to play next.
+
+**2. The Claude API (unattended).** With `ANTHROPIC_API_KEY` set, `/plan` calls
+`claude-opus-5` with a structured output constrained to a candidate index plus a
+target and a budget. This is what keeps the agent going at 4am when no session
+is attached. Bounded by `PLANNER_DAILY_TOKEN_BUDGET` (default 200k output
+tokens/day); past that it falls back to the heuristic.
+
+**3. A deterministic heuristic (always).** Scores candidates on XP/hr. Used when
+there is no API key, when the budget is spent, and after two consecutive model
+failures. Degrade, never halt — `GET /health` reports which is live.
+
 ## The rules this codebase enforces mechanically
 
 Documented conventions rot. These are checked:

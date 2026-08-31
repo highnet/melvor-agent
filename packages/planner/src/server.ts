@@ -9,7 +9,7 @@ import {
 } from '@melvor-agent/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { plan } from './plan.js';
+import { plan, plannerStatus } from './plan.js';
 import { Store } from './store.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -147,7 +147,7 @@ app.post('/plan', async (c) => {
   return c.json(await plan(parsed.data));
 });
 
-app.get('/health', (c) => c.json({ ok: true, dataDir: DATA_DIR }));
+app.get('/health', (c) => c.json({ ok: true, dataDir: DATA_DIR, planner: plannerStatus() }));
 
 /**
  * Progress per real-time hour — the one quality metric.
