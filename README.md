@@ -86,10 +86,23 @@ Watch-build the mod (reload the game after each build):
 pnpm dev
 ```
 
-Open the dashboard:
+Open the dashboard, in your own terminal:
 
 ```bash
-pnpm --filter @melvor-agent/tui start
+pnpm tui
+```
+
+It takes over the terminal (alternate screen, raw-mode keys), so it needs a real
+TTY — it cannot be driven from a non-interactive shell or an agent tool call.
+Everything it does is also available over plain HTTP on the service, which is
+the better route for scripting:
+
+```bash
+curl -s localhost:8787/dashboard
+```
+
+```bash
+curl -s -X POST localhost:8787/command -H 'content-type: application/json' -d '{"type":"arm"}'
 ```
 
 Keys: `a` arm, `d` disarm, `k` kill, `r` replan, `e` export save, `q` quit.

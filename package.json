@@ -23,7 +23,8 @@
     "release": "node --env-file=.env scripts/release-modio.mjs",
     "release:dry": "node --env-file=.env scripts/release-modio.mjs --dry-run",
     "release:check": "node --env-file=.env scripts/release-modio.mjs --check",
-    "prepare": "husky"
+    "prepare": "husky",
+    "tui": "pnpm --filter @melvor-agent/tui start"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
