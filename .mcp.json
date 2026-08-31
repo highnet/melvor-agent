@@ -3,7 +3,9 @@
     "melvor-agent": {
       "command": "node",
       "args": ["--import", "tsx", "packages/mcp/src/server.ts"],
-      "env": { "MELVOR_AGENT_URL": "http://localhost:8787" }
+      "env": {
+        "MELVOR_AGENT_URL": "http://localhost:8787"
+      }
     }
   }
 }
