@@ -37,6 +37,8 @@ export const objectiveKindSchema = z.enum([
   'select_dig_tool',
   'run_golbin_raid',
   'build_obstacle',
+  'upgrade_constellation',
+  'unlock_skill_node',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -162,6 +164,19 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     /** The obstacle's own category decides its slot, so none is passed. */
     kind: z.literal('build_obstacle'),
     obstacleId: gameIdSchema,
+  }),
+  z.object({
+    /** Stardust has no other use, so unspent stardust is progress not collected. */
+    kind: z.literal('upgrade_constellation'),
+    constellationId: gameIdSchema,
+    modifierKind: z.enum(['standard', 'unique']),
+    index: z.number().int().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal('unlock_skill_node'),
+    skillId: gameIdSchema,
+    treeId: gameIdSchema,
+    nodeId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('toggle_curse'),

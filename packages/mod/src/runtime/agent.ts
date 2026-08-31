@@ -29,6 +29,7 @@ import {
   onGameEvent,
   plantFarmPlot,
   readAgilityCandidates,
+  readAstrologyCandidates,
   readBlockedOpportunities,
   readCombatGateInputs,
   readCombatTargets,
@@ -43,6 +44,7 @@ import {
   readRaidCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
+  readSkillTreeCandidates,
   readSnapshot,
   readSpellCandidates,
   readSynergyCandidates,
@@ -65,6 +67,8 @@ import {
   toggleBankLock,
   toggleCurse,
   togglePrayer,
+  unlockSkillTreeNode,
+  upgradeConstellation,
   usePotion,
 } from '../adapter/index.js';
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
@@ -687,6 +691,15 @@ export class Agent {
         return stopGolbinRaid(isSuspended);
       case 'build_obstacle':
         return buildAgilityObstacle(action.obstacleId, isSuspended);
+      case 'upgrade_constellation':
+        return upgradeConstellation(
+          action.constellationId,
+          action.modifierKind,
+          action.index,
+          isSuspended,
+        );
+      case 'unlock_skill_node':
+        return unlockSkillTreeNode(action.skillId, action.treeId, action.nodeId, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -908,6 +921,8 @@ export class Agent {
       ['synergy', readSynergyCandidates],
       ['raid', readRaidCandidates],
       ['agility', readAgilityCandidates],
+      ['astrology', readAstrologyCandidates],
+      ['skill tree', readSkillTreeCandidates],
       ['level cap', readLevelCapCandidates],
       ['combat', () => this.combatCandidates()],
     ] as const) {

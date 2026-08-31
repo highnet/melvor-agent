@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-107 exports.
+112 exports.
 
 ## `act`
 
@@ -117,6 +117,16 @@ abstraction invented here.
 
 ```ts
 ARTISAN_SKILL_IDS: readonly ["melvorD:Smithing", "melvorD:Crafting", "melvorD:Fletching", "melvorD:Herblore", "melvorD:Runecrafting", "melvorD:Summoning"]
+```
+
+## `AstrologyProjection`
+
+`interface`
+
+What upgrading claims to change.
+
+```ts
+AstrologyProjection: any
 ```
 
 ## `BankState`
@@ -675,6 +685,21 @@ forth, paying the cost each time for no gain.
 readAgilityCandidates: () => Candidate[]
 ```
 
+## `readAstrologyCandidates`
+
+`function`
+
+Constellation upgrades that are affordable now.
+
+Stardust is only ever earned by studying constellations and has no other use,
+so unspent stardust is progress the character has already paid for and not
+collected. Standard modifiers come first because their cost curve is far
+shallower than the unique ones.
+
+```ts
+readAstrologyCandidates: () => Candidate[]
+```
+
 ## `readBankQuantity`
 
 `function`
@@ -975,6 +1000,16 @@ and there is no rate to express it as.
 
 ```ts
 readShopObjectiveCandidates: () => Candidate[]
+```
+
+## `readSkillTreeCandidates`
+
+`function`
+
+Skill tree nodes that can be afforded and unlocked now.
+
+```ts
+readSkillTreeCandidates: () => Candidate[]
 ```
 
 ## `readSnapshot`
@@ -1434,6 +1469,34 @@ The town's state, for the planner to reason about.
 
 ```ts
 TownshipSummary: any
+```
+
+## `unlockSkillTreeNode`
+
+`function`
+
+Unlocks a skill tree node.
+
+Skill points accumulate from levels and are spent here or nowhere. Unlocking
+is permanent, and that is fine: every node is a gain, so the only mistake
+available is spending points on a cheaper node than the one worth saving for
+— a trade-off the planner can weigh from the labels.
+
+```ts
+unlockSkillTreeNode: (skillId: string, treeId: string, nodeId: string, isSuspended: () => boolean) => ActionResult<{ nodeId: string; unlocked: boolean; pointsLeft: number; }>
+```
+
+## `upgradeConstellation`
+
+`function`
+
+Buys one level of a constellation modifier with stardust.
+
+The upgrade methods return `void` and refuse silently when the stardust is
+short, so `timesBought` is observed either side.
+
+```ts
+upgradeConstellation: (constellationId: string, kind: ModifierKind, index: number, isSuspended: () => boolean) => ActionResult<AstrologyProjection>
 ```
 
 ## `usePotion`

@@ -94,6 +94,13 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  readAstrologyCandidates,
+  readSkillTreeCandidates,
+  unlockSkillTreeNode,
+  upgradeConstellation,
+  type AstrologyProjection,
+} from './progression.js';
+export {
   buildAgilityObstacle,
   readAgilityCandidates,
   type ObstacleProjection,

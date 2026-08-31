@@ -55,6 +55,8 @@ describe('capability registry', () => {
       'toggle_bank_lock',
       'toggle_curse',
       'toggle_prayer',
+      'unlock_skill_node',
+      'upgrade_constellation',
       'use_potion',
     ]);
     for (const kind of supportedKinds()) {

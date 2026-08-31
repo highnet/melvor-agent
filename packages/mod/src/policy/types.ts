@@ -43,6 +43,13 @@ export type PolicyAction =
   | { type: 'advance_raid'; difficulty: string }
   | { type: 'stop_raid' }
   | { type: 'build_obstacle'; obstacleId: string }
+  | {
+      type: 'upgrade_constellation';
+      constellationId: string;
+      modifierKind: 'standard' | 'unique';
+      index: number;
+    }
+  | { type: 'unlock_skill_node'; skillId: string; treeId: string; nodeId: string }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

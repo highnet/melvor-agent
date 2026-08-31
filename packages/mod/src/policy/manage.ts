@@ -119,6 +119,28 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `building ${params.obstacleId}`,
       );
 
+    case 'upgrade_constellation':
+      return act(
+        {
+          type: 'upgrade_constellation',
+          constellationId: params.constellationId,
+          modifierKind: params.modifierKind,
+          index: params.index,
+        },
+        `upgrading ${params.constellationId} ${params.modifierKind} ${params.index}`,
+      );
+
+    case 'unlock_skill_node':
+      return act(
+        {
+          type: 'unlock_skill_node',
+          skillId: params.skillId,
+          treeId: params.treeId,
+          nodeId: params.nodeId,
+        },
+        `unlocking ${params.nodeId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

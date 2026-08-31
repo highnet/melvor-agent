@@ -42,6 +42,8 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   excavate_dig_site: explore,
   run_golbin_raid: runGolbinRaid,
   build_obstacle: manage,
+  upgrade_constellation: manage,
+  unlock_skill_node: manage,
   select_dig_map: manage,
   select_dig_tool: manage,
   toggle_curse: manage,
