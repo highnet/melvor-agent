@@ -84,6 +84,16 @@ function renderContent(agent: Agent, log: Logger): HTMLElement[] {
     content.appendChild(alert);
   }
 
+  if (!agent.currentSettings.combatGateDryRun) {
+    content.appendChild(
+      el(
+        'div',
+        'alert alert-danger',
+        'Combat gate ARMED: the agent may engage and may die. Deaths are an accepted cost.',
+      ),
+    );
+  }
+
   if (agent.currentSettings.dryRun) {
     content.appendChild(
       el(
@@ -129,6 +139,23 @@ function renderControls(agent: Agent): HTMLElement {
     cell.appendChild(control);
     row.appendChild(cell);
   }
+
+  // The combat gate has its own dry run, separate from the global one, so
+  // non-combat automation can run for real while the gate is still being
+  // validated over a few dozen fights.
+  const gate = button(
+    agent.currentSettings.combatGateDryRun ? 'Combat: advisory' : 'Combat: ARMED',
+    agent.currentSettings.combatGateDryRun ? 'btn-warning' : 'btn-danger',
+    () => {
+      agent.updateSettings({
+        ...agent.currentSettings,
+        combatGateDryRun: !agent.currentSettings.combatGateDryRun,
+      });
+    },
+  );
+  const gateCell = el('div', 'col-12 mt-2');
+  gateCell.appendChild(gate);
+  row.appendChild(gateCell);
 
   // The dump must be produced from inside the game: only the running game
   // knows its own registries for the exact installed version.

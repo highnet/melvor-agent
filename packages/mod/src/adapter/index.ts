@@ -15,7 +15,18 @@
 
 export { act, type ActSpec } from './act.js';
 export { readBankQuantity, sellItem, type SaleProjection } from './bank.js';
-export { readGatherCandidates, readSellCandidates } from './candidates.js';
+export {
+  disengageCombat,
+  engageMonster,
+  readCombatGateInputs,
+  type CombatProjection,
+} from './combat.js';
+export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
+export {
+  readGatherCandidates,
+  readSellCandidates,
+  readShopObjectiveCandidates,
+} from './candidates.js';
 export { ARTISAN_SKILL_IDS, isArtisanSkill } from './artisan.js';
 export { MISC_SKILL_IDS, isMiscSkill } from './skills-misc.js';
 export {

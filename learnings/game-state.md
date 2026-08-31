@@ -126,3 +126,57 @@ The global `exportSave(update?: boolean): Promise<void>` drives the export
 *modal* — useless to an unattended agent. `game.generateSaveString(): string`
 returns the save directly, which can be posted to a local service that writes it
 to disk. The mod itself is sandboxed and cannot write files.
+
+## Damage reduction is deprecated — v1.3 uses per-damage-type resistances
+
+`EquipmentStats.damageReduction` is marked `@deprecated Use resistances instead`.
+The live API is `Character.stats.getResistance(damageType)` /
+`getResistanceByID(id)`, backed by `resistances: SparseNumericMap<DamageType>`.
+
+This matters for the combat gate: the applicable reduction depends on what the
+*specific enemy* hits with, so the enemy's `damageType` has to be read off the
+probe and fed to the player's resistance lookup. A single flat number would be
+wrong against anything unusual.
+
+## Getting a monster's max hit requires instantiating an Enemy
+
+```ts
+const probe = new Enemy(game.combat, game);   // constructor(manager, game)
+probe.setNewMonster(monster);
+probe.setStatsFromMonster(monster);
+probe.computeCombatStats();
+probe.stats.maxHit;        // now populated
+probe.damageType;          // which resistance applies
+```
+
+**Unconfirmed in-game:** whether constructing an `Enemy` bound to the live
+manager has side effects the typings do not describe. The combat gate defaults to
+advisory mode partly for this reason — watch it before trusting it.
+
+## Shop `buyItemOnClick` takes a `confirmed` flag
+
+`buyItemOnClick(purchase, confirmed?)`. Without `confirmed = true` it raises a
+confirmation modal, which nothing answers in an unattended session. Returns
+`void`, so verify via `getPurchaseCount(purchase)` rising.
+
+Useful companions, all of which avoid reimplementing cost scaling:
+`getPurchaseCosts(purchase, qty).checkIfOwned()`, `isPurchaseAtBuyLimit`,
+`capPurchaseQuantity`, and `game.checkRequirements(reqs, false)` — pass `false`
+to suppress failure toasts, or an agent probing requirements floods the screen.
+
+## `ArtisanSkill` is a real shared base — six skills, one routine
+
+Smithing, Crafting, Fletching, Herblore, Runecrafting and Summoning all extend
+`ArtisanSkill`, which defines `selectRecipeOnClick`, `selectedRecipe`,
+`createButtonOnClick` and `getRecipeCosts`. Cooking, Firemaking and Alt Magic
+extend `CraftingSkill` directly and do *not* share those.
+
+`getRecipeCosts(recipe).checkIfOwned()` is the precondition worth having: without
+it the agent presses Create against an empty bank indefinitely.
+
+## Several skill properties on `Game` are optional
+
+`cartography?`, `archaeology?`, `harvesting?`, `corruption?` are all optional in
+the typings — expansion content. Any accessor that casts without checking turns a
+missing skill into a `TypeError` from deep inside a routine instead of a clean
+refusal. Resolve first, null-check, then use.

@@ -171,12 +171,10 @@ Documented conventions rot. These are checked:
 | Artisan | Smithing, Crafting, Fletching, Herblore, Runecrafting, Summoning | **one shared routine** — they inherit `ArtisanSkill` |
 | Individual | Firemaking, Cooking, Thieving, Astrology, Agility, Alt Magic, Harvesting | one routine each |
 
-Deliberately excluded, with reasons:
+Combat is supported too, behind the survivability gate (below).
 
-- **Combat skills** (Attack, Strength, Defence, Hitpoints, Ranged, Magic, Prayer,
-  Slayer) — started through the combat manager and gated on the Phase 2
-  survivability check. Enabling them before that gate exists would be the one
-  way this agent can lose something irreversible.
+Still excluded, with reasons:
+
 - **Farming** — plant-then-wait-then-harvest, not a continuous action. It needs
   its own objective kind rather than being forced into `gather_resource`.
 - **Township, Cartography, Archaeology** — management interfaces rather than a
@@ -184,6 +182,41 @@ Deliberately excluded, with reasons:
 - **Alt Magic spells that consume a chosen bank item** — they need a second
   selection whose correct argument depends on the spell's consumption type.
   Refused explicitly rather than guessed at.
+
+## The combat gate
+
+Combat is the only capability that can lose something irreversible, so
+deterministic code proves survivability before any fight. The planner gets no
+vote — it cannot even express an override.
+
+The gate sits in the runtime *between* the policy intent and the game call, so
+neither a policy bug nor a planner output can reach `engageMonster` without a
+passing verdict. Two conditions, both required:
+
+1. **Cannot be one-shot.** The enemy's max hit, after the resistance that
+   applies to *its* damage type, must be below 60% of the auto-eat trigger. Auto
+   eat fires *at* the threshold, so a hit landing above it kills before auto eat
+   gets a turn.
+2. **Can sustain.** Healing per auto-eat must outpace damage per enemy attack by
+   1.5x, and equipped food must cover the intended session with 25% slack.
+
+A monster in the registry has no max hit — only an instantiated `Enemy` does —
+so the gate spins up a throwaway `Enemy`, hands it the monster and lets the
+game's own code compute the stats. That's MICSR's approach, and it's why neither
+project reimplements damage formulas. For a dungeon, every monster is measured
+and the worst is used; one unmeasurable monster makes the whole dungeon
+unmeasurable, because skipping it would silently judge the dungeon by the
+monsters that happened to work.
+
+**Combat ships in advisory mode.** The gate computes and logs its full verdict —
+including every failing check and all its workings — but refuses to engage until
+you flip *Combat: advisory* to *ARMED* in the panel. That toggle is separate from
+the global dry run, so the other 16 skills can run for real while you watch the
+gate judge a few dozen fights.
+
+Independent of the gate, a runtime backup disengages at the next kill boundary if
+HP drops below 50% or food below 5 items. Combat can't be exited cleanly
+mid-fight, so it takes the gap early.
 
 ## Timescale
 

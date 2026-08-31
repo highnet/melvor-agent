@@ -1,5 +1,6 @@
 import type { Candidate } from '@melvor-agent/shared';
 import { FISHING_ID, MINING_ID, STARTABLE_SKILL_IDS, WOODCUTTING_ID } from './gathering.js';
+import { readShopCandidates } from './shop.js';
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -180,4 +181,30 @@ export function readSellCandidates(): Candidate[] {
       available: true as const,
     }))
     .sort((a, b) => b.label.localeCompare(a.label));
+}
+
+/**
+ * Shop purchases the planner may choose, as objective candidates.
+ *
+ * Wraps {@link readShopCandidates} into the `Candidate` shape. The GP cost rides
+ * along in the label because the planner has to weigh a purchase against a floor
+ * and there is no rate to express it as.
+ *
+ * @returns Affordable, permitted purchases, cheapest first.
+ */
+export function readShopObjectiveCandidates(): Candidate[] {
+  return readShopCandidates().map((purchase) => ({
+    kind: 'buy_shop_upgrade' as const,
+    params: {
+      kind: 'buy_shop_upgrade' as const,
+      purchaseId: purchase.purchaseId,
+      quantity: 1,
+      // A floor of zero here means "the objective sets no reserve"; the planner
+      // is expected to raise it. Defaulting higher would silently make cheap
+      // early upgrades unbuyable.
+      gpFloor: 0,
+    },
+    label: `Buy ${purchase.name} (${purchase.gpCost.toLocaleString()} GP, owned ${purchase.owned})`,
+    available: true as const,
+  }));
 }

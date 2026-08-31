@@ -10,7 +10,12 @@ import { gameIdSchema } from './snapshot.js';
  * is a runtime assertion, not a convention.
  *
  */
-export const objectiveKindSchema = z.enum(['gather_resource', 'sell_items']);
+export const objectiveKindSchema = z.enum([
+  'gather_resource',
+  'sell_items',
+  'buy_shop_upgrade',
+  'fight_monster',
+]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
 /** Params are a discriminated union keyed by the same `kind`. */
@@ -21,6 +26,18 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     skillId: gameIdSchema,
     /** The recipe/node within that skill, e.g. a `WoodcuttingTree` id. */
     recipeId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('buy_shop_upgrade'),
+    purchaseId: gameIdSchema,
+    quantity: z.number().int().positive(),
+    /** Never spend below this. The floor is the objective's, not a global. */
+    gpFloor: z.number().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal('fight_monster'),
+    monsterId: gameIdSchema,
+    areaId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('sell_items'),

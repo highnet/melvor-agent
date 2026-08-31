@@ -68,6 +68,11 @@ function score(candidate: Candidate): number {
   return candidate.kind === 'gather_resource' ? (candidate.xpPerHour ?? 0) : -1;
 }
 
+/** Current GP in the snapshot, or 0. */
+function currentGp(request: PlannerRequest): number {
+  return request.snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
+}
+
 /**
  * Derives a machine-checkable success criterion for a chosen candidate.
  *
@@ -87,14 +92,34 @@ function successFor(params: ObjectiveParams, request: PlannerRequest): SuccessCr
       };
     }
     case 'sell_items': {
-      const gp =
-        request.snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
+      const gp = currentGp(request);
       // A modest, always-reachable target: the point of a sale objective is the
       // transition, not a savings goal.
       return {
         type: 'currency_at_least',
         currencyId: GP_CURRENCY_ID,
         amount: Math.max(1, Math.floor(gp * 1.1)),
+      };
+    }
+    case 'buy_shop_upgrade': {
+      // A purchase completes when it has happened, which the mod observes
+      // directly; the currency target here is only a floor so the objective
+      // does not sit forever if the purchase becomes unaffordable.
+      return {
+        type: 'currency_at_least',
+        currencyId: GP_CURRENCY_ID,
+        amount: Math.max(1, Math.floor(currentGp(request) * 1.5)),
+      };
+    }
+    case 'fight_monster': {
+      // Combat objectives are measured in Hitpoints levels, which rise from any
+      // combat style and so do not assume a particular one.
+      const current =
+        request.snapshot.skills.find((skill) => skill.id === 'melvorD:Hitpoints')?.level ?? 1;
+      return {
+        type: 'skill_level_at_least',
+        skillId: 'melvorD:Hitpoints',
+        level: Math.min(120, current + 1),
       };
     }
   }

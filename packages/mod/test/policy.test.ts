@@ -29,9 +29,15 @@ describe('fixtures', () => {
 
 describe('capability registry', () => {
   it('accepts the kinds it has executors for', () => {
-    expect(supportedKinds().sort()).toEqual(['gather_resource', 'sell_items']);
-    expect(isSupportedKind('gather_resource')).toBe(true);
-    expect(isSupportedKind('sell_items')).toBe(true);
+    expect(supportedKinds().sort()).toEqual([
+      'buy_shop_upgrade',
+      'fight_monster',
+      'gather_resource',
+      'sell_items',
+    ]);
+    for (const kind of supportedKinds()) {
+      expect(isSupportedKind(kind)).toBe(true);
+    }
     expect(executorFor(objective())).toBe(gatherResource);
   });
 

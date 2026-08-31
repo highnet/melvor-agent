@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-49 exports.
+57 exports.
 
 ## `act`
 
@@ -107,6 +107,30 @@ ARTISAN_SKILL_IDS: readonly ["melvorD:Smithing", "melvorD:Crafting", "melvorD:Fl
 BankState: any
 ```
 
+## `buyShopPurchase`
+
+`function`
+
+Buys from the shop.
+
+Shop purchases are the transition the wiki corpus exists to advise on — which
+upgrades matter first is the classic thing game data alone does not encode.
+The agent may spend, so this is permitted, but three guards apply:
+
+- Requirements are checked through the game's own `checkRequirements`, with
+  notifications suppressed so an unattended agent does not spam the UI.
+- Affordability is checked through `getPurchaseCosts(...).checkIfOwned()`
+  rather than by reimplementing cost scaling, which changes per purchase.
+- {@link categoricalRefusal} blocks gambles and unique items outright.
+
+`buyItemOnClick` returns `void` and normally raises a confirmation modal; it
+is called with `confirmed = true` because an unattended agent has nobody to
+answer it. Success is established by observing the owned count rise.
+
+```ts
+buyShopPurchase: (purchaseId: string, quantity: number, isSuspended: () => boolean) => ActionResult<PurchaseProjection>
+```
+
 ## `Candidate`
 
 `type`
@@ -166,12 +190,36 @@ Whether the currently selected realm is refused.
 checkRealmAllowed: () => string | null
 ```
 
+## `CombatProjection`
+
+`interface`
+
+What engaging claims to change.
+
+```ts
+CombatProjection: any
+```
+
 ## `CombatState`
 
 `type`
 
 ```ts
 CombatState: any
+```
+
+## `disengageCombat`
+
+`function`
+
+Stops combat.
+
+Combat cannot be exited cleanly mid-fight, so this is called at a kill
+boundary by the runtime backup monitor rather than the instant a floor is
+crossed — taking the gap early is the whole point of that monitor.
+
+```ts
+disengageCombat: (isSuspended: () => boolean) => ActionResult<CombatProjection>
 ```
 
 ## `Disposer`
@@ -201,6 +249,21 @@ reads is just a large file that goes stale.
 
 ```ts
 dumpRegistries: () => KnowledgeDump
+```
+
+## `engageMonster`
+
+`function`
+
+Engages a monster in an area.
+
+Callers must have already cleared the survivability gate; this function does
+not run it. That split is deliberate — the gate is pure and testable, and
+mixing it into the action would make it untestable and easy to bypass. The
+runtime is the only caller and it refuses to reach here without a verdict.
+
+```ts
+engageMonster: (monsterId: string, areaId: string, isSuspended: () => boolean) => ActionResult<CombatProjection>
 ```
 
 ## `exportSave`
@@ -373,6 +436,16 @@ PanelHandle: any
 PersistenceHealth: any
 ```
 
+## `PurchaseProjection`
+
+`interface`
+
+What buying claims to change: one more owned, some currency gone.
+
+```ts
+PurchaseProjection: any
+```
+
 ## `readBankQuantity`
 
 `function`
@@ -391,6 +464,19 @@ Name of the currently loaded character, for the save allowlist guard.
 
 ```ts
 readCharacterName: () => string
+```
+
+## `readCombatGateInputs`
+
+`function`
+
+Assembles the inputs for the survivability gate.
+
+Reads only; makes no decision. The decision is `assessSurvivability`, which is
+pure and lives in the policy tier so it can be tested exhaustively.
+
+```ts
+readCombatGateInputs: (targetId: string, intendedSessionMinutes: number) => { ok: true; inputs: CombatGateInputs; } | { ok: false; detail: string; }
 ```
 
 ## `readCompletionPercent`
@@ -465,6 +551,34 @@ candidate the adapter would refuse is a planner trap, not a choice.
 
 ```ts
 readSellCandidates: () => Candidate[]
+```
+
+## `readShopCandidates`
+
+`function`
+
+Shop purchases the agent could make right now.
+
+Mirrors every refusal in {@link buyShopPurchase}, so an offered purchase is
+one that would actually go through. Cost is reported so the planner can weigh
+a purchase against a GP floor rather than discovering the floor by hitting it.
+
+```ts
+readShopCandidates: () => { purchaseId: string; name: string; gpCost: number; owned: number; }[]
+```
+
+## `readShopObjectiveCandidates`
+
+`function`
+
+Shop purchases the planner may choose, as objective candidates.
+
+Wraps {@link readShopCandidates} into the `Candidate` shape. The GP cost rides
+along in the label because the planner has to weigh a purchase against a floor
+and there is no rate to express it as.
+
+```ts
+readShopObjectiveCandidates: () => Candidate[]
 ```
 
 ## `readSnapshot`

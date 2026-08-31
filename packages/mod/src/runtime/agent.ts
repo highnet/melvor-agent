@@ -8,22 +8,28 @@ import type {
   RunState,
   StateSnapshot,
 } from '@melvor-agent/shared';
-import { stateSnapshotSchema } from '@melvor-agent/shared';
+import { fail, stateSnapshotSchema } from '@melvor-agent/shared';
 import {
   Subscriptions,
+  buyShopPurchase,
   checkCharacterAllowed,
   checkRealmAllowed,
+  disengageCombat,
   dumpRegistries,
+  engageMonster,
   exportSave,
   onGameEvent,
+  readCombatGateInputs,
   readGameVersion,
   readGatherCandidates,
   readSellCandidates,
+  readShopObjectiveCandidates,
   readSnapshot,
   sellItem,
   startGathering,
   stopGathering,
 } from '../adapter/index.js';
+import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import type { PolicyAction } from '../policy/types.js';
 import type { Logger } from './logger.js';
@@ -46,6 +52,13 @@ export interface AgentSettings extends Record<string, unknown> {
   serviceUrl: string;
   /** Dry run: the agent decides and logs, but performs no game action. */
   dryRun: boolean;
+  /**
+   * When true the combat gate computes and logs its verdict but never engages.
+   *
+   * Separate from `dryRun` so non-combat automation can run for real while the
+   * gate is still being validated over a few dozen fights.
+   */
+  combatGateDryRun: boolean;
   objective: Objective | null;
 }
 
@@ -54,6 +67,7 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   characterAllowlist: [],
   serviceUrl: 'http://localhost:8787',
   dryRun: true,
+  combatGateDryRun: true,
   objective: null,
 };
 
@@ -348,7 +362,72 @@ export class Agent {
         return stopGathering(action.skillId, isSuspended);
       case 'sell':
         return sellItem(action.itemId, action.quantity, isSuspended);
+      case 'buy':
+        return buyShopPurchase(action.purchaseId, action.quantity, isSuspended);
+      case 'engage':
+        return this.engageIfSurvivable(action.monsterId, action.areaId, isSuspended);
+      case 'disengage':
+        return disengageCombat(isSuspended);
     }
+  }
+
+  /**
+   * Engages only if deterministic code proves the fight survivable.
+   *
+   * This is the hard gate. It sits between the policy intent and the game call,
+   * so no policy bug and no planner output can reach `engageMonster` without a
+   * passing verdict. The planner gets no vote here by construction — it cannot
+   * even express an override.
+   *
+   * In dry-run mode the verdict is computed and logged in full but the fight is
+   * refused regardless. That is the validation mode the brief asks for: watch it
+   * judge a few dozen fights before trusting it.
+   */
+  private engageIfSurvivable(
+    monsterId: string,
+    areaId: string,
+    isSuspended: () => boolean,
+  ): ActionResult<unknown> {
+    const sessionMinutes = this.settings.objective?.abortWhen.minutesExceed ?? 30;
+
+    const gathered = readCombatGateInputs(monsterId, sessionMinutes);
+    if (!gathered.ok) {
+      // Could not measure means could not prove, which is a refusal — never an
+      // assumption that the fight is fine.
+      this.log.warn('policy', `combat gate: cannot assess ${monsterId} — ${gathered.detail}`);
+      return fail('combat.gate', 'precondition', gathered.detail);
+    }
+
+    // The auto-eat getters are documented only by name; normalising guards
+    // against them being percentages rather than fractions.
+    const verdict = assessSurvivability({
+      ...gathered.inputs,
+      autoEatThresholdFraction: normaliseFraction(gathered.inputs.autoEatThresholdFraction),
+      autoEatHpLimitFraction: normaliseFraction(gathered.inputs.autoEatHpLimitFraction),
+      autoEatEfficiencyFraction: normaliseFraction(gathered.inputs.autoEatEfficiencyFraction),
+    });
+
+    if (!verdict.safe) {
+      const reasons = verdict.refusals.map((refusal) => refusal.detail).join('; ');
+      this.log.warn(
+        'policy',
+        `combat gate REFUSED ${gathered.inputs.targetName}: ${reasons}`,
+        verdict,
+      );
+      return fail('combat.gate', 'precondition', reasons);
+    }
+
+    if (this.settings.combatGateDryRun) {
+      this.log.info(
+        'policy',
+        `combat gate PASSED ${gathered.inputs.targetName} but dry run is on; not engaging`,
+        verdict,
+      );
+      return fail('combat.gate', 'precondition', 'combat gate dry run is enabled');
+    }
+
+    this.log.info('policy', `combat gate passed ${gathered.inputs.targetName}`, verdict);
+    return engageMonster(monsterId, areaId, isSuspended);
   }
 
   /** Reads and validates a snapshot. Invalid snapshots block, never pass through. */
@@ -450,6 +529,7 @@ export class Agent {
     for (const [name, read] of [
       ['gather', readGatherCandidates],
       ['sell', readSellCandidates],
+      ['shop', readShopObjectiveCandidates],
     ] as const) {
       try {
         candidates.push(...read());

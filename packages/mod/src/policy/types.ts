@@ -15,7 +15,14 @@ export type PolicyAction =
   | { type: 'gather'; skillId: string; recipeId: string }
   | { type: 'stop_gathering'; skillId: string }
   /** Sell a named quantity of one item. Never a filter, never the whole bank. */
-  | { type: 'sell'; itemId: string; quantity: number };
+  | { type: 'sell'; itemId: string; quantity: number }
+  | { type: 'buy'; purchaseId: string; quantity: number }
+  /**
+   * Engage a monster. The runtime refuses to perform this without a passing
+   * survivability verdict, so the intent alone never authorises a fight.
+   */
+  | { type: 'engage'; monsterId: string; areaId: string }
+  | { type: 'disengage' };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

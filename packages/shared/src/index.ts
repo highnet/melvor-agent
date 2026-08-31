@@ -1,4 +1,5 @@
 export * from './action-result.js';
+export * from './combat-gate.js';
 export * from './journal.js';
 export * from './objective.js';
 export * from './protocol.js';
