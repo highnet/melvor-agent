@@ -1691,7 +1691,7 @@ Identified by the *result*, not by a recipe id, because `ItemUpgrade` has no
 id of its own — the upgraded item is the only stable name the pair has.
 
 ```ts
-upgradeBankItem: (upgradedItemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<UpgradeProjection>
+upgradeBankItem: (upgradedItemId: string, quantity: number, allowDowngrade: boolean, isSuspended: () => boolean) => ActionResult<UpgradeProjection>
 ```
 
 ## `upgradeConstellation`

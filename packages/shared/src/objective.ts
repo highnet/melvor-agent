@@ -214,6 +214,12 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('upgrade_item'),
     upgradedItemId: gameIdSchema,
     quantity: z.number().int().positive(),
+    /**
+     * Downgrades destroy the better item for a refund. Nothing that enumerates
+     * candidates proposes one, so this has to be asked for deliberately —
+     * defaulting to allowed would turn a typo into a loss.
+     */
+    allowDowngrade: z.boolean().default(false),
   }),
   z.object({
     /** Free the first time; 50M GP and every worship building to change later. */

@@ -28,11 +28,14 @@ export interface UpgradeProjection {
  *
  * @param upgradedItemId - The item to end up with.
  * @param quantity - How many upgrades to perform.
+ * @param allowDowngrade - Whether a downgrade is acceptable. Never true from a
+ *                         candidate; only from an objective that asked for one.
  * @param isSuspended - Guard against acting during offline catch-up.
  */
 export function upgradeBankItem(
   upgradedItemId: string,
   quantity: number,
+  allowDowngrade: boolean,
   isSuspended: () => boolean,
 ): ActionResult<UpgradeProjection> {
   const item = game.items.getObjectByID(upgradedItemId);
@@ -62,9 +65,13 @@ export function upgradeBankItem(
         if (!Number.isInteger(quantity) || quantity <= 0) {
           return `quantity must be a positive integer, got ${quantity}`;
         }
-        // A downgrade is a real feature of the game and never something to do
-        // unattended: it destroys the better item.
-        if (upgrade.isDowngrade) return `${upgradedItemId} is a downgrade`;
+        // Downgrades destroy the better item for a refund. They are a real
+        // feature and the agent may perform one — but only when the objective
+        // says so outright, because nothing that enumerates candidates will
+        // ever propose it, and a default of "sure" turns a typo into a loss.
+        if (upgrade.isDowngrade && !allowDowngrade) {
+          return `${upgradedItemId} is a downgrade; the objective did not allow one`;
+        }
         const missing = missingCosts(upgrade, quantity);
         if (missing !== null) return missing;
         return null;
@@ -135,7 +142,12 @@ export function readUpgradeCandidates(): Candidate[] {
 
         candidates.push({
           kind: 'upgrade_item',
-          params: { kind: 'upgrade_item', upgradedItemId: upgrade.upgradedItem.id, quantity: 1 },
+          params: {
+            kind: 'upgrade_item',
+            upgradedItemId: upgrade.upgradedItem.id,
+            quantity: 1,
+            allowDowngrade: false,
+          },
           label: `Upgrade into ${upgrade.upgradedItem.name} for ${cost}`,
           available: true,
         });

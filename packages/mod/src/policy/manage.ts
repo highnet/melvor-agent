@@ -176,6 +176,7 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
           type: 'upgrade_item',
           upgradedItemId: params.upgradedItemId,
           quantity: params.quantity,
+          allowDowngrade: params.allowDowngrade,
         },
         `upgrading into ${params.upgradedItemId}`,
       );

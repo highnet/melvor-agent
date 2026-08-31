@@ -816,7 +816,12 @@ export class Agent {
       case 'restore_town_health':
         return increaseTownHealth(action.resourceId, action.amount, isSuspended);
       case 'upgrade_item':
-        return upgradeBankItem(action.upgradedItemId, action.quantity, isSuspended);
+        return upgradeBankItem(
+          action.upgradedItemId,
+          action.quantity,
+          action.allowDowngrade,
+          isSuspended,
+        );
       case 'select_worship':
         return selectTownshipWorship(action.worshipId, isSuspended);
       case 'make_paper':

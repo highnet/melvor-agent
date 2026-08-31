@@ -54,7 +54,7 @@ export type PolicyAction =
   | { type: 'compost_plot'; plotId: string; compostId: string; amount: number }
   | { type: 'passive_cook'; categoryId: string }
   | { type: 'restore_town_health'; resourceId: string; amount: number }
-  | { type: 'upgrade_item'; upgradedItemId: string; quantity: number }
+  | { type: 'upgrade_item'; upgradedItemId: string; quantity: number; allowDowngrade: boolean }
   | { type: 'select_worship'; worshipId: string }
   | { type: 'make_paper'; recipeId: string }
   | { type: 'toggle_curse'; curseId: string }
