@@ -90,7 +90,8 @@ export function setup(ctx: Modding.ModContext): void {
     }
   });
 
-  // Exposed for the knowledge dump and for other mods; `mod.api.melvorAgent`.
+  // Console handle for debugging from devtools: `mod.api.melvorAgent`. Not an
+  // integration surface — this is a single-user tool and nothing else consumes it.
   ctx.api({
     dumpRegistries,
     getRunState: () => agent?.runState ?? 'idle',

@@ -98,7 +98,12 @@ and keeping only CSS there makes that trap unreachable.
 The Creator Toolkit directory is configured via `MELVOR_CT_DIR` in `.env` (machine-specific;
 read out of the Toolkit UI at setup). `pnpm dev` runs esbuild `--watch` writing straight into
 it. **Directory Link re-zips on game reload, so a rebuild still needs a manual game reload** —
-this is the main ergonomic cost and the reason the speedup mod matters.
+this is the main ergonomic cost, and it is not being mitigated: **we run at real
+time, no speedup mod** (decided 2026-08-30). That is a deliberate trade — the
+quality metric is progress per *real* hour against the control condition of one
+skill left running, and a speedup mod would make that number meaningless. It
+does mean behavioural changes take real hours to evaluate, so the policy tier is
+covered by unit tests against recorded snapshots rather than by watching it.
 
 `.modignore` ships only what is needed: ignore `node_modules`, `src`, `*.ts`, `*.map`,
 `tsconfig*.json`, `.git`, `.*ignore`, `.env*`.

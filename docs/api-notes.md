@@ -406,8 +406,11 @@ the fetch tool. Its substance appears to duplicate the wiki Getting Started page
   `Mod Creation/Enabling DevTools for the Steam and Epic Clients`.
 
 Implication for esbuild watch: write the bundle into the linked directory, but reloading the
-game stays a manual step. Combined with the brief's note about needing a speedup mod, the
-iteration loop is the main ergonomic risk in this project.
+game stays a manual step. The iteration loop is the main ergonomic risk in this project, and
+the brief's suggested mitigation — a community speedup mod — has been **declined** (decided
+2026-08-30): the project's quality metric is progress per *real* hour against a control
+condition, and a speedup mod would invalidate it. Iteration speed comes from unit-testing the
+pure policy tier instead of from watching the game.
 
 ## 11. Sidebar
 

@@ -9,6 +9,11 @@ in **transitions** — banking, selling, buying, re-equipping, switching skill �
 in decisions that require acting on state, and in running continuously past the
 24 hour cap. Optimise for good transitions per day, not for uptime.
 
+**Single user, single machine.** This is not distributed and is not built to be.
+The mod.io entry exists only because the Creator Toolkit refuses to persist
+settings for an unlinked local mod; it stays hidden, and `pnpm release` refuses
+to upload to a public entry.
+
 **Phase 1 status: complete.** Observe → verify → act works end to end for one
 trivial behaviour. No planner model calls yet, no combat gate, no wiki corpus.
 
@@ -111,6 +116,19 @@ pnpm knowledge:dump
 **Dry run is ON by default.** The agent decides and logs but performs no game
 action. Turn it off in the panel once you have watched it make the right calls.
 
+## Releasing to mod.io
+
+`pnpm release` builds, zips, verifies `manifest.json` is at the archive root, and
+uploads a new modfile to the hidden entry. It refuses outright if the entry is
+public — there is no override.
+
+```bash
+pnpm release:dry
+```
+
+Builds and verifies without uploading. The real upload needs `MODIO_TOKEN` and
+`MODIO_MOD_ID` in `.env`; see `.env.example`.
+
 ## Verifying
 
 ```bash
@@ -142,6 +160,16 @@ Documented conventions rot. These are checked:
   rejected at runtime before its params are parsed.
 - **The build asserts its own output exports `setup`.** A wrong esbuild format
   produces a mod that loads and silently never runs.
+
+## Timescale
+
+**We run at real time — no speedup mod.** The quality metric is progress per
+*real* hour measured against the control condition ("one good skill left running,
+collected every 24h"), and a speedup mod would make that number meaningless.
+
+The consequence: you cannot evaluate a behavioural change by watching it. That is
+why the policy tier is pure and unit-tested against snapshots — the tests are the
+fast feedback loop, the game is the slow one.
 
 ## Things that will bite you
 
