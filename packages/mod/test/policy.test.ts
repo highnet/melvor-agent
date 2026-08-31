@@ -133,16 +133,57 @@ describe('gatherResource', () => {
     });
   });
 
-  it('does nothing while the skill is already running', () => {
+  it('does nothing while the skill is already running the right recipe', () => {
     const running = snapshot({
       skills: [
         { id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true },
       ],
+      activeAction: {
+        id: WOODCUTTING,
+        name: 'Woodcutting',
+        isActive: true,
+        recipeIds: [NORMAL_TREE],
+      },
     });
     expect(gatherResource(context({ snapshot: running }))).toMatchObject({
       kind: 'idle',
       reason: 'already_running',
     });
+  });
+
+  it('switches recipes inside the same skill', () => {
+    // Observed live: told to cut Willow while cutting Oak, the agent saw
+    // "Woodcutting is active" and idled, so it kept cutting Oak for hours. The
+    // skill being right is not the objective being satisfied.
+    const cuttingOak = snapshot({
+      skills: [
+        { id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 30, xp: 15_000, isActive: true },
+      ],
+      activeAction: {
+        id: WOODCUTTING,
+        name: 'Woodcutting',
+        isActive: true,
+        recipeIds: ['melvorD:Oak'],
+      },
+    });
+
+    expect(gatherResource(context({ snapshot: cuttingOak }))).toMatchObject({
+      kind: 'act',
+      actions: [{ type: 'stop_gathering', skillId: WOODCUTTING }],
+    });
+  });
+
+  it('restarts when the running selection cannot be read', () => {
+    // "Cannot tell" has to count as wrong: one wasted tick beats an hour on the
+    // wrong recipe.
+    const opaque = snapshot({
+      skills: [
+        { id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true },
+      ],
+      activeAction: { id: WOODCUTTING, name: 'Woodcutting', isActive: true, recipeIds: [] },
+    });
+
+    expect(gatherResource(context({ snapshot: opaque }))).toMatchObject({ kind: 'act' });
   });
 
   it('refuses to act while offline progress is resolving', () => {

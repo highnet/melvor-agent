@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-85 exports.
+86 exports.
 
 ## `act`
 
@@ -573,6 +573,21 @@ What buying claims to change: one more owned, some currency gone.
 
 ```ts
 PurchaseProjection: any
+```
+
+## `readActiveRecipeIds`
+
+`function`
+
+The recipes the active skill is running.
+
+Empty when nothing is active, and also when the skill's selection could not
+be read — the caller treats "cannot tell" the same as "not the one I want",
+which restarts the action. Restarting the right recipe is cheap; running the
+wrong one for an hour is not.
+
+```ts
+readActiveRecipeIds: () => string[]
 ```
 
 ## `readBankQuantity`

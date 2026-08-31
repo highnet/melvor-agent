@@ -86,6 +86,16 @@ export const activeActionStateSchema = z
     name: z.string(),
     /** True while the game reports this action as actively ticking. */
     isActive: z.boolean(),
+    /**
+     * Which recipes are selected, e.g. the tree being cut.
+     *
+     * Without this the policy tier cannot tell Oak from Willow: it sees only
+     * that Woodcutting is running, so an objective to switch trees idles
+     * forever. Woodcutting is a list because it alone runs several at once.
+     *
+     * Defaulted so a mod build older than the service still validates.
+     */
+    recipeIds: z.array(gameIdSchema).default([]),
   })
   .nullable();
 

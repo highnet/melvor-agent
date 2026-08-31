@@ -1,3 +1,4 @@
+import { readActiveRecipeIds } from './active.js';
 import { readFarmPlots } from './farming.js';
 import type { ActiveActionState, SkillState, StateSnapshot } from './surface.js';
 import { readTownshipSummary } from './township.js';
@@ -82,7 +83,12 @@ function readSkill(skill: AnySkill): SkillState {
 function readActiveAction(): ActiveActionState {
   const action = game.activeAction;
   if (action === undefined) return null;
-  return { id: action.id, name: action.name, isActive: action.isActive };
+  return {
+    id: action.id,
+    name: action.name,
+    isActive: action.isActive,
+    recipeIds: readActiveRecipeIds(),
+  };
 }
 
 /**

@@ -95,11 +95,32 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
     };
   }
 
+  const active = snapshot.activeAction;
+
   if (skill.isActive) {
+    // Running the right skill is not the same as running the right recipe.
+    // Observed live: told to cut Willow while cutting Oak, this idled and the
+    // character kept cutting Oak for hours — the objective was accepted and
+    // then quietly ignored, which is worse than refusing it.
+    //
+    // An unreadable selection counts as wrong. Restarting the right recipe
+    // costs one tick; running the wrong one costs the whole objective.
+    const running = active?.recipeIds ?? [];
+    if (running.includes(recipeId)) {
+      return {
+        kind: 'idle',
+        reason: 'already_running',
+        detail: `${skill.name} is already gathering ${recipeId}`,
+      };
+    }
+
     return {
-      kind: 'idle',
-      reason: 'already_running',
-      detail: `${skill.name} is already active`,
+      kind: 'act',
+      actions: [{ type: 'stop_gathering', skillId }],
+      reason:
+        running.length === 0
+          ? `${skill.name} is active but its selection could not be read; restarting on ${recipeId}`
+          : `${skill.name} is gathering ${running.join(', ')}, not ${recipeId}; stopping to switch`,
     };
   }
 
@@ -114,7 +135,6 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
   // Stop and start are separate ticks rather than one batch: `stop` has to be
   // observed to have actually taken the slot free before `gather` can claim it,
   // and batching them would start against a state the stop has not produced yet.
-  const active = snapshot.activeAction;
   if (active !== null && active.id !== skillId) {
     return {
       kind: 'act',
