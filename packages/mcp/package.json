@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": { "melvor-agent-mcp": "./src/server.ts" },
+  "bin": {
+    "melvor-agent-mcp": "./src/server.ts"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json --noEmit",
+    "build": "node build.mjs",
     "start": "tsx src/server.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -14,5 +16,7 @@
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.24.1"
   },
-  "devDependencies": { "@types/node": "^22.10.2" }
+  "devDependencies": {
+    "@types/node": "^22.10.2"
+  }
 }

@@ -385,8 +385,27 @@ export class Agent {
     }
 
     const freshness = checkDumpFreshness(dump, readGameVersion());
-    if (!freshness.fresh) {
-      return `knowledge dump ${freshness.reason}: ${freshness.detail}`;
+    if (freshness.fresh) return null;
+
+    // Regenerate rather than refuse. The dump is derived entirely from the
+    // running game, so the agent is always able to produce a correct one — and
+    // "press a button in the panel" is a chore no unattended agent should need a
+    // human for. This is the whole reason a game update or a first run does not
+    // require intervention.
+    this.log.info(
+      'runtime',
+      `knowledge dump ${freshness.reason} (${freshness.detail}); regenerating automatically`,
+    );
+
+    if (!(await this.dumpKnowledge())) {
+      // Only now is it a refusal: the dump could not be produced or stored, so
+      // there is no trustworthy game data to plan against.
+      return `knowledge dump ${freshness.reason} and could not be regenerated: ${freshness.detail}`;
+    }
+
+    const regenerated = checkDumpFreshness(await this.transport.fetchDump(), readGameVersion());
+    if (!regenerated.fresh) {
+      return `regenerated dump is still ${regenerated.reason}: ${regenerated.detail}`;
     }
 
     return null;

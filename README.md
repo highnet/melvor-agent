@@ -121,7 +121,13 @@ run state, and the log tail.
 - a knowledge dump exists and its `gameVersion` matches the running game;
 - the current realm is not Abyssal or Eternal.
 
-Press **Dump knowledge** once to produce the dump. Then:
+The knowledge dump is produced automatically. If it is missing or was made for
+a different game version, the agent regenerates it on arm rather than refusing —
+the dump is derived entirely from the running game, so it can always produce a
+correct one, and a game update needs no intervention. The panel button forces a
+regeneration; you should not need it.
+
+To inspect what was captured:
 
 ```bash
 pnpm knowledge:dump

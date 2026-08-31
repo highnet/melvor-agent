@@ -2,7 +2,7 @@
   "mcpServers": {
     "melvor-agent": {
       "command": "node",
-      "args": ["--import", "tsx", "packages/mcp/src/server.ts"],
+      "args": ["packages/mcp/dist/server.js"],
       "env": {
         "MELVOR_AGENT_URL": "http://localhost:8787"
       }
