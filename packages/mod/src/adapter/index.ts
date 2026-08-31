@@ -29,6 +29,12 @@ export {
   readPlantableSeeds,
   type FarmPlotState,
 } from './farming.js';
+export {
+  equipFood,
+  equipItem,
+  readEquipCandidates,
+  type EquipProjection,
+} from './equipment.js';
 export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
 export {
   readBlockedOpportunities,

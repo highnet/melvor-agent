@@ -16,6 +16,8 @@ export const objectiveKindSchema = z.enum([
   'buy_shop_upgrade',
   'fight_monster',
   'tend_farm',
+  'equip_item',
+  'equip_food',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -47,6 +49,17 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('fight_monster'),
     monsterId: gameIdSchema,
     areaId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('equip_item'),
+    itemId: gameIdSchema,
+    /** Explicit slot; the item's first valid slot is used when absent. */
+    slotId: gameIdSchema.optional(),
+  }),
+  z.object({
+    kind: z.literal('equip_food'),
+    itemId: gameIdSchema,
+    quantity: z.number().int().positive(),
   }),
   z.object({
     kind: z.literal('sell_items'),

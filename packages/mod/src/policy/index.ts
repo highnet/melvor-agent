@@ -1,5 +1,6 @@
 import type { Objective, ObjectiveKind } from '@melvor-agent/shared';
 import { buyShopUpgrade } from './buy.js';
+import { equipGear } from './equip.js';
 import { tendFarm } from './farm.js';
 import { fightMonster } from './fight.js';
 import { gatherResource } from './gather.js';
@@ -24,6 +25,8 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   buy_shop_upgrade: buyShopUpgrade,
   fight_monster: fightMonster,
   tend_farm: tendFarm,
+  equip_item: equipGear,
+  equip_food: equipGear,
 };
 
 /** Whether the policy layer can execute this objective kind at all. */

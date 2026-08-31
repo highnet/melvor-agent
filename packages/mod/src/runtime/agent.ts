@@ -17,12 +17,15 @@ import {
   disengageCombat,
   dumpRegistries,
   engageMonster,
+  equipFood,
+  equipItem,
   exportSave,
   harvestFarmPlot,
   onGameEvent,
   plantFarmPlot,
   readBlockedOpportunities,
   readCombatGateInputs,
+  readEquipCandidates,
   readGameVersion,
   readGatherCandidates,
   readSellCandidates,
@@ -541,6 +544,10 @@ export class Agent {
         return this.engageIfSurvivable(action.monsterId, action.areaId, isSuspended);
       case 'disengage':
         return disengageCombat(isSuspended);
+      case 'equip':
+        return equipItem(action.itemId, action.slotId, isSuspended);
+      case 'equip_food':
+        return equipFood(action.itemId, action.quantity, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':
@@ -712,6 +719,7 @@ export class Agent {
       ['gather', readGatherCandidates],
       ['sell', readSellCandidates],
       ['shop', readShopObjectiveCandidates],
+      ['equip', readEquipCandidates],
     ] as const) {
       try {
         candidates.push(...read());

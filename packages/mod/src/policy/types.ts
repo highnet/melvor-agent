@@ -24,7 +24,9 @@ export type PolicyAction =
   | { type: 'engage'; monsterId: string; areaId: string }
   | { type: 'disengage' }
   | { type: 'harvest_plot'; plotId: string }
-  | { type: 'plant_plot'; plotId: string; recipeId: string };
+  | { type: 'plant_plot'; plotId: string; recipeId: string }
+  | { type: 'equip'; itemId: string; slotId?: string }
+  | { type: 'equip_food'; itemId: string; quantity: number };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

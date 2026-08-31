@@ -31,6 +31,8 @@ describe('capability registry', () => {
   it('accepts the kinds it has executors for', () => {
     expect(supportedKinds().sort()).toEqual([
       'buy_shop_upgrade',
+      'equip_food',
+      'equip_item',
       'fight_monster',
       'gather_resource',
       'sell_items',

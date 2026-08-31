@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-64 exports.
+68 exports.
 
 ## `act`
 
@@ -264,6 +264,49 @@ runtime is the only caller and it refuses to reach here without a verdict.
 
 ```ts
 engageMonster: (monsterId: string, areaId: string, isSuspended: () => boolean) => ActionResult<CombatProjection>
+```
+
+## `equipFood`
+
+`function`
+
+Equips food.
+
+Separate from {@link equipItem} because food has its own slots and its own
+game method. `Player.equipFood` returns `boolean | undefined`, which is the
+clearest example in the codebase of why a return value is not evidence: a
+truthiness check is simply wrong for it.
+
+```ts
+equipFood: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ itemId: string | null; quantity: number; }>
+```
+
+## `equipItem`
+
+`function`
+
+Equips an item from the bank.
+
+`Player.equipItem` returns a boolean, but a `true` return does not prove the
+slot changed — so the slot's occupant is observed either side, which is the
+only evidence that holds.
+
+The slot is taken from the item's own `validSlots` rather than guessed. An
+item can be valid in several (a shield in Shield, a torch in Passive), and
+picking the wrong one silently no-ops.
+
+```ts
+equipItem: (itemId: string, slotId: string | undefined, isSuspended: () => boolean) => ActionResult<EquipProjection>
+```
+
+## `EquipProjection`
+
+`interface`
+
+What equipping claims to change: which item occupies the slot.
+
+```ts
+EquipProjection: any
 ```
 
 ## `exportSave`
@@ -564,6 +607,24 @@ Amount of a currency by namespaced id, or 0 when it is not registered.
 
 ```ts
 readCurrency: (currencyId: string) => number
+```
+
+## `readEquipCandidates`
+
+`function`
+
+Gear in the bank that is worth wearing.
+
+Only *upgrades* are offered: an item whose slot is empty, or whose combined
+offensive and defensive stats beat what is currently there. Offering every
+equippable item would bury the planner in noise and invite pointless swaps.
+
+Food is offered separately and unconditionally when none is equipped, because
+"no food at all" is not a marginal upgrade — it is the thing blocking Thieving
+and combat outright.
+
+```ts
+readEquipCandidates: () => Candidate[]
 ```
 
 ## `readFarmPlots`
