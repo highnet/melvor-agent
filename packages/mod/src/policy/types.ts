@@ -26,7 +26,12 @@ export type PolicyAction =
   | { type: 'harvest_plot'; plotId: string }
   | { type: 'plant_plot'; plotId: string; recipeId: string }
   | { type: 'equip'; itemId: string; slotId?: string }
-  | { type: 'equip_food'; itemId: string; quantity: number };
+  | { type: 'equip_food'; itemId: string; quantity: number }
+  | { type: 'spend_mastery'; skillId: string; actionId: string; levels: number }
+  | { type: 'set_attack_style'; attackTypeId: 'melee' | 'ranged' | 'magic'; styleId: string }
+  | { type: 'toggle_prayer'; prayerId: string }
+  | { type: 'use_potion'; itemId: string }
+  | { type: 'new_slayer_task'; categoryId: string; payWithCoins: boolean };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =
@@ -36,7 +41,19 @@ export type PolicyIdleReason =
   | 'waiting_for_game';
 
 export type PolicyDecision =
-  | { kind: 'act'; actions: PolicyAction[]; reason: string }
+  | {
+      kind: 'act';
+      actions: PolicyAction[];
+      reason: string;
+      /**
+       * Finish the objective once these actions are verified.
+       *
+       * For a one-shot decision — toggling a prayer, spending a mastery pool —
+       * leaving the objective open makes the policy tier re-issue it every
+       * tick, which for a toggle means flipping it on and off forever.
+       */
+      completeAfter?: boolean;
+    }
   | { kind: 'idle'; reason: PolicyIdleReason; detail: string }
   | { kind: 'complete'; detail: string }
   | {

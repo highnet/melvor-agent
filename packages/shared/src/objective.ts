@@ -18,6 +18,11 @@ export const objectiveKindSchema = z.enum([
   'tend_farm',
   'equip_item',
   'equip_food',
+  'spend_mastery',
+  'set_attack_style',
+  'toggle_prayer',
+  'use_potion',
+  'new_slayer_task',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -60,6 +65,32 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('equip_food'),
     itemId: gameIdSchema,
     quantity: z.number().int().positive(),
+  }),
+  z.object({
+    kind: z.literal('spend_mastery'),
+    skillId: gameIdSchema,
+    actionId: gameIdSchema,
+    levels: z.number().int().positive(),
+  }),
+  z.object({
+    kind: z.literal('set_attack_style'),
+    /** `melee`, `ranged` or `magic`. */
+    attackTypeId: z.enum(['melee', 'ranged', 'magic']),
+    styleId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('toggle_prayer'),
+    prayerId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('use_potion'),
+    itemId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('new_slayer_task'),
+    categoryId: gameIdSchema,
+    /** Paying Slayer Coins rerolls; free selection is the default. */
+    payWithCoins: z.boolean(),
   }),
   z.object({
     kind: z.literal('sell_items'),

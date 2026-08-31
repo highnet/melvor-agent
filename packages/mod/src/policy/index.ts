@@ -4,6 +4,7 @@ import { equipGear } from './equip.js';
 import { tendFarm } from './farm.js';
 import { fightMonster } from './fight.js';
 import { gatherResource } from './gather.js';
+import { manage } from './manage.js';
 import { sellItems } from './sell.js';
 import type { PolicyExecutor } from './types.js';
 
@@ -27,6 +28,11 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   tend_farm: tendFarm,
   equip_item: equipGear,
   equip_food: equipGear,
+  spend_mastery: manage,
+  set_attack_style: manage,
+  toggle_prayer: manage,
+  use_potion: manage,
+  new_slayer_task: manage,
 };
 
 /** Whether the policy layer can execute this objective kind at all. */

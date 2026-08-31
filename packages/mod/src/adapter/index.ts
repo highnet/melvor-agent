@@ -35,6 +35,15 @@ export {
   readEquipCandidates,
   type EquipProjection,
 } from './equipment.js';
+export {
+  newSlayerTask,
+  readMasteryCandidates,
+  setAttackStyle,
+  spendMasteryPool,
+  togglePrayer,
+  usePotion,
+  type MasteryProjection,
+} from './management.js';
 export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
 export {
   readBlockedOpportunities,

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-68 exports.
+75 exports.
 
 ## `act`
 
@@ -421,6 +421,16 @@ Whether a realm is on the hard refusal list.
 isRefusedRealm: (realmId: string) => boolean
 ```
 
+## `MasteryProjection`
+
+`interface`
+
+What spending the pool claims to change.
+
+```ts
+MasteryProjection: any
+```
+
 ## `MINING_ID`
 
 `const`
@@ -444,6 +454,20 @@ these would be invented rather than observed.
 
 ```ts
 MISC_SKILL_IDS: readonly ["melvorD:Firemaking", "melvorD:Cooking", "melvorD:Thieving", "melvorD:Astrology", "melvorD:Agility", "melvorD:AltMagic", "melvorItA:Harvesting"]
+```
+
+## `newSlayerTask`
+
+`function`
+
+Takes a new Slayer task.
+
+Slayer is a progression system a human drives by hand: take a task, kill it,
+take another. Without this the agent can fight monsters but can never earn
+Slayer XP or the coins that unlock its shop.
+
+```ts
+newSlayerTask: (categoryId: string, payWithCoins: boolean, isSuspended: () => boolean) => ActionResult<{ monsterId: string | null; remaining: number; }>
 ```
 
 ## `Objective`
@@ -682,6 +706,16 @@ those are a documented part of `GameEvents` and this field is not.
 readIsInOnlineLoop: () => boolean
 ```
 
+## `readMasteryCandidates`
+
+`function`
+
+Skills whose mastery pool has XP worth spending.
+
+```ts
+readMasteryCandidates: () => Candidate[]
+```
+
 ## `readPlantableSeeds`
 
 `function`
@@ -799,12 +833,41 @@ both sides of the trade: the stack shrank *and* the currency grew.
 sellItem: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<SaleProjection>
 ```
 
+## `setAttackStyle`
+
+`function`
+
+Sets the attack style for a combat type.
+
+Which style is active decides which combat skill receives XP, so leaving it
+on the default silently funnels everything into one skill. A human changes it
+deliberately; without this the agent cannot train Defence at all.
+
+```ts
+setAttackStyle: (attackTypeId: string, styleId: string, isSuspended: () => boolean) => ActionResult<{ styleId: string | undefined; }>
+```
+
 ## `SkillState`
 
 `type`
 
 ```ts
 SkillState: any
+```
+
+## `spendMasteryPool`
+
+`function`
+
+Spends mastery pool XP to raise an action's mastery level.
+
+Free progression: the pool fills on its own as the skill is trained, and
+converting it costs nothing but the pool itself. A human does this whenever
+they glance at the screen; an agent that cannot leaves it accumulating
+forever.
+
+```ts
+spendMasteryPool: (skillId: string, actionId: string, levels: number, isSuspended: () => boolean) => ActionResult<MasteryProjection>
 ```
 
 ## `STARTABLE_SKILL_IDS`
@@ -874,6 +937,37 @@ complete, even if one listener was already removed.
 
 ```ts
 Subscriptions: typeof Subscriptions
+```
+
+## `togglePrayer`
+
+`function`
+
+Turns a prayer on or off.
+
+`togglePrayer` returns `void`, and prayers silently refuse when the level
+requirement is unmet, so the active set is observed either side.
+
+Deliberately not automatic: prayers drain prayer points, and points cost
+bones. Leaving one on during idle training is a slow, invisible resource
+leak, which is why this is an explicit decision rather than a reflex.
+
+```ts
+togglePrayer: (prayerId: string, isSuspended: () => boolean) => ActionResult<{ active: string[]; }>
+```
+
+## `usePotion`
+
+`function`
+
+Drinks a potion for the current activity.
+
+Potions are consumable and time-limited, so this is a decision with a cost
+rather than a free buff — worth it before a long run of the thing it boosts,
+wasteful otherwise.
+
+```ts
+usePotion: (itemId: string, isSuspended: () => boolean) => ActionResult<{ potionId: string | null; charges: number; }>
 ```
 
 ## `WOODCUTTING_ID`

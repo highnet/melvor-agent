@@ -21,6 +21,7 @@ import {
   equipItem,
   exportSave,
   harvestFarmPlot,
+  newSlayerTask,
   onGameEvent,
   plantFarmPlot,
   readBlockedOpportunities,
@@ -28,12 +29,17 @@ import {
   readEquipCandidates,
   readGameVersion,
   readGatherCandidates,
+  readMasteryCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
   readSnapshot,
   sellItem,
+  setAttackStyle,
+  spendMasteryPool,
   startGathering,
   stopGathering,
+  togglePrayer,
+  usePotion,
 } from '../adapter/index.js';
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
@@ -478,9 +484,18 @@ export class Agent {
         this.settings = { ...this.settings, objective: null };
         this.requestReplan('objective_aborted');
         break;
-      case 'act':
-        this.perform(decision.actions, decision.reason);
+      case 'act': {
+        const performed = this.perform(decision.actions, decision.reason);
+        // A one-shot decision is finished once its actions are verified.
+        // Without this the policy tier re-issues it every tick, which for a
+        // prayer toggle would flip it on and off forever.
+        if (performed && decision.completeAfter === true) {
+          this.log.info('policy', `objective complete: ${decision.reason}`);
+          this.settings = { ...this.settings, objective: null };
+          this.requestReplan('objective_completed');
+        }
         break;
+      }
     }
 
     void this.pushReport();
@@ -494,7 +509,7 @@ export class Agent {
    * (select, then start), so performing a later one after an earlier one failed
    * would act on a state the policy layer never saw.
    */
-  private perform(actions: readonly PolicyAction[], reason: string): void {
+  private perform(actions: readonly PolicyAction[], reason: string): boolean {
     const isSuspended = (): boolean => this.state === 'suspended';
 
     for (const action of actions) {
@@ -503,7 +518,7 @@ export class Agent {
       if (!result.ok) {
         // Being suspended is not the objective's fault — the tier is simply
         // paused, and counting it would abandon a fine objective mid catch-up.
-        if (result.reason === 'suspended') return;
+        if (result.reason === 'suspended') return false;
 
         this.consecutiveActionFailures += 1;
         this.log.warn(
@@ -521,13 +536,14 @@ export class Agent {
           this.consecutiveActionFailures = 0;
           this.requestReplan('objective_aborted');
         }
-        return;
+        return false;
       }
 
       // Any success clears the run: the objective is making progress again.
       this.consecutiveActionFailures = 0;
       this.log.info('adapter', `${result.action} ok`, result);
     }
+    return true;
   }
 
   private dispatch(action: PolicyAction, isSuspended: () => boolean): ActionResult<unknown> {
@@ -548,6 +564,16 @@ export class Agent {
         return equipItem(action.itemId, action.slotId, isSuspended);
       case 'equip_food':
         return equipFood(action.itemId, action.quantity, isSuspended);
+      case 'spend_mastery':
+        return spendMasteryPool(action.skillId, action.actionId, action.levels, isSuspended);
+      case 'set_attack_style':
+        return setAttackStyle(action.attackTypeId, action.styleId, isSuspended);
+      case 'toggle_prayer':
+        return togglePrayer(action.prayerId, isSuspended);
+      case 'use_potion':
+        return usePotion(action.itemId, isSuspended);
+      case 'new_slayer_task':
+        return newSlayerTask(action.categoryId, action.payWithCoins, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':
@@ -720,6 +746,7 @@ export class Agent {
       ['sell', readSellCandidates],
       ['shop', readShopObjectiveCandidates],
       ['equip', readEquipCandidates],
+      ['mastery', readMasteryCandidates],
     ] as const) {
       try {
         candidates.push(...read());

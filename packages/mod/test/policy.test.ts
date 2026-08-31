@@ -35,8 +35,13 @@ describe('capability registry', () => {
       'equip_item',
       'fight_monster',
       'gather_resource',
+      'new_slayer_task',
       'sell_items',
+      'set_attack_style',
+      'spend_mastery',
       'tend_farm',
+      'toggle_prayer',
+      'use_potion',
     ]);
     for (const kind of supportedKinds()) {
       expect(isSupportedKind(kind)).toBe(true);
