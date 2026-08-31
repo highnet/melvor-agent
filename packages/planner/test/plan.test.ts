@@ -19,6 +19,7 @@ const snapshot = {
   bank: { slotsUsed: 0, slotsMax: 20, items: [] },
   activeAction: null,
   farm: [],
+  township: null,
   combat: {
     inCombat: false,
     hitpoints: 100,

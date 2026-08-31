@@ -33,6 +33,7 @@ export function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot 
     },
     activeAction: null,
     farm: [],
+    township: null,
     combat: {
       inCombat: false,
       hitpoints: 100,

@@ -83,6 +83,14 @@ export {
   readSnapshot,
   readTotalLevel,
 } from './readers.js';
+export {
+  buildTownshipBuilding,
+  readTownshipCandidates,
+  readTownshipSummary,
+  repairTownshipBuilding,
+  type TownshipProjection,
+  type TownshipSummary,
+} from './township.js';
 export { dumpRegistries } from './registries.js';
 export { CharacterSettings, type PersistenceHealth } from './storage.js';
 export { addSidebarPanel, type PanelHandle } from './sidebar.js';

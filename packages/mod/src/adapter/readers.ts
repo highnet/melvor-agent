@@ -1,5 +1,6 @@
 import { readFarmPlots } from './farming.js';
 import type { ActiveActionState, SkillState, StateSnapshot } from './surface.js';
+import { readTownshipSummary } from './township.js';
 
 /**
  * Raw read of the game's online-loop flag.
@@ -125,6 +126,7 @@ export function readSnapshot(): StateSnapshot {
     },
     activeAction: readActiveAction(),
     farm: readFarmPlots(),
+    township: readTownshipSummary(),
     combat: {
       inCombat: manager.isActive,
       hitpoints: player.hitpoints,

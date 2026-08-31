@@ -25,6 +25,8 @@ export const objectiveKindSchema = z.enum([
   'new_slayer_task',
   'run_dungeon',
   'select_spell',
+  'build_township',
+  'repair_township',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -101,6 +103,17 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('select_spell'),
     spellId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('build_township'),
+    buildingId: gameIdSchema,
+    /** Which biome it goes in; a building's cost and effect both depend on it. */
+    biomeId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('repair_township'),
+    buildingId: gameIdSchema,
+    biomeId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('sell_items'),

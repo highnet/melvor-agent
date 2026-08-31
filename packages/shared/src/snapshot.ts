@@ -111,6 +111,36 @@ export const farmPlotStateSchema = z.object({
 });
 export type FarmPlot = z.infer<typeof farmPlotStateSchema>;
 
+/**
+ * The town, when it exists.
+ *
+ * Township is the one system whose state cannot be inferred from skills and the
+ * bank: its resources, storage and health live entirely inside it. Storage is
+ * the number that decides everything — a full town discards what it produces,
+ * so it earns nothing per hour however many buildings it has.
+ */
+export const townshipStateSchema = z.object({
+  created: z.literal(true),
+  level: z.number().int().nonnegative(),
+  population: z.number().nonnegative(),
+  happiness: z.number(),
+  education: z.number(),
+  healthPercent: z.number(),
+  storageUsed: z.number().nonnegative(),
+  storageMax: z.number().nonnegative(),
+  worship: z.string(),
+  season: z.string().nullable(),
+  resources: z.array(
+    z.object({
+      id: gameIdSchema,
+      name: z.string(),
+      amount: z.number(),
+      cap: z.number(),
+    }),
+  ),
+});
+export type TownshipState = z.infer<typeof townshipStateSchema>;
+
 export const stateSnapshotSchema = z.object({
   /** Milliseconds since epoch, from the wall clock at capture. */
   capturedAt: z.number().int().positive(),
@@ -134,6 +164,8 @@ export const stateSnapshotSchema = z.object({
    * is pure, so it cannot read the game itself.
    */
   farm: z.array(farmPlotStateSchema),
+  /** Null until the town has been created, which is a one-time human decision. */
+  township: townshipStateSchema.nullable(),
 });
 export type StateSnapshot = z.infer<typeof stateSnapshotSchema>;
 

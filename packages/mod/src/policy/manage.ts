@@ -89,6 +89,18 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `selecting attack spell ${params.spellId}`,
       );
 
+    case 'build_township':
+      return act(
+        { type: 'build_township', buildingId: params.buildingId, biomeId: params.biomeId },
+        `building ${params.buildingId} in ${params.biomeId}`,
+      );
+
+    case 'repair_township':
+      return act(
+        { type: 'repair_township', buildingId: params.buildingId, biomeId: params.biomeId },
+        `repairing ${params.buildingId} in ${params.biomeId}`,
+      );
+
     default:
       return {
         kind: 'abort',

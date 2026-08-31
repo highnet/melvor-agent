@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-79 exports.
+85 exports.
 
 ## `act`
 
@@ -105,6 +105,24 @@ ARTISAN_SKILL_IDS: readonly ["melvorD:Smithing", "melvorD:Crafting", "melvorD:Fl
 
 ```ts
 BankState: any
+```
+
+## `buildTownshipBuilding`
+
+`function`
+
+Builds one building in a biome.
+
+`buildBuilding` takes no biome argument: it builds into whichever biome the
+town page is currently showing. That is a UI-driven API, so the biome is set
+first and restored afterwards — leaving it changed would silently redirect a
+human's next click to a biome they did not choose.
+
+It returns `void` and refuses silently when resources are short, so the only
+evidence that holds is the building count either side.
+
+```ts
+buildTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
 ```
 
 ## `buyShopPurchase`
@@ -828,6 +846,54 @@ Total skill level, summed from the skills themselves rather than inferred.
 readTotalLevel: () => number
 ```
 
+## `readTownshipCandidates`
+
+`function`
+
+What the town could usefully do right now.
+
+Repairs are offered alongside new construction, and the distinction is a real
+judgement for the planner: a degraded building already costs its upkeep and
+produces less, so restoring it usually beats adding another one that will
+degrade alongside it.
+
+Only affordable work is offered. Township resources cannot be bought, so an
+unaffordable building is not a "save up for it" decision the way a shop
+purchase is — it is simply not a move yet.
+
+```ts
+readTownshipCandidates: () => Candidate[]
+```
+
+## `readTownshipSummary`
+
+`function`
+
+Reads the town.
+
+Storage is the number that matters most and the one a human checks first: a
+full town discards everything it produces, so a town at 100% storage earns
+nothing per hour no matter how many buildings it has.
+
+```ts
+readTownshipSummary: () => TownshipSummary | null
+```
+
+## `repairTownshipBuilding`
+
+`function`
+
+Repairs a degraded building.
+
+Buildings lose efficiency over time, and a town of half-broken buildings
+produces half the resources while costing the same upkeep. Repair is the
+cheapest progress in the skill and the easiest thing for an idle player to
+neglect, which makes it exactly the kind of transition worth automating.
+
+```ts
+repairTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
+```
+
 ## `SaleProjection`
 
 `interface`
@@ -1026,6 +1092,26 @@ leak, which is why this is an explicit decision rather than a reflex.
 
 ```ts
 togglePrayer: (prayerId: string, isSuspended: () => boolean) => ActionResult<{ active: string[]; }>
+```
+
+## `TownshipProjection`
+
+`interface`
+
+What building or repairing claims to change.
+
+```ts
+TownshipProjection: any
+```
+
+## `TownshipSummary`
+
+`interface`
+
+The town's state, for the planner to reason about.
+
+```ts
+TownshipSummary: any
 ```
 
 ## `usePotion`

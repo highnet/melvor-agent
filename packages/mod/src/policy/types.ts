@@ -33,7 +33,9 @@ export type PolicyAction =
   | { type: 'use_potion'; itemId: string }
   | { type: 'new_slayer_task'; categoryId: string; payWithCoins: boolean }
   | { type: 'run_dungeon'; dungeonId: string }
-  | { type: 'select_spell'; spellId: string };
+  | { type: 'select_spell'; spellId: string }
+  | { type: 'build_township'; buildingId: string; biomeId: string }
+  | { type: 'repair_township'; buildingId: string; biomeId: string };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

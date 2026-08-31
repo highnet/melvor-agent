@@ -34,6 +34,8 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   use_potion: manage,
   new_slayer_task: manage,
   select_spell: manage,
+  build_township: manage,
+  repair_township: manage,
   run_dungeon: fightMonster,
 };
 

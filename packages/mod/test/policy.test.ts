@@ -30,12 +30,14 @@ describe('fixtures', () => {
 describe('capability registry', () => {
   it('accepts the kinds it has executors for', () => {
     expect(supportedKinds().sort()).toEqual([
+      'build_township',
       'buy_shop_upgrade',
       'equip_food',
       'equip_item',
       'fight_monster',
       'gather_resource',
       'new_slayer_task',
+      'repair_township',
       'run_dungeon',
       'select_spell',
       'sell_items',
@@ -54,7 +56,7 @@ describe('capability registry', () => {
   it('rejects a kind the policy layer cannot perform', () => {
     // The planner emitting this is a bug, and it must be caught before the
     // params are trusted rather than at the game boundary.
-    expect(isSupportedKind('build_township')).toBe(false);
+    expect(isSupportedKind('mine_cartography')).toBe(false);
   });
 });
 

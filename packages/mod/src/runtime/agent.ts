@@ -11,6 +11,7 @@ import type {
 import { fail, stateSnapshotSchema } from '@melvor-agent/shared';
 import {
   Subscriptions,
+  buildTownshipBuilding,
   buyShopPurchase,
   checkCharacterAllowed,
   checkRealmAllowed,
@@ -35,6 +36,8 @@ import {
   readShopObjectiveCandidates,
   readSnapshot,
   readSpellCandidates,
+  readTownshipCandidates,
+  repairTownshipBuilding,
   selectAttackSpell,
   sellItem,
   setAttackStyle,
@@ -597,6 +600,10 @@ export class Agent {
         return this.enterDungeonIfSurvivable(action.dungeonId, isSuspended);
       case 'select_spell':
         return selectAttackSpell(action.spellId, isSuspended);
+      case 'build_township':
+        return buildTownshipBuilding(action.buildingId, action.biomeId, isSuspended);
+      case 'repair_township':
+        return repairTownshipBuilding(action.buildingId, action.biomeId, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':
@@ -803,6 +810,7 @@ export class Agent {
       ['equip', readEquipCandidates],
       ['mastery', readMasteryCandidates],
       ['spell', readSpellCandidates],
+      ['township', readTownshipCandidates],
       ['combat', () => this.combatCandidates()],
     ] as const) {
       try {
