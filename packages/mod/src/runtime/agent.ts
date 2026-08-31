@@ -164,6 +164,15 @@ export const DEFAULT_SETTINGS: AgentSettings = {
  */
 const COMBAT_ENUMERATION_TTL_MS = 60_000;
 
+/**
+ * How often to repeat the "no objectives available" line.
+ *
+ * Once a minute rather than every tick. The message is worth having — it is how
+ * an operator learns the agent is waiting rather than broken — but repeating it
+ * every three seconds turns the journal into a wall of one sentence.
+ */
+const NO_OBJECTIVES_LOG_INTERVAL_MS = 60_000;
+
 export class Agent {
   private state: RunState = 'idle';
   private blockedReason: string | null = null;
@@ -173,6 +182,9 @@ export class Agent {
   private lastReflexAt = 0;
   private lastSnapshot: StateSnapshot | null = null;
   /** Cached fight enumeration; see {@link combatEnumeration}. */
+  /** Rate limit for the "no objectives" line; see {@link replan}. */
+  private lastNoObjectivesLogAt = 0;
+
   /** When the agent last found itself with no objective. Null while it has one. */
   private objectivelessSince: number | null = null;
 
@@ -528,7 +540,15 @@ export class Agent {
           `rejected ${response.objectives.length} objective(s): no executor for ${response.objectives.map((o) => o.kind).join(', ')}`,
         );
       } else {
-        this.log.info('planner', `no objectives available (${response.reasoning})`);
+        // Throttled: with no session attached this fires on every policy tick,
+        // and twenty identical lines a minute bury the entries that explain
+        // what the agent actually did. The journal is the only way to diagnose
+        // an unattended run, so it has to stay readable.
+        const now = Date.now();
+        if (now - this.lastNoObjectivesLogAt > NO_OBJECTIVES_LOG_INTERVAL_MS) {
+          this.lastNoObjectivesLogAt = now;
+          this.log.info('planner', `no objectives available (${response.reasoning})`);
+        }
       }
       return;
     }
