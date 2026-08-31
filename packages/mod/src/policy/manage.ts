@@ -83,6 +83,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `taking a new slayer task from ${params.categoryId}`,
       );
 
+    case 'select_spell':
+      return act(
+        { type: 'select_spell', spellId: params.spellId },
+        `selecting attack spell ${params.spellId}`,
+      );
+
     default:
       return {
         kind: 'abort',

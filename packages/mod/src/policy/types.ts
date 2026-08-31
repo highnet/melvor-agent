@@ -31,7 +31,9 @@ export type PolicyAction =
   | { type: 'set_attack_style'; attackTypeId: 'melee' | 'ranged' | 'magic'; styleId: string }
   | { type: 'toggle_prayer'; prayerId: string }
   | { type: 'use_potion'; itemId: string }
-  | { type: 'new_slayer_task'; categoryId: string; payWithCoins: boolean };
+  | { type: 'new_slayer_task'; categoryId: string; payWithCoins: boolean }
+  | { type: 'run_dungeon'; dungeonId: string }
+  | { type: 'select_spell'; spellId: string };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

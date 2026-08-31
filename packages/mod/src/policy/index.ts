@@ -33,6 +33,8 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   toggle_prayer: manage,
   use_potion: manage,
   new_slayer_task: manage,
+  select_spell: manage,
+  run_dungeon: fightMonster,
 };
 
 /** Whether the policy layer can execute this objective kind at all. */

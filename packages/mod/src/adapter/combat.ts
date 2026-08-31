@@ -1,4 +1,4 @@
-import type { ActionResult, CombatGateInputs } from '@melvor-agent/shared';
+import type { ActionResult, Candidate, CombatGateInputs } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
@@ -230,4 +230,214 @@ export function disengageCombat(isSuspended: () => boolean): ActionResult<Combat
     },
     isSuspended,
   );
+}
+
+/**
+ * Starts a dungeon.
+ *
+ * Dungeons are a large slice of the game's content and rewards, and they were
+ * unreachable: the survivability gate already knew how to measure one — walking
+ * every monster and keeping the worst — but nothing could actually enter it.
+ *
+ * Judged by its *worst* monster, not its first, which is why the gate does that
+ * walk. Dying on floor nine costs exactly as much as dying on floor one, and a
+ * dungeon cannot be left partway without losing the run.
+ *
+ * Callers must have cleared the gate. As with {@link engageMonster}, this does
+ * not run it: the gate is pure and testable, and mixing it in here would make
+ * it both untestable and easy to bypass.
+ *
+ * @param dungeonId - Namespaced `Dungeon` id.
+ * @param isSuspended - Guard against acting during offline catch-up.
+ */
+export function startDungeon(
+  dungeonId: string,
+  isSuspended: () => boolean,
+): ActionResult<CombatProjection> {
+  const dungeon = game.dungeons.getObjectByID(dungeonId);
+  if (dungeon === undefined) {
+    return fail('combat.startDungeon', 'precondition', `no dungeon registered as ${dungeonId}`);
+  }
+
+  return act(
+    {
+      name: 'combat.startDungeon',
+      observe: project,
+      precondition: () => {
+        if (isRefusedRealm(dungeon.realm.id)) {
+          return `dungeon ${dungeonId} is in refused realm ${dungeon.realm.id}`;
+        }
+        if (!game.checkRequirements(dungeon.entryRequirements, false)) {
+          return `entry requirements not met for ${dungeonId}`;
+        }
+        if (game.combat.isActive) return 'already in combat';
+        const active = game.activeAction;
+        if (active !== undefined) return `another action is running: ${active.id}`;
+        return null;
+      },
+      perform: () => game.combat.selectDungeon(dungeon),
+      changed: (_before, after) => after.inCombat,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Selects the attack spell for Magic combat.
+ *
+ * Without this the agent cannot fight with Magic at all — the spell is a
+ * separate selection from the attack style, and an unset one means the
+ * character falls back to melee regardless of gear.
+ *
+ * `selectAttackSpell` returns `void` and silently refuses when the Magic level
+ * or the runes are missing, so the selection is observed either side.
+ */
+export function selectAttackSpell(
+  spellId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ spellId: string | null }> {
+  const spell = game.attackSpells.getObjectByID(spellId);
+  if (spell === undefined) {
+    return fail('combat.selectSpell', 'precondition', `no attack spell ${spellId}`);
+  }
+
+  const player = game.combat.player;
+  const projectSpell = (): { spellId: string | null } => ({
+    spellId: player.spellSelection.attack?.id ?? null,
+  });
+
+  return act(
+    {
+      name: 'combat.selectSpell',
+      observe: projectSpell,
+      precondition: () => {
+        if (game.combat.isActive) return 'in combat; refusing to change spell';
+        // `game.altMagic` is the Alt Magic *skill*, not combat Magic; the
+        // combat one is only reachable through the skill registry.
+        const magicLevel = game.skills.getObjectByID('melvorD:Magic')?.level ?? 0;
+        if (spell.level > magicLevel) {
+          return `${spellId} needs Magic ${spell.level}, have ${magicLevel}`;
+        }
+        return null;
+      },
+      perform: () => player.selectAttackSpell(spell, false),
+      changed: (_before, after) => after.spellId === spellId,
+    },
+    isSuspended,
+  );
+}
+
+// --- enumeration -----------------------------------------------------------
+
+/** A fight the agent could plausibly take, before the survivability gate. */
+export interface CombatTarget {
+  kind: 'fight_monster' | 'run_dungeon';
+  id: string;
+  /** Set for monsters; dungeons are entered by id alone. */
+  areaId?: string;
+  name: string;
+  areaName: string;
+  combatLevel: number;
+}
+
+/** Monsters per area offered to the planner. */
+const MONSTERS_PER_AREA = 3;
+
+/**
+ * Enumerates the fights that are currently *enterable*.
+ *
+ * Deliberately not the same question as "survivable": entry requirements are a
+ * game rule, survivability is our own judgement, and the gate owns the second
+ * one. Mixing them here would put the safety decision in two places.
+ *
+ * Areas hold up to dozens of monsters and the game has hundreds in total, so
+ * each area contributes only its easiest few. The planner picks among real
+ * options; it does not need every option.
+ */
+export function readCombatTargets(): CombatTarget[] {
+  const targets: CombatTarget[] = [];
+
+  const areas = [...game.combatAreas.allObjects, ...game.slayerAreas.allObjects];
+  for (const area of areas) {
+    if (isRefusedRealm(area.realm.id)) continue;
+    if (!game.checkRequirements(area.entryRequirements, false)) continue;
+
+    const byLevel = [...area.monsters].sort((a, b) => combatLevelOf(a) - combatLevelOf(b));
+    for (const monster of byLevel.slice(0, MONSTERS_PER_AREA)) {
+      targets.push({
+        kind: 'fight_monster',
+        id: monster.id,
+        areaId: area.id,
+        name: monster.name,
+        areaName: area.name,
+        combatLevel: combatLevelOf(monster),
+      });
+    }
+  }
+
+  for (const dungeon of game.dungeons.allObjects) {
+    if (isRefusedRealm(dungeon.realm.id)) continue;
+    if (!game.checkRequirements(dungeon.entryRequirements, false)) continue;
+
+    // A dungeon is judged by its hardest monster, because it cannot be left
+    // partway: the boss is what the run has to survive.
+    const hardest = [...dungeon.monsters].reduce(
+      (worst, monster) => (combatLevelOf(monster) > combatLevelOf(worst) ? monster : worst),
+      dungeon.monsters[0],
+    );
+    if (hardest === undefined) continue;
+
+    targets.push({
+      kind: 'run_dungeon',
+      id: dungeon.id,
+      name: dungeon.name,
+      areaName: dungeon.name,
+      combatLevel: combatLevelOf(hardest),
+    });
+  }
+
+  return targets;
+}
+
+/** `combatLevel` is a getter that can throw on malformed modded monsters. */
+function combatLevelOf(monster: Monster | undefined): number {
+  if (monster === undefined) return Number.POSITIVE_INFINITY;
+  try {
+    const level = monster.combatLevel;
+    return Number.isFinite(level) ? level : Number.POSITIVE_INFINITY;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+/**
+ * Attack spells the character can currently cast.
+ *
+ * Gated on the runes actually being in the bank, not just on the Magic level:
+ * a spell without runes is selected happily and then does nothing, which is the
+ * worst failure mode available — silent, and only visible as zero XP an hour
+ * later.
+ */
+export function readSpellCandidates(): Candidate[] {
+  const magicLevel = game.skills.getObjectByID('melvorD:Magic')?.level ?? 0;
+  const selected = game.combat.player.spellSelection.attack?.id ?? null;
+  const candidates: Candidate[] = [];
+
+  for (const spell of game.attackSpells.allObjects) {
+    if (spell.id === selected) continue;
+    if (spell.level > magicLevel) continue;
+
+    const runes = spell.runesRequired;
+    const missing = runes.filter((rune) => game.bank.getQty(rune.item) < rune.quantity);
+    if (missing.length > 0) continue;
+
+    candidates.push({
+      kind: 'select_spell',
+      params: { kind: 'select_spell', spellId: spell.id },
+      label: `Cast ${spell.name} (Magic ${spell.level}, runes in bank)`,
+      available: true,
+    });
+  }
+
+  return candidates;
 }

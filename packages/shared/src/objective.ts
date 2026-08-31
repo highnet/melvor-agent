@@ -23,6 +23,8 @@ export const objectiveKindSchema = z.enum([
   'toggle_prayer',
   'use_potion',
   'new_slayer_task',
+  'run_dungeon',
+  'select_spell',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -91,6 +93,14 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     categoryId: gameIdSchema,
     /** Paying Slayer Coins rerolls; free selection is the default. */
     payWithCoins: z.boolean(),
+  }),
+  z.object({
+    kind: z.literal('run_dungeon'),
+    dungeonId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('select_spell'),
+    spellId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('sell_items'),

@@ -36,6 +36,8 @@ describe('capability registry', () => {
       'fight_monster',
       'gather_resource',
       'new_slayer_task',
+      'run_dungeon',
+      'select_spell',
       'sell_items',
       'set_attack_style',
       'spend_mastery',

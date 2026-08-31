@@ -29,12 +29,13 @@ const FOOD_FLOOR = 5;
  */
 export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDecision => {
   const { snapshot, objective, now, objectiveStartedAt, deathsSinceStart } = context;
+  const params = objective.params;
 
-  if (objective.params.kind !== 'fight_monster') {
+  if (params.kind !== 'fight_monster' && params.kind !== 'run_dungeon') {
     return {
       kind: 'abort',
       outcome: 'failed_precondition',
-      detail: `fightMonster received params of kind ${objective.params.kind}`,
+      detail: `fightMonster received params of kind ${params.kind}`,
     };
   }
 
@@ -93,10 +94,17 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
     };
   }
 
-  const { monsterId, areaId } = objective.params;
+  if (params.kind === 'run_dungeon') {
+    return {
+      kind: 'act',
+      actions: [{ type: 'run_dungeon', dungeonId: params.dungeonId }],
+      reason: `entering dungeon ${params.dungeonId}`,
+    };
+  }
+
   return {
     kind: 'act',
-    actions: [{ type: 'engage', monsterId, areaId }],
-    reason: `engaging ${monsterId} in ${areaId}`,
+    actions: [{ type: 'engage', monsterId: params.monsterId, areaId: params.areaId }],
+    reason: `engaging ${params.monsterId} in ${params.areaId}`,
   };
 };

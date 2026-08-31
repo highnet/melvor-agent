@@ -19,6 +19,10 @@ export {
   disengageCombat,
   engageMonster,
   readCombatGateInputs,
+  readCombatTargets,
+  readSpellCandidates,
+  selectAttackSpell,
+  startDungeon,
   type CombatProjection,
 } from './combat.js';
 export {

@@ -26,6 +26,7 @@ import {
   plantFarmPlot,
   readBlockedOpportunities,
   readCombatGateInputs,
+  readCombatTargets,
   readEquipCandidates,
   readGameVersion,
   readGatherCandidates,
@@ -33,9 +34,12 @@ import {
   readSellCandidates,
   readShopObjectiveCandidates,
   readSnapshot,
+  readSpellCandidates,
+  selectAttackSpell,
   sellItem,
   setAttackStyle,
   spendMasteryPool,
+  startDungeon,
   startGathering,
   stopGathering,
   togglePrayer,
@@ -112,6 +116,15 @@ export const DEFAULT_SETTINGS: AgentSettings = {
  * game into the offline loop mid-session. Acting during that window produces
  * nonsense, so all three tiers stop until `offlineLoopExited`.
  */
+/**
+ * How long a fight enumeration stays fresh.
+ *
+ * A minute: long enough that probing every monster is a rounding error against
+ * tick cost, short enough that a level-up or a gear change shows up as new
+ * options while the agent is still in the same objective.
+ */
+const COMBAT_ENUMERATION_TTL_MS = 60_000;
+
 export class Agent {
   private state: RunState = 'idle';
   private blockedReason: string | null = null;
@@ -120,6 +133,12 @@ export class Agent {
   private qualityTimer: ReturnType<typeof setInterval> | null = null;
   private lastReflexAt = 0;
   private lastSnapshot: StateSnapshot | null = null;
+  /** Cached fight enumeration; see {@link combatEnumeration}. */
+  private combatCache: {
+    at: number;
+    candidates: Candidate[];
+    blocked: ReturnType<typeof readBlockedOpportunities>;
+  } | null = null;
   private objectiveStartedAt = Date.now();
   private deathsSinceStart = 0;
   private quality: QualitySample[] = [];
@@ -574,6 +593,10 @@ export class Agent {
         return usePotion(action.itemId, isSuspended);
       case 'new_slayer_task':
         return newSlayerTask(action.categoryId, action.payWithCoins, isSuspended);
+      case 'run_dungeon':
+        return this.enterDungeonIfSurvivable(action.dungeonId, isSuspended);
+      case 'select_spell':
+        return selectAttackSpell(action.spellId, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':
@@ -597,13 +620,45 @@ export class Agent {
     areaId: string,
     isSuspended: () => boolean,
   ): ActionResult<unknown> {
+    const refusal = this.assessTarget(monsterId);
+    if (refusal !== null) return refusal;
+    return engageMonster(monsterId, areaId, isSuspended);
+  }
+
+  /**
+   * Enters a dungeon only if the same gate proves it survivable.
+   *
+   * It matters more here than for a single monster: a dungeon cannot be left
+   * partway without losing the run, so the gate — which judges a dungeon by its
+   * hardest monster, not its first — is the only thing standing between the
+   * agent and an hour of wasted progress.
+   */
+  private enterDungeonIfSurvivable(
+    dungeonId: string,
+    isSuspended: () => boolean,
+  ): ActionResult<unknown> {
+    const refusal = this.assessTarget(dungeonId);
+    if (refusal !== null) return refusal;
+    return startDungeon(dungeonId, isSuspended);
+  }
+
+  /**
+   * The gate itself, shared by monsters and dungeons.
+   *
+   * Two copies would drift, and the copy that drifted would be the one that
+   * lets the agent die.
+   *
+   * @param targetId - A monster id or a dungeon id.
+   * @returns A refusal to hand back to the caller, or null when it is safe.
+   */
+  private assessTarget(targetId: string): ActionResult<unknown> | null {
     const sessionMinutes = this.settings.objective?.abortWhen.minutesExceed ?? 30;
 
-    const gathered = readCombatGateInputs(monsterId, sessionMinutes);
+    const gathered = readCombatGateInputs(targetId, sessionMinutes);
     if (!gathered.ok) {
       // Could not measure means could not prove, which is a refusal — never an
       // assumption that the fight is fine.
-      this.log.warn('policy', `combat gate: cannot assess ${monsterId} — ${gathered.detail}`);
+      this.log.warn('policy', `combat gate: cannot assess ${targetId} — ${gathered.detail}`);
       return fail('combat.gate', 'precondition', gathered.detail);
     }
 
@@ -627,7 +682,7 @@ export class Agent {
     }
 
     this.log.info('policy', `combat gate passed ${gathered.inputs.targetName}`, verdict);
-    return engageMonster(monsterId, areaId, isSuspended);
+    return null;
   }
 
   /** Reads and validates a snapshot. Invalid snapshots block, never pass through. */
@@ -733,7 +788,7 @@ export class Agent {
    */
   private safeBlocked(): ReturnType<typeof readBlockedOpportunities> {
     try {
-      return readBlockedOpportunities();
+      return [...readBlockedOpportunities(), ...this.blockedCombat()];
     } catch {
       return [];
     }
@@ -747,6 +802,8 @@ export class Agent {
       ['shop', readShopObjectiveCandidates],
       ['equip', readEquipCandidates],
       ['mastery', readMasteryCandidates],
+      ['spell', readSpellCandidates],
+      ['combat', () => this.combatCandidates()],
     ] as const) {
       try {
         candidates.push(...read());
@@ -755,6 +812,111 @@ export class Agent {
       }
     }
     return candidates;
+  }
+
+  /**
+   * Fights the agent may take, each already judged by the survivability gate.
+   *
+   * The gate runs here as well as at execution time, for different reasons: at
+   * execution it *refuses*, and here it *filters*. A candidate is by definition
+   * something the mod has proven it can execute right now, so an unsafe fight is
+   * not one — it is reported through {@link safeBlocked} instead, where "you
+   * cannot fight this yet, and here is why" is the most useful thing the planner
+   * can learn about combat progression.
+   */
+  private combatCandidates(): Candidate[] {
+    return this.combatEnumeration().candidates;
+  }
+
+  /** Fights that are enterable but that the gate refuses, with the reason. */
+  private blockedCombat(): ReturnType<typeof readBlockedOpportunities> {
+    return this.combatEnumeration().blocked;
+  }
+
+  /**
+   * Enumerates and gates every reachable fight, cached.
+   *
+   * The gate probes a throwaway `Enemy` per monster — and per *every* monster of
+   * a dungeon — so this is far too expensive to redo on each tick. Nothing it
+   * depends on (levels, gear, food) changes faster than the cache window, and a
+   * fight that becomes unsafe within it is still refused at execution time by
+   * {@link assessTarget}, which never uses the cache.
+   */
+  private combatEnumeration(): {
+    candidates: Candidate[];
+    blocked: ReturnType<typeof readBlockedOpportunities>;
+  } {
+    const now = Date.now();
+    if (this.combatCache !== null && now - this.combatCache.at < COMBAT_ENUMERATION_TTL_MS) {
+      return this.combatCache;
+    }
+
+    const candidates: Candidate[] = [];
+    const blocked: ReturnType<typeof readBlockedOpportunities> = [];
+
+    for (const target of readCombatTargets()) {
+      const refusal = this.gateRefusal(target.id);
+      if (refusal !== null) {
+        blocked.push({
+          label: `Fight ${target.name} (combat level ${target.combatLevel}) — ${refusal}`,
+          xpPerHour: 0,
+          missing: [],
+        });
+        continue;
+      }
+
+      const where =
+        target.kind === 'run_dungeon'
+          ? `dungeon, hardest monster combat level ${target.combatLevel}`
+          : `${target.areaName}, combat level ${target.combatLevel}`;
+      const label = `Fight ${target.name} (${where})`;
+
+      if (target.kind === 'run_dungeon') {
+        candidates.push({
+          kind: 'run_dungeon',
+          params: { kind: 'run_dungeon', dungeonId: target.id },
+          label,
+          available: true,
+        });
+        continue;
+      }
+
+      candidates.push({
+        kind: 'fight_monster',
+        params: { kind: 'fight_monster', monsterId: target.id, areaId: target.areaId ?? '' },
+        label,
+        available: true,
+      });
+    }
+
+    this.combatCache = { at: now, candidates, blocked };
+    return this.combatCache;
+  }
+
+  /**
+   * Runs the survivability gate silently, for enumeration.
+   *
+   * Shares {@link readCombatGateInputs} and `assessSurvivability` with the
+   * enforcing path in {@link assessTarget}, but logs nothing: enumerating every
+   * fight in the game on each snapshot would otherwise bury the journal.
+   *
+   * @returns The refusal reason, or null when the fight is safe.
+   */
+  private gateRefusal(targetId: string): string | null {
+    const sessionMinutes = this.settings.objective?.abortWhen.minutesExceed ?? 30;
+
+    const gathered = readCombatGateInputs(targetId, sessionMinutes);
+    if (!gathered.ok) return gathered.detail;
+
+    const verdict = assessSurvivability({
+      ...gathered.inputs,
+      autoEatThresholdFraction: normaliseFraction(gathered.inputs.autoEatThresholdFraction),
+      autoEatHpLimitFraction: normaliseFraction(gathered.inputs.autoEatHpLimitFraction),
+      autoEatEfficiencyFraction: normaliseFraction(gathered.inputs.autoEatEfficiencyFraction),
+    });
+
+    if (verdict.safe) return null;
+    return verdict.refusals.map((refusal) => refusal.detail).join('; ');
   }
 
   /** Applies one operator command from the TUI or the panel. */

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-75 exports.
+79 exports.
 
 ## `act`
 
@@ -613,6 +613,24 @@ pure and lives in the policy tier so it can be tested exhaustively.
 readCombatGateInputs: (targetId: string, intendedSessionMinutes: number) => { ok: true; inputs: CombatGateInputs; } | { ok: false; detail: string; }
 ```
 
+## `readCombatTargets`
+
+`function`
+
+Enumerates the fights that are currently *enterable*.
+
+Deliberately not the same question as "survivable": entry requirements are a
+game rule, survivability is our own judgement, and the gate owns the second
+one. Mixing them here would put the safety decision in two places.
+
+Areas hold up to dozens of monsters and the game has hundreds in total, so
+each area contributes only its easiest few. The planner picks among real
+options; it does not need every option.
+
+```ts
+readCombatTargets: () => CombatTarget[]
+```
+
 ## `readCompletionPercent`
 
 `function`
@@ -785,6 +803,21 @@ this; this function does not guard, so that it stays pure and cheap.
 readSnapshot: () => StateSnapshot
 ```
 
+## `readSpellCandidates`
+
+`function`
+
+Attack spells the character can currently cast.
+
+Gated on the runes actually being in the bank, not just on the Magic level:
+a spell without runes is selected happily and then does nothing, which is the
+worst failure mode available — silent, and only visible as zero XP an hour
+later.
+
+```ts
+readSpellCandidates: () => Candidate[]
+```
+
 ## `readTotalLevel`
 
 `function`
@@ -803,6 +836,23 @@ What selling claims to change: less of the item, more of the currency.
 
 ```ts
 SaleProjection: any
+```
+
+## `selectAttackSpell`
+
+`function`
+
+Selects the attack spell for Magic combat.
+
+Without this the agent cannot fight with Magic at all — the spell is a
+separate selection from the attack style, and an unset one means the
+character falls back to melee regardless of gear.
+
+`selectAttackSpell` returns `void` and silently refuses when the Magic level
+or the runes are missing, so the selection is observed either side.
+
+```ts
+selectAttackSpell: (spellId: string, isSuspended: () => boolean) => ActionResult<{ spellId: string | null; }>
 ```
 
 ## `sellItem`
@@ -884,6 +934,28 @@ are management interfaces rather than a single startable action.
 
 ```ts
 STARTABLE_SKILL_IDS: readonly string[]
+```
+
+## `startDungeon`
+
+`function`
+
+Starts a dungeon.
+
+Dungeons are a large slice of the game's content and rewards, and they were
+unreachable: the survivability gate already knew how to measure one — walking
+every monster and keeping the worst — but nothing could actually enter it.
+
+Judged by its *worst* monster, not its first, which is why the gate does that
+walk. Dying on floor nine costs exactly as much as dying on floor one, and a
+dungeon cannot be left partway without losing the run.
+
+Callers must have cleared the gate. As with {@link engageMonster}, this does
+not run it: the gate is pure and testable, and mixing it in here would make
+it both untestable and easy to bypass.
+
+```ts
+startDungeon: (dungeonId: string, isSuspended: () => boolean) => ActionResult<CombatProjection>
 ```
 
 ## `startGathering`
