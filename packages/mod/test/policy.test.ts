@@ -171,14 +171,28 @@ describe('gatherResource', () => {
     expect(gatherResource(context({ snapshot: done }))).toMatchObject({ kind: 'complete' });
   });
 
-  it('does not preempt another skill holding the action slot', () => {
+  it('preempts another skill holding the action slot', () => {
+    // Switching skills when the objective changes is the transition the whole
+    // agent exists for. Refusing to preempt would pin it to whatever it started
+    // first — exactly what the game already does for free.
     const busy = snapshot({
       activeAction: { id: 'melvorD:Fishing', name: 'Fishing', isActive: true },
     });
     expect(gatherResource(context({ snapshot: busy }))).toMatchObject({
-      kind: 'idle',
-      reason: 'nothing_to_do',
+      kind: 'act',
+      actions: [{ type: 'stop_gathering', skillId: 'melvorD:Fishing' }],
     });
+  });
+
+  it('stops and starts on separate ticks, never batched', () => {
+    // `stop` must be observed to have freed the slot before `gather` claims it.
+    const busy = snapshot({
+      activeAction: { id: 'melvorD:Fishing', name: 'Fishing', isActive: true },
+    });
+    const decision = gatherResource(context({ snapshot: busy }));
+    expect(decision.kind).toBe('act');
+    if (decision.kind !== 'act') return;
+    expect(decision.actions).toHaveLength(1);
   });
 
   it('accepts the other gathering skills that have verified executors', () => {

@@ -103,14 +103,23 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
     };
   }
 
-  // Another skill holds the action slot. Stop it first; the game runs one
-  // active action at a time, so starting without stopping would silently no-op.
+  // Another skill holds the action slot. The game runs one active action at a
+  // time, so starting without stopping first would silently no-op.
+  //
+  // Preempting is the *point*: switching skills when the objective changes is
+  // the transition this whole agent exists to perform. Refusing to preempt
+  // would leave it running whatever it happened to start first, forever —
+  // precisely the behaviour the game already gives you for free.
+  //
+  // Stop and start are separate ticks rather than one batch: `stop` has to be
+  // observed to have actually taken the slot free before `gather` can claim it,
+  // and batching them would start against a state the stop has not produced yet.
   const active = snapshot.activeAction;
   if (active !== null && active.id !== skillId) {
     return {
-      kind: 'idle',
-      reason: 'nothing_to_do',
-      detail: `${active.name} holds the active action slot; not preempting it in Phase 1`,
+      kind: 'act',
+      actions: [{ type: 'stop_gathering', skillId: active.id }],
+      reason: `${active.name} holds the action slot; stopping it to run ${skill.name}`,
     };
   }
 
