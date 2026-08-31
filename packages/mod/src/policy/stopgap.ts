@@ -41,7 +41,15 @@ export function chooseStopgap(candidates: readonly Candidate[], now: number): Ob
   const sustained = candidates.filter((candidate) => candidate.kind === 'gather_resource');
   if (sustained.length === 0) return null;
 
-  const best = sustained.reduce((leader, candidate) =>
+  // Producers before consumers. The highest-XP action available is usually an
+  // artisan one — Firemaking burns logs at 96,000 xp/h — and left unattended it
+  // converts a bank the agent spent hours filling into nothing but XP. A
+  // candidate that earns GP is producing something; one that does not is
+  // consuming what a planner may have been saving.
+  const earners = sustained.filter((candidate) => (candidate.gpPerHour ?? 0) > 0);
+  const pool = earners.length > 0 ? earners : sustained;
+
+  const best = pool.reduce((leader, candidate) =>
     (candidate.xpPerHour ?? 0) > (leader.xpPerHour ?? 0) ? candidate : leader,
   );
 

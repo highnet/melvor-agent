@@ -29,6 +29,37 @@ describe('stopgap', () => {
     expect(objective?.rationale).toMatch(/stopgap/i);
   });
 
+  it('prefers producing over consuming', () => {
+    // Firemaking is almost always the highest-XP action available and it burns
+    // logs. Unattended, that converts a bank the agent spent hours filling into
+    // XP alone — the exact "cut trees and burn them" loop that is not a
+    // strategy. A candidate that earns GP is producing something.
+    const burning: Candidate = {
+      kind: 'gather_resource',
+      params: {
+        kind: 'gather_resource',
+        skillId: 'melvorD:Firemaking',
+        recipeId: 'melvorD:Willow',
+      },
+      label: 'Firemaking: Willow Logs',
+      xpPerHour: 96_000,
+      available: true,
+    };
+    const cutting: Candidate = {
+      ...gather('melvorD:Woodcutting', 'melvorD:Teak', 18_000),
+      gpPerHour: 12_000,
+    };
+
+    const objective = chooseStopgap([burning, cutting], NOW);
+
+    expect(objective?.params).toMatchObject({ recipeId: 'melvorD:Teak' });
+  });
+
+  it('falls back to raw XP when nothing on offer earns anything', () => {
+    const objective = chooseStopgap([gather('melvorD:Firemaking', 'melvorD:Oak', 72_000)], NOW);
+    expect(objective?.params).toMatchObject({ recipeId: 'melvorD:Oak' });
+  });
+
   it('never spends anything', () => {
     // A stopgap makes no decisions, only progress. Buying or selling without a
     // planner is the greedy behaviour the whole architecture exists to avoid —
