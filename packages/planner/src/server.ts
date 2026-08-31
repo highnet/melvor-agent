@@ -9,6 +9,7 @@ import {
 } from '@melvor-agent/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { TOOLS } from './mcp-tools.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import { plan, plannerStatus } from './plan.js';
 import { Store } from './store.js';
@@ -182,6 +183,34 @@ app.post('/memory/note', async (c) => {
   const origin = body.origin === 'untrusted' ? 'untrusted' : 'agent';
   await appendDailyNote(MEMORY_ROOT, origin, body.note);
   return c.json({ ok: true, origin });
+});
+
+/**
+ * Executes an MCP tool by name.
+ *
+ * The MCP server is a thin proxy onto this. That split exists because Claude
+ * Code spawns the MCP server once per session and keeps the process, so
+ * anything implemented there is frozen until a restart — whereas this service
+ * runs under `tsx watch` and reloads on save. Tool behaviour therefore lives
+ * here and can be changed live; only adding or renaming a tool needs a restart.
+ */
+app.post('/mcp/:tool', async (c) => {
+  const name = c.req.param('tool');
+  const handler = TOOLS[name];
+  if (handler === undefined) {
+    return c.json({ error: `unknown tool "${name}"` }, 404);
+  }
+
+  try {
+    const args = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    return c.json({ text: await handler(args, { store, memoryRoot: MEMORY_ROOT }) });
+  } catch (error) {
+    // A tool that throws should tell the caller what went wrong rather than
+    // presenting as an unreachable service, which is a different fix entirely.
+    return c.json({
+      text: `Tool "${name}" failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
 });
 
 app.get('/health', (c) => c.json({ ok: true, dataDir: DATA_DIR, planner: plannerStatus() }));

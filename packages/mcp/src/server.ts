@@ -35,39 +35,7 @@ server.registerTool(
       'Current run state, what the agent is doing, its objective, and a summary of the character: levels, bank, farm, combat readiness. Start here.',
     inputSchema: {},
   },
-  async () => {
-    const dashboard = await get('/dashboard');
-    if (dashboard === null) return text(serviceDown());
-
-    const report = dashboard.report;
-    if (report === null || report === undefined) {
-      return text('The mod has never reported. Is the game running with a character loaded?');
-    }
-
-    const s = report.snapshot;
-    const gp = s.currencies.find((c: { id: string }) => c.id === 'melvorD:GP')?.amount ?? 0;
-    const levelled = s.skills
-      .filter((skill: { level: number }) => skill.level > 1)
-      .sort((a: { level: number }, b: { level: number }) => b.level - a.level)
-      .map((skill: { name: string; level: number }) => `${skill.name} ${skill.level}`)
-      .join(', ');
-
-    return text(
-      [
-        `Run state: ${report.runState}${report.blockedReason === null ? '' : ` — BLOCKED: ${report.blockedReason}`}`,
-        `Connected: ${dashboard.connected} (last report ${dashboard.lastReportAgeMs}ms ago)`,
-        `Objective: ${report.objective === null ? 'none' : report.objective.rationale}`,
-        '',
-        `Character ${s.characterName} (${s.gameVersion}) — total level ${s.totalLevel}, completion ${s.completionPercent.toFixed(2)}%, GP ${gp.toLocaleString()}`,
-        `Doing: ${s.activeAction === null ? 'nothing' : s.activeAction.name}`,
-        `Skills above 1: ${levelled || '(none)'}`,
-        `Bank: ${s.bank.slotsUsed}/${s.bank.slotsMax} slots — ${topStacks(s.bank.items)}`,
-        `Farm: ${farmSummary(s.farm ?? [])}`,
-        `Combat: HP ${s.combat.hitpoints}/${s.combat.maxHitpoints}, auto-eat ${s.combat.autoEatThreshold > 0 ? 'owned' : 'NOT owned (combat will be refused)'}`,
-        `Rates: ${dashboard.levelsPerHour === null ? 'warming up' : `${dashboard.levelsPerHour.toFixed(2)} levels/hour`}`,
-      ].join('\n'),
-    );
-  },
+  (args) => callTool('get_agent_state', args),
 );
 
 server.registerTool(
@@ -78,19 +46,7 @@ server.registerTool(
       'Everything the agent has proven it can do right now, with measured XP/hr and GP/hr, plus a second list of higher-value options it is BLOCKED from doing and what input each is missing. Choose by index from the first list only — but read the second, because the best move is often to produce an input for something better.',
     inputSchema: {},
   },
-  async () => {
-    const dashboard = await get('/dashboard');
-    if (dashboard === null) return text(serviceDown());
-
-    const candidates = dashboard.report?.candidates ?? [];
-    if (candidates.length === 0) {
-      return text('No candidates. The agent cannot act — check get_agent_state for why.');
-    }
-
-    return text(
-      candidates.map((c: Record<string, unknown>, i: number) => `${i}. ${describe(c)}`).join('\n'),
-    );
-  },
+  (args) => callTool('list_candidates', args),
 );
 
 server.registerTool(
@@ -128,37 +84,7 @@ server.registerTool(
         .describe('One sentence for the operator log on why this beats the alternatives.'),
     },
   },
-  async ({ candidateIndex, targetLevel, abortMinutes, rationale }) => {
-    const dashboard = await get('/dashboard');
-    if (dashboard === null) return text(serviceDown());
-
-    const candidates = dashboard.report?.candidates ?? [];
-    const chosen = candidates[candidateIndex];
-    if (chosen === undefined) {
-      return text(
-        `Index ${candidateIndex} is out of range — there are ${candidates.length} candidates (0..${candidates.length - 1}). Call list_candidates again; the list changes with game state.`,
-      );
-    }
-
-    // Params come from the candidate verbatim. This is the whole safety story:
-    // the session picks *which*, never *what*.
-    const objective = {
-      id: `session-${Date.now()}`,
-      kind: chosen.kind,
-      params: chosen.params,
-      successWhen: [successFor(chosen, targetLevel)],
-      abortWhen: { minutesExceed: abortMinutes },
-      expectedDurationMin: Math.min(abortMinutes, 60),
-      rationale,
-    };
-
-    const result = await post('/command', { type: 'set_objective', objective });
-    if (result === null) return text(serviceDown());
-
-    return text(
-      `Queued: ${chosen.label}\nTarget: level ${targetLevel}, abort after ${abortMinutes}min.\nApplies on the mod's next report (within a few seconds).`,
-    );
-  },
+  (args) => callTool('set_objective', args),
 );
 
 server.registerTool(
@@ -169,26 +95,7 @@ server.registerTool(
       'What has been tried, what it cost, and how it ended. Read before choosing, so you do not re-propose something that was abandoned for a reason that still holds.',
     inputSchema: {},
   },
-  async () => {
-    const dashboard = await get('/dashboard');
-    if (dashboard === null) return text(serviceDown());
-
-    const digest = dashboard.digest;
-    if (digest.recent.length === 0 && digest.aggregates.length === 0) {
-      return text('Nothing attempted yet.');
-    }
-
-    const recent = digest.recent.map(
-      (e: Record<string, any>) =>
-        `- ${e.objective.kind} "${e.objective.rationale}" → ${e.outcome} after ${Math.round((e.endedAt - e.startedAt) / 60_000)}min (levels ${e.deltas.totalLevel >= 0 ? '+' : ''}${e.deltas.totalLevel})`,
-    );
-    const older = digest.aggregates.map(
-      (a: Record<string, any>) =>
-        `- earlier: ${a.kind} ×${a.attempts} (${a.completed} completed, ${a.aborted} aborted, median ${Math.round(a.medianMinutes)}min)`,
-    );
-
-    return text([...recent, ...older].join('\n'));
-  },
+  (args) => callTool('get_journal', args),
 );
 
 server.registerTool(
@@ -201,23 +108,7 @@ server.registerTool(
       limit: z.number().int().min(1).max(100).default(25).describe('How many entries.'),
     },
   },
-  async ({ limit }) => {
-    const dashboard = await get('/dashboard');
-    if (dashboard === null) return text(serviceDown());
-
-    const logs = dashboard.report?.logs ?? [];
-    if (logs.length === 0) return text('Log is empty — the mod drains it on each report.');
-
-    return text(
-      logs
-        .slice(-limit)
-        .map(
-          (l: Record<string, any>) =>
-            `${new Date(l.at).toLocaleTimeString()} [${l.level}] ${l.source}: ${l.message}`,
-        )
-        .join('\n'),
-    );
-  },
+  (args) => callTool('get_recent_activity', args),
 );
 
 server.registerTool(
@@ -228,17 +119,7 @@ server.registerTool(
       "The agent's long-term memory (MEMORY.md) and the operator's standing directives (USER.md). These are the only memory surfaces that reach a planning prompt. Read before deciding anything, and before writing a note.",
     inputSchema: {},
   },
-  async () => {
-    const memory = await get('/memory');
-    if (memory === null) return text(serviceDown());
-    if (memory.user === null && memory.memory === null) {
-      return text('No curated memory yet. MEMORY.md and USER.md do not exist.');
-    }
-    const blocks: string[] = [];
-    if (memory.memory !== null) blocks.push(`# MEMORY.md\n\n${memory.memory}`);
-    if (memory.user !== null) blocks.push(`# USER.md\n\n${memory.user}`);
-    return text(blocks.join('\n\n'));
-  },
+  (args) => callTool('read_memory', args),
 );
 
 server.registerTool(
@@ -251,20 +132,7 @@ server.registerTool(
       query: z.string().min(1).describe('Case-insensitive substring, e.g. a skill or item name.'),
     },
   },
-  async ({ query }) => {
-    const result = await get(`/memory/search?q=${encodeURIComponent(query)}`);
-    if (result === null) return text(serviceDown());
-    if (result.hits.length === 0) return text(`No notes matching "${query}".`);
-
-    return text(
-      result.hits
-        .map(
-          (h: { file: string; origin: string; line: string }) =>
-            `[${h.origin}] ${h.file}: ${h.line}`,
-        )
-        .join('\n'),
-    );
-  },
+  (args) => callTool('search_notes', args),
 );
 
 server.registerTool(
@@ -277,15 +145,7 @@ server.registerTool(
       note: z.string().min(1).describe('One observation. Concrete and specific beats general.'),
     },
   },
-  async ({ note }) => {
-    // Origin is assigned by the service, not claimed here: a tool call is the
-    // agent observing, never the operator speaking.
-    const result = await post('/memory/note', { note, origin: 'agent' });
-    if (result === null) return text(serviceDown());
-    return text(
-      `Recorded to today's notes as [agent]. It will not affect planning until promoted.`,
-    );
-  },
+  (args) => callTool('write_note', args),
 );
 
 server.registerTool(
@@ -300,66 +160,8 @@ server.registerTool(
         .describe('What to do.'),
     },
   },
-  async ({ action }) => {
-    const command =
-      action === 'replan'
-        ? { type: 'replan', reason: 'requested by Claude Code session' }
-        : { type: action };
-
-    const result = await post('/command', command);
-    if (result === null) return text(serviceDown());
-    return text(`Queued "${action}". Applies on the mod's next report.`);
-  },
+  (args) => callTool('control_agent', args),
 );
-
-/**
- * Success criterion for a chosen candidate.
- *
- * Gathering and farming are measured in skill level; a sale or a purchase is
- * measured in GP, since neither has a level to reach.
- */
-function successFor(candidate: Record<string, any>, targetLevel: number) {
-  const skillId = candidate.params?.skillId;
-  if (typeof skillId === 'string') {
-    return { type: 'skill_level_at_least', skillId, level: targetLevel };
-  }
-  if (candidate.kind === 'tend_farm') {
-    return { type: 'skill_level_at_least', skillId: 'melvorD:Farming', level: targetLevel };
-  }
-  // Deliberately trivial: the point of a sale or purchase is the transition, not
-  // a savings goal, and an unreachable target would block every later decision.
-  return { type: 'currency_at_least', currencyId: 'melvorD:GP', amount: 1 };
-}
-
-function describe(candidate: Record<string, any>): string {
-  const parts = [candidate.label];
-  if (candidate.xpPerHour > 0)
-    parts.push(`${Math.round(candidate.xpPerHour).toLocaleString()} xp/h`);
-  if (candidate.gpPerHour > 0)
-    parts.push(`${Math.round(candidate.gpPerHour).toLocaleString()} gp/h`);
-  if (candidate.requiresLevel !== undefined) parts.push(`needs lvl ${candidate.requiresLevel}`);
-  return parts.join(' — ');
-}
-
-function topStacks(items: { qty: number; name: string }[]): string {
-  if (items.length === 0) return 'empty';
-  return [...items]
-    .sort((a, b) => b.qty - a.qty)
-    .slice(0, 10)
-    .map((i) => `${i.qty}x ${i.name}`)
-    .join(', ');
-}
-
-function farmSummary(farm: { state: string }[]): string {
-  if (farm.length === 0) return 'no plots';
-  const counts = farm.reduce<Record<string, number>>((acc, plot) => {
-    acc[plot.state] = (acc[plot.state] ?? 0) + 1;
-    return acc;
-  }, {});
-  return Object.entries(counts)
-    .map(([state, n]) => `${n} ${state}`)
-    .join(', ');
-}
 
 function serviceDown(): string {
   return `Cannot reach the planner service at ${BASE}. Start it with: pnpm planner`;
@@ -369,28 +171,39 @@ function text(body: string) {
   return { content: [{ type: 'text' as const, text: body }] };
 }
 
-async function get(path: string): Promise<any | null> {
-  return request(path, { method: 'GET' });
-}
-
-async function post(path: string, body: unknown): Promise<any | null> {
-  return request(path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-}
-
-async function request(path: string, init: RequestInit): Promise<any | null> {
+/**
+ * Runs a tool in the planner service.
+ *
+ * Every tool here is a proxy. The behaviour lives in the service because Claude
+ * Code spawns this process once per session and keeps it — anything implemented
+ * *here* is frozen until the session restarts, whereas the service runs under
+ * `tsx watch` and reloads on save.
+ *
+ * So the rule is: change what a tool does, no restart. Add or rename a tool,
+ * restart — because the client caches the tool list, which is exactly the part
+ * that lives in this file.
+ */
+async function callTool(name: string, args: Record<string, unknown>) {
   try {
-    const response = await fetch(`${BASE}${path}`, {
-      ...init,
-      signal: AbortSignal.timeout(5000),
+    const response = await fetch(`${BASE}/mcp/${name}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(args ?? {}),
+      signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) return null;
-    return await response.json();
+
+    if (!response.ok) {
+      return text(
+        response.status === 404
+          ? `The service does not know tool "${name}". It is probably running an older build — restart it with: pnpm planner`
+          : `${name} failed: HTTP ${response.status}`,
+      );
+    }
+
+    const body = (await response.json()) as { text?: string };
+    return text(body.text ?? '(no output)');
   } catch {
-    return null;
+    return text(serviceDown());
   }
 }
 

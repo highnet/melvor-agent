@@ -184,6 +184,27 @@ bump. Cheaper to catch at the commit than to notice a release is missing things.
 
 Hooks install themselves via the `prepare` script on `pnpm install`.
 
+### Changing tools without restarting
+
+Claude Code spawns the MCP server once per session and keeps that process, so
+anything implemented *there* is frozen until you restart. The planner service,
+by contrast, runs under `tsx watch` and reloads on save.
+
+So the MCP server holds tool **names and schemas only**; every tool proxies to
+`POST /mcp/<tool>` and the behaviour lives in
+`packages/planner/src/mcp-tools.ts`.
+
+| Change | Restart needed |
+|---|---|
+| What a tool does, says, or returns | no — save and call it again |
+| Adding, renaming or re-typing a tool | yes — the client caches the tool list |
+
+The same applies to the agent itself: the mod is the only piece that needs a
+game reload, because Directory Link re-zips the folder on load.
+
+Run the service with `pnpm planner`, not a bare `node`. A non-watching instance
+looks identical until you wonder why an edit had no effect.
+
 ### Getting a token
 
 Go to **https://mod.io/me/access** (avatar -> Access). That page offers two
