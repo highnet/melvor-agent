@@ -83,9 +83,7 @@ function genericSkillCandidates(): Candidate[] {
     for (const recipe of recipes) {
       try {
         if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
-        // Costs exist only on the crafting-style skills; where present, an
-        // unaffordable recipe is not a real option.
-        if (withActions.getRecipeCosts?.(recipe).checkIfOwned() === false) continue;
+        if (!canAfford(withActions, recipe)) continue;
       } catch {
         // A recipe whose availability cannot be determined is not offered:
         // a candidate the adapter would then refuse is a planner trap.
@@ -174,6 +172,56 @@ function safely(name: string, enumerate: () => Candidate[]): Candidate[] {
     console.warn(`[play-agent] ${name} candidates unavailable:`, error);
     return [];
   }
+}
+
+/**
+ * Whether the player holds the inputs a recipe consumes.
+ *
+ * There is no single API for this, and assuming one silently offers recipes the
+ * agent cannot perform — which is exactly what happened live: Firemaking was
+ * offered "Oak Logs" with zero Oak Logs in the bank, because the check below
+ * used to be `getRecipeCosts?.(recipe)` and that method does not exist on
+ * Firemaking. An optional call on a missing method yields `undefined`, which
+ * compared unequal to `false`, so nothing was filtered and the failure looked
+ * like nothing at all.
+ *
+ * Three shapes, in order of reliability:
+ *
+ * 1. `ArtisanSkill.getRecipeCosts(recipe)` — Smithing, Crafting, Fletching,
+ *    Herblore, Runecrafting, Summoning, Cooking. Authoritative: the game's own
+ *    cost calculation, including modifiers.
+ * 2. `FiremakingLog.log` — Firemaking consumes exactly one item, named directly
+ *    on the recipe. `CraftingSkill` only exposes `getCurrentRecipeCosts()` for
+ *    the *selected* recipe, which is useless while enumerating.
+ * 3. `ArtisanSkillRecipe.itemCosts` — the raw cost list, as a fallback.
+ *
+ * A recipe whose inputs cannot be determined by any of these is allowed
+ * through: a skill that consumes nothing (Woodcutting, Thieving) is the common
+ * case, and refusing everything unknown would silently remove whole skills.
+ */
+function canAfford(
+  skill: { getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean } },
+  recipe: object,
+): boolean {
+  if (typeof skill.getRecipeCosts === 'function') {
+    return skill.getRecipeCosts(recipe).checkIfOwned();
+  }
+
+  const consumes = recipe as {
+    log?: AnyItem;
+    itemCosts?: { item: AnyItem; quantity: number }[];
+  };
+
+  if (consumes.log !== undefined) {
+    return game.bank.getQty(consumes.log) > 0;
+  }
+
+  if (Array.isArray(consumes.itemCosts)) {
+    return consumes.itemCosts.every((cost) => game.bank.getQty(cost.item) >= cost.quantity);
+  }
+
+  // Consumes nothing identifiable — a gathering skill, most likely.
+  return true;
 }
 
 /**
