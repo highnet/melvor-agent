@@ -7,6 +7,7 @@ service topology explicit rather than changing it — the mod is sandboxed and
 cannot write to disk, so mod → service HTTP was already implied by "log to
 disk". The TUI is simply a third client of that service. Hand-rolled ANSI, no
 runtime deps: Ink is the obvious choice but is React-based, which is excluded.
+
 Grounding: [docs/api-notes.md](docs/api-notes.md). Every API named here is verified against
 the v1.3.1 typings or a cited wiki page; unverified items are called out inline.
 
