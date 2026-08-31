@@ -12,6 +12,7 @@ import { fail, stateSnapshotSchema } from '@melvor-agent/shared';
 import {
   Subscriptions,
   advanceGolbinRaid,
+  buildAgilityObstacle,
   buildTownshipBuilding,
   buyShopPurchase,
   checkCharacterAllowed,
@@ -27,6 +28,7 @@ import {
   newSlayerTask,
   onGameEvent,
   plantFarmPlot,
+  readAgilityCandidates,
   readBlockedOpportunities,
   readCombatGateInputs,
   readCombatTargets,
@@ -683,6 +685,8 @@ export class Agent {
       }
       case 'stop_raid':
         return stopGolbinRaid(isSuspended);
+      case 'build_obstacle':
+        return buildAgilityObstacle(action.obstacleId, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -903,6 +907,7 @@ export class Agent {
       ['dig site setup', readDigSiteSetupCandidates],
       ['synergy', readSynergyCandidates],
       ['raid', readRaidCandidates],
+      ['agility', readAgilityCandidates],
       ['level cap', readLevelCapCandidates],
       ['combat', () => this.combatCandidates()],
     ] as const) {

@@ -113,6 +113,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `selecting ${params.toolId} for ${params.digSiteId}`,
       );
 
+    case 'build_obstacle':
+      return act(
+        { type: 'build_obstacle', obstacleId: params.obstacleId },
+        `building ${params.obstacleId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

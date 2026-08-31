@@ -94,6 +94,11 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  buildAgilityObstacle,
+  readAgilityCandidates,
+  type ObstacleProjection,
+} from './agility.js';
+export {
   advanceGolbinRaid,
   readRaidCandidates,
   startGolbinRaid,

@@ -30,6 +30,7 @@ describe('fixtures', () => {
 describe('capability registry', () => {
   it('accepts the kinds it has executors for', () => {
     expect(supportedKinds().sort()).toEqual([
+      'build_obstacle',
       'build_township',
       'buy_shop_upgrade',
       'equip_food',

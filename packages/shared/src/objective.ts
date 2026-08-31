@@ -36,6 +36,7 @@ export const objectiveKindSchema = z.enum([
   'select_dig_map',
   'select_dig_tool',
   'run_golbin_raid',
+  'build_obstacle',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -156,6 +157,11 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
      */
     kind: z.literal('run_golbin_raid'),
     difficulty: z.enum(['easy', 'medium', 'hard']),
+  }),
+  z.object({
+    /** The obstacle's own category decides its slot, so none is passed. */
+    kind: z.literal('build_obstacle'),
+    obstacleId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('toggle_curse'),

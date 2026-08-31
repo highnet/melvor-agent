@@ -42,6 +42,7 @@ export type PolicyAction =
   | { type: 'select_dig_tool'; digSiteId: string; toolId: string }
   | { type: 'advance_raid'; difficulty: string }
   | { type: 'stop_raid' }
+  | { type: 'build_obstacle'; obstacleId: string }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

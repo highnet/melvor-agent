@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-104 exports.
+107 exports.
 
 ## `act`
 
@@ -125,6 +125,21 @@ ARTISAN_SKILL_IDS: readonly ["melvorD:Smithing", "melvorD:Crafting", "melvorD:Fl
 
 ```ts
 BankState: any
+```
+
+## `buildAgilityObstacle`
+
+`function`
+
+Builds an agility obstacle into its slot.
+
+`buildObstacle` returns `void` and refuses silently when the costs are not
+met, so the slot's occupant is observed either side. The obstacle's own
+category decides the slot — passing one would let a stale plan overwrite a
+different part of the course than it meant to.
+
+```ts
+buildAgilityObstacle: (obstacleId: string, isSuspended: () => boolean) => ActionResult<ObstacleProjection>
 ```
 
 ## `buildTownshipBuilding`
@@ -531,6 +546,16 @@ newSlayerTask: (categoryId: string, payWithCoins: boolean, isSuspended: () => bo
 Objective: any
 ```
 
+## `ObstacleProjection`
+
+`interface`
+
+What building claims to change: which obstacle occupies a slot.
+
+```ts
+ObstacleProjection: any
+```
+
 ## `onGameEvent`
 
 `function`
@@ -633,6 +658,21 @@ wrong one for an hour is not.
 
 ```ts
 readActiveRecipeIds: () => string[]
+```
+
+## `readAgilityCandidates`
+
+`function`
+
+Obstacles worth building right now.
+
+Only affordable, unlocked obstacles that would *replace something worse* —
+an empty slot, or a lower-level obstacle in the same category. Offering every
+buildable obstacle would invite the agent to rebuild the same slot back and
+forth, paying the cost each time for no gain.
+
+```ts
+readAgilityCandidates: () => Candidate[]
 ```
 
 ## `readBankQuantity`

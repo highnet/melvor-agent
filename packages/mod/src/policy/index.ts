@@ -41,6 +41,7 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   survey_hex: explore,
   excavate_dig_site: explore,
   run_golbin_raid: runGolbinRaid,
+  build_obstacle: manage,
   select_dig_map: manage,
   select_dig_tool: manage,
   toggle_curse: manage,
