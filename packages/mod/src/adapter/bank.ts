@@ -97,3 +97,43 @@ export function sellItem(
     isSuspended,
   );
 }
+
+/** Below this many free slots, the bank is worth acting on before it stops play. */
+const BANK_PRESSURE_SLOTS = 2;
+
+/**
+ * Warns when the bank is about to stop the character working.
+ *
+ * A full bank does not announce itself. Gathering an item type the bank has no
+ * room for simply produces nothing, while the skill keeps running and the XP
+ * keeps ticking — so an agent watching only "is the skill active" sees a
+ * perfectly healthy run that is quietly throwing away every drop.
+ *
+ * Reported rather than fixed. The remedies are selling something or buying a
+ * slot, both of which are decisions with costs, and both of which the agent
+ * already has capabilities for.
+ *
+ * @returns One blocked-opportunity entry, or none when there is room.
+ */
+export function readBankPressure(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  const used = game.bank.occupiedSlots;
+  const max = game.bank.maximumSlots;
+  const free = max - used;
+
+  if (free > BANK_PRESSURE_SLOTS) return [];
+
+  return [
+    {
+      label:
+        free <= 0
+          ? `Bank is FULL (${used}/${max}) — any new item type is being discarded silently while the skill keeps running. Sell a stack or buy a slot.`
+          : `Bank has ${free} slot(s) left (${used}/${max}) — new item types will start being discarded. Sell a stack or buy a slot.`,
+      xpPerHour: 0,
+      missing: [],
+    },
+  ];
+}

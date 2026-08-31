@@ -35,6 +35,7 @@ import {
   plantFarmPlot,
   readAgilityCandidates,
   readAstrologyCandidates,
+  readBankPressure,
   readBlockedOpportunities,
   readCombatGateInputs,
   readCombatTargets,
@@ -1032,7 +1033,7 @@ export class Agent {
    */
   private safeBlocked(): ReturnType<typeof readBlockedOpportunities> {
     try {
-      return [...readBlockedOpportunities(), ...this.blockedCombat()];
+      return [...readBankPressure(), ...readBlockedOpportunities(), ...this.blockedCombat()];
     } catch {
       return [];
     }

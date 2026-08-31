@@ -14,7 +14,7 @@
  */
 
 export { act, type ActSpec } from './act.js';
-export { readBankQuantity, sellItem, type SaleProjection } from './bank.js';
+export { readBankPressure, readBankQuantity, sellItem, type SaleProjection } from './bank.js';
 export {
   disengageCombat,
   engageMonster,

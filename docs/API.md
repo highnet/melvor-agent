@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-130 exports.
+131 exports.
 
 ## `act`
 
@@ -791,6 +791,25 @@ shallower than the unique ones.
 
 ```ts
 readAstrologyCandidates: () => Candidate[]
+```
+
+## `readBankPressure`
+
+`function`
+
+Warns when the bank is about to stop the character working.
+
+A full bank does not announce itself. Gathering an item type the bank has no
+room for simply produces nothing, while the skill keeps running and the XP
+keeps ticking — so an agent watching only "is the skill active" sees a
+perfectly healthy run that is quietly throwing away every drop.
+
+Reported rather than fixed. The remedies are selling something or buying a
+slot, both of which are decisions with costs, and both of which the agent
+already has capabilities for.
+
+```ts
+readBankPressure: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readBankQuantity`
