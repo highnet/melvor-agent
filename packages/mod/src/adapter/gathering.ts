@@ -1,0 +1,301 @@
+import type { ActionResult } from '@melvor-agent/shared';
+import { fail } from '@melvor-agent/shared';
+import { act } from './act.js';
+
+/**
+ * Namespaced ids of the gathering skills with a verified executor.
+ *
+ * Adding one means reading that skill's own selection API first. They are not
+ * uniform and a shared abstraction would be a lie:
+ *
+ * - Woodcutting: `selectTree(tree)` toggles membership in a `Set`, multi-select
+ *   up to `treeCutLimit`, then a plain `start()`.
+ * - Mining: `onRockClick(rock)` sets a single `selectedRock`.
+ * - Fishing: `onAreaFishSelection(area, fish)` per area, then
+ *   `onAreaStartButtonClick(area)` — there is no plain `start()` per fish.
+ */
+export const WOODCUTTING_ID = 'melvorD:Woodcutting';
+export const MINING_ID = 'melvorD:Mining';
+export const FISHING_ID = 'melvorD:Fishing';
+
+export const GATHERING_SKILL_IDS = [WOODCUTTING_ID, MINING_ID, FISHING_ID] as const;
+
+/**
+ * What "am I gathering the right thing" looks like, uniformly.
+ *
+ * Every skill projects into this shape so callers compare like with like even
+ * though the underlying selection state differs wildly.
+ */
+export interface GatheringProjection {
+  skillId: string;
+  /** True when the skill reports itself as ticking. */
+  active: boolean;
+  /** Ids of the recipes currently selected. Sorted, so the projection is stable. */
+  selected: string[];
+  /** The game's single active action, if any. */
+  activeActionId: string | null;
+}
+
+/** Whether a projection shows the intended recipe actually being gathered. */
+function isGathering(projection: GatheringProjection, recipeId: string): boolean {
+  return projection.active && projection.selected.includes(recipeId);
+}
+
+/**
+ * Ensures a gathering skill is running on a specific recipe.
+ *
+ * Deliberately one call rather than a `select` then `start` pair. Several of
+ * these skills expose selection as a *UI click callback* (`onRockClick`,
+ * `onAreaStartButtonClick`) whose side effects are not documented — clicking may
+ * or may not also start the action. Sequencing two separately-verified steps
+ * across those would produce a real failure mode: selection succeeds, start
+ * reports "already active", and the caller cannot tell success from a stuck
+ * half-state.
+ *
+ * Making the composite the unit of verification sidesteps that entirely. The
+ * post-condition is what the caller actually cares about — this skill is ticking
+ * on this recipe — and it is observed, not inferred from any return value.
+ *
+ * @param skillId - One of {@link GATHERING_SKILL_IDS}.
+ * @param recipeId - Tree, rock or fish id.
+ * @param isSuspended - Guard against acting during offline catch-up.
+ * @returns Evidence that the skill is now gathering that recipe.
+ */
+export function startGathering(
+  skillId: string,
+  recipeId: string,
+  isSuspended: () => boolean,
+): ActionResult<GatheringProjection> {
+  switch (skillId) {
+    case WOODCUTTING_ID:
+      return startWoodcuttingOn(recipeId, isSuspended);
+    case MINING_ID:
+      return startMiningOn(recipeId, isSuspended);
+    case FISHING_ID:
+      return startFishingOn(recipeId, isSuspended);
+    default:
+      return fail(
+        'gathering.start',
+        'precondition',
+        `no verified executor for skill ${skillId}; selection APIs are not uniform, so each needs one`,
+      );
+  }
+}
+
+/** Refuses when another skill already holds the game's single action slot. */
+function actionSlotHeldBy(skillId: string): string | null {
+  const active = game.activeAction;
+  if (active === undefined || active.id === skillId) return null;
+  return `another action is running: ${active.id}`;
+}
+
+// --- Woodcutting -----------------------------------------------------------
+
+function projectWoodcutting(): GatheringProjection {
+  return {
+    skillId: WOODCUTTING_ID,
+    active: game.woodcutting.isActive,
+    selected: [...game.woodcutting.activeTrees].map((tree) => tree.id).sort(),
+    activeActionId: game.activeAction?.id ?? null,
+  };
+}
+
+function startWoodcuttingOn(
+  recipeId: string,
+  isSuspended: () => boolean,
+): ActionResult<GatheringProjection> {
+  const tree = game.woodcutting.actions.getObjectByID(recipeId);
+  if (tree === undefined) {
+    return fail('woodcutting.gather', 'precondition', `no tree registered with id ${recipeId}`);
+  }
+
+  return act(
+    {
+      name: 'woodcutting.gather',
+      observe: projectWoodcutting,
+      precondition: () => {
+        if (!game.woodcutting.isTreeUnlocked(tree)) {
+          return `tree ${recipeId} is locked (needs level ${tree.level})`;
+        }
+        if (isGathering(projectWoodcutting(), recipeId)) {
+          return `already cutting ${recipeId}`;
+        }
+        return actionSlotHeldBy(WOODCUTTING_ID);
+      },
+      perform: () => {
+        // selectTree toggles, so selecting an already-selected tree would
+        // deselect it. Only touch it when it is not already chosen.
+        if (!game.woodcutting.activeTrees.has(tree)) {
+          if (game.woodcutting.activeTrees.size >= game.woodcutting.treeCutLimit) {
+            // At the limit, clear the selection so the intended tree can fit.
+            for (const selected of [...game.woodcutting.activeTrees]) {
+              game.woodcutting.selectTree(selected);
+            }
+          }
+          game.woodcutting.selectTree(tree);
+        }
+        return game.woodcutting.isActive ? undefined : game.woodcutting.start();
+      },
+      changed: (_before, after) => isGathering(after, recipeId),
+    },
+    isSuspended,
+  );
+}
+
+// --- Mining ----------------------------------------------------------------
+
+function projectMining(): GatheringProjection {
+  const selected = game.mining.selectedRock;
+  return {
+    skillId: MINING_ID,
+    active: game.mining.isActive,
+    selected: selected === undefined ? [] : [selected.id],
+    activeActionId: game.activeAction?.id ?? null,
+  };
+}
+
+function startMiningOn(
+  recipeId: string,
+  isSuspended: () => boolean,
+): ActionResult<GatheringProjection> {
+  const rock = game.mining.actions.getObjectByID(recipeId);
+  if (rock === undefined) {
+    return fail('mining.gather', 'precondition', `no rock registered with id ${recipeId}`);
+  }
+
+  return act(
+    {
+      name: 'mining.gather',
+      observe: projectMining,
+      precondition: () => {
+        if (!game.mining.canMineOre(rock)) {
+          return `rock ${recipeId} cannot be mined (locked, or depleted and respawning)`;
+        }
+        if (isGathering(projectMining(), recipeId)) return `already mining ${recipeId}`;
+        return actionSlotHeldBy(MINING_ID);
+      },
+      perform: () => {
+        // onRockClick is the UI click handler. Whether it also starts the skill
+        // is undocumented, so start() is called only if it did not.
+        game.mining.onRockClick(rock);
+        return game.mining.isActive ? undefined : game.mining.start();
+      },
+      changed: (_before, after) => isGathering(after, recipeId),
+    },
+    isSuspended,
+  );
+}
+
+// --- Fishing ---------------------------------------------------------------
+
+function projectFishing(): GatheringProjection {
+  return {
+    skillId: FISHING_ID,
+    active: game.fishing.isActive,
+    // Fishing selects one fish per area; the active one is what matters, but
+    // reporting every selection makes a wrong-area start visible in the evidence.
+    selected: [...game.fishing.selectedAreaFish.values()].map((fish) => fish.id).sort(),
+    activeActionId: game.activeAction?.id ?? null,
+  };
+}
+
+function startFishingOn(
+  recipeId: string,
+  isSuspended: () => boolean,
+): ActionResult<GatheringProjection> {
+  const fish = game.fishing.actions.getObjectByID(recipeId);
+  if (fish === undefined) {
+    return fail('fishing.gather', 'precondition', `no fish registered with id ${recipeId}`);
+  }
+
+  const area = fish.area;
+  if (area === undefined) {
+    // `Fish.area` is optional in the typings; a fish with no area cannot be
+    // started, because starting is an area-level operation.
+    return fail('fishing.gather', 'precondition', `fish ${recipeId} has no fishing area`);
+  }
+
+  return act(
+    {
+      name: 'fishing.gather',
+      observe: projectFishing,
+      precondition: () => {
+        if (!game.fishing.isMasteryActionUnlocked(fish)) {
+          return `fish ${recipeId} is locked (needs level ${fish.level})`;
+        }
+        if (area.requiredItem !== undefined) {
+          // Starting without the area's required item would silently no-op.
+          const equipped = game.combat.player.equipment.checkForItem(area.requiredItem);
+          if (!equipped) {
+            return `area ${area.id} requires ${area.requiredItem.id} to be equipped`;
+          }
+        }
+        if (game.fishing.isActive && game.fishing.activeFish === fish) {
+          return `already fishing ${recipeId}`;
+        }
+        return actionSlotHeldBy(FISHING_ID);
+      },
+      perform: () => {
+        game.fishing.onAreaFishSelection(area, fish);
+        // Fishing has no plain start(): starting is per-area.
+        game.fishing.onAreaStartButtonClick(area);
+        return undefined;
+      },
+      // Fishing's own notion of "the thing I am doing" is `activeFish`, which is
+      // stricter than set membership and the right post-condition here.
+      changed: () => game.fishing.isActive && game.fishing.activeFish === fish,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Stops a gathering skill.
+ *
+ * @param skillId - One of {@link GATHERING_SKILL_IDS}.
+ * @param isSuspended - Guard against acting during offline catch-up.
+ * @returns Evidence that the skill left the active state.
+ */
+export function stopGathering(
+  skillId: string,
+  isSuspended: () => boolean,
+): ActionResult<GatheringProjection> {
+  const skill = gatheringSkill(skillId);
+  if (skill === null) {
+    return fail('gathering.stop', 'precondition', `no verified executor for skill ${skillId}`);
+  }
+
+  return act(
+    {
+      name: `${skill.name}.stop`,
+      observe: skill.project,
+      precondition: () => {
+        if (!skill.instance.isActive) return `${skillId} is not active`;
+        if (!skill.instance.canStop) return `${skillId} reports it cannot stop right now`;
+        return null;
+      },
+      perform: () => skill.instance.stop(),
+      changed: (before, after) => before.active && !after.active,
+    },
+    isSuspended,
+  );
+}
+
+interface GatheringSkillHandle {
+  name: string;
+  instance: { isActive: boolean; canStop: boolean; stop: () => boolean };
+  project: () => GatheringProjection;
+}
+
+function gatheringSkill(skillId: string): GatheringSkillHandle | null {
+  switch (skillId) {
+    case WOODCUTTING_ID:
+      return { name: 'woodcutting', instance: game.woodcutting, project: projectWoodcutting };
+    case MINING_ID:
+      return { name: 'mining', instance: game.mining, project: projectMining };
+    case FISHING_ID:
+      return { name: 'fishing', instance: game.fishing, project: projectFishing };
+    default:
+      return null;
+  }
+}

@@ -4,7 +4,7 @@ import { checkAbort, elapsedMinutes, isObjectiveComplete } from '../src/policy/c
 import { gatherResource } from '../src/policy/gather.js';
 import { executorFor, isSupportedKind, supportedKinds } from '../src/policy/index.js';
 import type { PolicyContext } from '../src/policy/types.js';
-import { GP, NORMAL_LOGS, NORMAL_TREE, objective, snapshot } from './fixtures.js';
+import { GP, NORMAL_LOGS, NORMAL_TREE, WOODCUTTING, objective, snapshot } from './fixtures.js';
 
 const START = 1_700_000_000_000;
 
@@ -109,7 +109,7 @@ describe('gatherResource', () => {
     const decision = gatherResource(context());
     expect(decision).toEqual({
       kind: 'act',
-      actions: [{ type: 'select_tree', treeId: NORMAL_TREE }, { type: 'start_woodcutting' }],
+      actions: [{ type: 'gather', skillId: WOODCUTTING, recipeId: NORMAL_TREE }],
       reason: expect.stringContaining('idle'),
     });
   });
@@ -173,7 +173,7 @@ describe('gatherResource', () => {
     });
   });
 
-  it('aborts on a skill with no verified executor rather than improvising', () => {
+  it('accepts the other gathering skills that have verified executors', () => {
     const mining = objective({
       params: {
         kind: 'gather_resource',
@@ -181,7 +181,26 @@ describe('gatherResource', () => {
         recipeId: 'melvorD:Copper_Ore',
       },
     });
-    expect(gatherResource(context({ objective: mining }))).toMatchObject({
+    const withMining = snapshot({
+      skills: [{ id: 'melvorD:Mining', name: 'Mining', level: 10, xp: 500, isActive: false }],
+    });
+    expect(gatherResource(context({ objective: mining, snapshot: withMining }))).toMatchObject({
+      kind: 'act',
+      actions: [{ type: 'gather', skillId: 'melvorD:Mining', recipeId: 'melvorD:Copper_Ore' }],
+    });
+  });
+
+  it('aborts on a skill with no verified executor rather than improvising', () => {
+    // Township is not a gathering skill and has no adapter routine. Attempting
+    // it would mean guessing at an API, which is the thing to never do.
+    const township = objective({
+      params: {
+        kind: 'gather_resource',
+        skillId: 'melvorD:Township',
+        recipeId: 'melvorD:Whatever',
+      },
+    });
+    expect(gatherResource(context({ objective: township }))).toMatchObject({
       kind: 'abort',
       outcome: 'failed_precondition',
     });

@@ -18,9 +18,8 @@ import {
   readGameVersion,
   readGatherCandidates,
   readSnapshot,
-  selectTree,
-  startWoodcutting,
-  stopWoodcutting,
+  startGathering,
+  stopGathering,
 } from '../adapter/index.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import type { PolicyAction } from '../policy/types.js';
@@ -340,12 +339,10 @@ export class Agent {
 
   private dispatch(action: PolicyAction, isSuspended: () => boolean): ActionResult<unknown> {
     switch (action.type) {
-      case 'select_tree':
-        return selectTree(action.treeId, isSuspended);
-      case 'start_woodcutting':
-        return startWoodcutting(isSuspended);
-      case 'stop_woodcutting':
-        return stopWoodcutting(isSuspended);
+      case 'gather':
+        return startGathering(action.skillId, action.recipeId, isSuspended);
+      case 'stop_gathering':
+        return stopGathering(action.skillId, isSuspended);
     }
   }
 

@@ -14,8 +14,16 @@
  */
 
 export { act, type ActSpec } from './act.js';
-export { selectTree, startWoodcutting, stopWoodcutting } from './actions.js';
 export { readGatherCandidates } from './candidates.js';
+export {
+  FISHING_ID,
+  GATHERING_SKILL_IDS,
+  MINING_ID,
+  WOODCUTTING_ID,
+  startGathering,
+  stopGathering,
+  type GatheringProjection,
+} from './gathering.js';
 export { onGameEvent, onGameLoop, Subscriptions, type Disposer } from './events.js';
 export {
   CATEGORICALLY_REFUSED,

@@ -11,9 +11,9 @@ import type { Objective, StateSnapshot } from '@melvor-agent/shared';
  * no executor is the failure the capability registry exists to catch.
  */
 export type PolicyAction =
-  | { type: 'select_tree'; treeId: string }
-  | { type: 'start_woodcutting' }
-  | { type: 'stop_woodcutting' };
+  /** Be gathering this recipe with this skill. One intent, not select-then-start. */
+  | { type: 'gather'; skillId: string; recipeId: string }
+  | { type: 'stop_gathering'; skillId: string };
 
 /** Why the policy layer chose to do nothing. Surfaced in the log, not swallowed. */
 export type PolicyIdleReason =

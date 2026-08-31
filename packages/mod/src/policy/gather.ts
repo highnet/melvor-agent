@@ -1,7 +1,19 @@
 import { checkAbort, elapsedMinutes, isObjectiveComplete } from './criteria.js';
 import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
 
-const WOODCUTTING_SKILL_ID = 'melvorD:Woodcutting';
+/**
+ * Skills with a verified adapter executor.
+ *
+ * Mirrors `GATHERING_SKILL_IDS` in the adapter. Duplicated rather than imported
+ * because the policy tier must stay free of adapter imports to remain pure and
+ * testable; the adapter refuses an unknown skill anyway, so the two cannot
+ * silently disagree about what is executable — only about what is attempted.
+ */
+const SUPPORTED_GATHERING_SKILLS: ReadonlySet<string> = new Set([
+  'melvorD:Woodcutting',
+  'melvorD:Mining',
+  'melvorD:Fishing',
+]);
 
 /**
  * Executes a `gather_resource` objective.
@@ -14,9 +26,9 @@ const WOODCUTTING_SKILL_ID = 'melvorD:Woodcutting';
  * Pure by construction — it reads only its context and returns intents. The
  * runtime performs them through the adapter and verifies the result.
  *
- * Phase 1 covers Woodcutting only. Other gathering skills do not share a
- * selection API, so each needs its own verified executor rather than a
- * speculative abstraction.
+ * Covers the gathering skills listed in {@link SUPPORTED_GATHERING_SKILLS}.
+ * Their selection APIs differ substantially, so the adapter holds one verified
+ * routine per skill and this tier only names the skill and recipe.
  */
 export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDecision => {
   const { snapshot, objective, now, objectiveStartedAt, deathsSinceStart } = context;
@@ -41,11 +53,11 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
 
   const { skillId, recipeId } = objective.params;
 
-  if (skillId !== WOODCUTTING_SKILL_ID) {
+  if (!SUPPORTED_GATHERING_SKILLS.has(skillId)) {
     return {
       kind: 'abort',
       outcome: 'failed_precondition',
-      detail: `no verified executor for skill ${skillId}; Phase 1 supports Woodcutting only`,
+      detail: `no verified executor for gathering skill ${skillId}`,
     };
   }
 
@@ -88,7 +100,7 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
 
   return {
     kind: 'act',
-    actions: [{ type: 'select_tree', treeId: recipeId }, { type: 'start_woodcutting' }],
-    reason: `${skill.name} is idle; selecting ${recipeId} and starting`,
+    actions: [{ type: 'gather', skillId, recipeId }],
+    reason: `${skill.name} is idle; gathering ${recipeId}`,
   };
 };

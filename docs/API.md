@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-36 exports.
+40 exports.
 
 ## `act`
 
@@ -210,6 +210,35 @@ exportSave: () => { ok: true; save: string; } | { ok: false; detail: string; }
 FailureReason: any
 ```
 
+## `FISHING_ID`
+
+`const`
+
+```ts
+FISHING_ID: "melvorD:Fishing"
+```
+
+## `GATHERING_SKILL_IDS`
+
+`const`
+
+```ts
+GATHERING_SKILL_IDS: readonly ["melvorD:Woodcutting", "melvorD:Mining", "melvorD:Fishing"]
+```
+
+## `GatheringProjection`
+
+`interface`
+
+What "am I gathering the right thing" looks like, uniformly.
+
+Every skill projects into this shape so callers compare like with like even
+though the underlying selection state differs wildly.
+
+```ts
+GatheringProjection: any
+```
+
 ## `isRefusedRealm`
 
 `function`
@@ -218,6 +247,14 @@ Whether a realm is on the hard refusal list.
 
 ```ts
 isRefusedRealm: (realmId: string) => boolean
+```
+
+## `MINING_ID`
+
+`const`
+
+```ts
+MINING_ID: "melvorD:Mining"
 ```
 
 ## `Objective`
@@ -329,15 +366,10 @@ readGameVersion: () => string
 
 Enumerates the gathering objectives the mod can execute right now.
 
-Every number comes from the game's own registries and modifier-aware getters
-— `getTreeInterval` already accounts for gear, mastery and modifiers — so the
-planner chooses among measured options rather than guessing. Locked trees are
-not emitted at all, which is what makes `available` a literal `true`: an
-unavailable candidate is simply absent.
-
-Phase 1 covers Woodcutting only. Extending to another gathering skill means
-verifying that skill's own selection API first; the selection methods are not
-uniform across skills, so there is deliberately no generic abstraction here.
+Every number comes from the game's own registries and modifier-aware getters,
+so the planner chooses among measured options rather than guessing. Locked
+recipes are not emitted at all, which is what makes `available` a literal
+`true`: an unavailable candidate is simply absent.
 
 ```ts
 readGatherCandidates: () => Candidate[]
@@ -382,21 +414,6 @@ Total skill level, summed from the skills themselves rather than inferred.
 readTotalLevel: () => number
 ```
 
-## `selectTree`
-
-`function`
-
-Selects a tree for cutting.
-
-`Woodcutting.selectTree` returns `void` and behaves as a toggle — calling it
-on an already-selected tree deselects it. So there is no return value to
-check and a naive retry actively undoes the work. Both facts are why this
-observes `activeTrees` rather than trusting the call.
-
-```ts
-selectTree: (treeId: string, isSuspended: () => boolean) => ActionResult<WoodcuttingProjection>
-```
-
 ## `SkillState`
 
 `type`
@@ -405,18 +422,26 @@ selectTree: (treeId: string, isSuspended: () => boolean) => ActionResult<Woodcut
 SkillState: any
 ```
 
-## `startWoodcutting`
+## `startGathering`
 
 `function`
 
-Starts the woodcutting skill with whatever trees are currently selected.
+Ensures a gathering skill is running on a specific recipe.
 
-`GatheringSkill.start()` returns a boolean, but a `true` return still does
-not prove the game entered the action, so the transition of
-`game.activeAction` is what is verified.
+Deliberately one call rather than a `select` then `start` pair. Several of
+these skills expose selection as a *UI click callback* (`onRockClick`,
+`onAreaStartButtonClick`) whose side effects are not documented — clicking may
+or may not also start the action. Sequencing two separately-verified steps
+across those would produce a real failure mode: selection succeeds, start
+reports "already active", and the caller cannot tell success from a stuck
+half-state.
+
+Making the composite the unit of verification sidesteps that entirely. The
+post-condition is what the caller actually cares about — this skill is ticking
+on this recipe — and it is observed, not inferred from any return value.
 
 ```ts
-startWoodcutting: (isSuspended: () => boolean) => ActionResult<WoodcuttingProjection>
+startGathering: (skillId: string, recipeId: string, isSuspended: () => boolean) => ActionResult<GatheringProjection>
 ```
 
 ## `StateSnapshot`
@@ -427,14 +452,14 @@ startWoodcutting: (isSuspended: () => boolean) => ActionResult<WoodcuttingProjec
 StateSnapshot: any
 ```
 
-## `stopWoodcutting`
+## `stopGathering`
 
 `function`
 
-Stops the woodcutting skill.
+Stops a gathering skill.
 
 ```ts
-stopWoodcutting: (isSuspended: () => boolean) => ActionResult<WoodcuttingProjection>
+stopGathering: (skillId: string, isSuspended: () => boolean) => ActionResult<GatheringProjection>
 ```
 
 ## `Subscriptions`
@@ -448,4 +473,23 @@ complete, even if one listener was already removed.
 
 ```ts
 Subscriptions: typeof Subscriptions
+```
+
+## `WOODCUTTING_ID`
+
+`const`
+
+Namespaced ids of the gathering skills with a verified executor.
+
+Adding one means reading that skill's own selection API first. They are not
+uniform and a shared abstraction would be a lie:
+
+- Woodcutting: `selectTree(tree)` toggles membership in a `Set`, multi-select
+  up to `treeCutLimit`, then a plain `start()`.
+- Mining: `onRockClick(rock)` sets a single `selectedRock`.
+- Fishing: `onAreaFishSelection(area, fish)` per area, then
+  `onAreaStartButtonClick(area)` — there is no plain `start()` per fish.
+
+```ts
+WOODCUTTING_ID: "melvorD:Woodcutting"
 ```
