@@ -274,3 +274,44 @@ export function readSynergyCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Switches to another equipment set.
+ *
+ * Sets are how a human keeps a skilling loadout and a combat loadout without
+ * re-equipping eight items each time. Without this the agent has one set and
+ * pays the full swap cost for every context change — which in practice means
+ * it never changes context at all.
+ *
+ * @param setIndex - Zero-based index into the character's equipment sets.
+ */
+export function changeEquipmentSet(
+  setIndex: number,
+  isSuspended: () => boolean,
+): ActionResult<{ setIndex: number }> {
+  const player = game.combat.player;
+
+  return act(
+    {
+      name: 'equipment.changeSet',
+      observe: () => ({ setIndex: player.selectedEquipmentSet }),
+      precondition: () => {
+        if (
+          !Number.isInteger(setIndex) ||
+          setIndex < 0 ||
+          setIndex >= player.equipmentSets.length
+        ) {
+          return `there are ${player.equipmentSets.length} equipment sets; ${setIndex} is out of range`;
+        }
+        if (player.selectedEquipmentSet === setIndex) return `set ${setIndex} is already active`;
+        // Swapping the whole loadout mid-fight invalidates everything the
+        // survivability gate measured, all at once.
+        if (game.combat.isActive) return 'in combat; refusing to swap the whole loadout';
+        return null;
+      },
+      perform: () => player.changeEquipmentSet(setIndex),
+      changed: (_before, after) => after.setIndex === setIndex,
+    },
+    isSuspended,
+  );
+}

@@ -30,6 +30,13 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('disarm') }),
   /** Hard stop. Tears down every listener and timer. For the operator. */
   z.object({ type: z.literal('kill') }),
+  /**
+   * Undoes a kill, back to idle rather than to running.
+   *
+   * A latch with no release is a reload disguised as a button; the operator
+   * who pulled the switch is the one who decides when it goes back.
+   */
+  z.object({ type: z.literal('revive') }),
   z.object({ type: z.literal('replan'), reason: z.string() }),
   z.object({ type: z.literal('set_objective'), objective: objectiveSchema }),
   z.object({ type: z.literal('dump_knowledge') }),

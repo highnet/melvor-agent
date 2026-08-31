@@ -15,6 +15,7 @@ import {
   buildAgilityObstacle,
   buildTownshipBuilding,
   buyShopPurchase,
+  changeEquipmentSet,
   checkCharacterAllowed,
   checkRealmAllowed,
   disengageCombat,
@@ -397,6 +398,29 @@ export class Agent {
     this.notify();
   }
 
+  /**
+   * Undoes the kill switch.
+   *
+   * Kill disposes every listener and timer, so this reinstalls them and
+   * returns to idle — *not* to running. Pulling the switch is how an operator
+   * stops an agent they do not trust in that moment; putting it back should
+   * hand control over, not immediately resume acting.
+   *
+   * Reviving used to require reloading the game, which was defensible for a
+   * latch and useless in practice: the panel offered a button that could not be
+   * undone from the panel.
+   */
+  revive(): void {
+    if (this.state !== 'killed') return;
+
+    this.state = 'idle';
+    this.blockedReason = null;
+    this.install();
+    this.startClocks();
+    this.log.info('operator', 'kill switch released; idle and ready to arm');
+    this.notify();
+  }
+
   /** Records that a replan is owed, with the trigger that caused it. */
   requestReplan(trigger: string): void {
     this.replanPending = trigger;
@@ -700,6 +724,8 @@ export class Agent {
         );
       case 'unlock_skill_node':
         return unlockSkillTreeNode(action.skillId, action.treeId, action.nodeId, isSuspended);
+      case 'change_equipment_set':
+        return changeEquipmentSet(action.setIndex, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1051,6 +1077,9 @@ export class Agent {
         break;
       case 'kill':
         this.kill();
+        break;
+      case 'revive':
+        this.revive();
         break;
       case 'replan':
         this.requestReplan(command.reason);

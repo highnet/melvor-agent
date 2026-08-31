@@ -130,7 +130,12 @@ function renderControls(agent: Agent): HTMLElement {
   arm.disabled = agent.runState === 'killed';
 
   // The kill switch stays enabled in every state; it is the operator's exit.
-  const kill = button('Kill', 'btn-danger', () => agent.kill());
+  // Once pulled it becomes Revive, because a switch with no way back is a
+  // reload disguised as a button.
+  const kill =
+    agent.runState === 'killed'
+      ? button('Revive', 'btn-success', () => agent.revive())
+      : button('Kill', 'btn-danger', () => agent.kill());
 
   for (const control of [arm, kill]) {
     const cell = el('div', 'col-6');

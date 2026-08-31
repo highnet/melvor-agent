@@ -11,6 +11,8 @@ const KEY_COMMANDS: Record<string, Command> = {
   a: { type: 'arm' },
   d: { type: 'disarm' },
   k: { type: 'kill' },
+  // Uppercase, so the release cannot be hit by fumbling for the kill key.
+  K: { type: 'revive' },
   r: { type: 'replan', reason: 'operator requested from TUI' },
   e: { type: 'export_save' },
 };

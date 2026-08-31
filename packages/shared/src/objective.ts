@@ -39,6 +39,7 @@ export const objectiveKindSchema = z.enum([
   'build_obstacle',
   'upgrade_constellation',
   'unlock_skill_node',
+  'change_equipment_set',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -177,6 +178,10 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     skillId: gameIdSchema,
     treeId: gameIdSchema,
     nodeId: gameIdSchema,
+  }),
+  z.object({
+    kind: z.literal('change_equipment_set'),
+    setIndex: z.number().int().nonnegative(),
   }),
   z.object({
     kind: z.literal('toggle_curse'),

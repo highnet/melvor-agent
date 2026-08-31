@@ -156,7 +156,7 @@ server.registerTool(
       'Arm, disarm, or kill the agent, force a replan, export the save, or regenerate the knowledge dump. Kill is a hard stop that latches until the game reloads.',
     inputSchema: {
       action: z
-        .enum(['arm', 'disarm', 'kill', 'replan', 'export_save', 'dump_knowledge'])
+        .enum(['arm', 'disarm', 'kill', 'revive', 'replan', 'export_save', 'dump_knowledge'])
         .describe('What to do.'),
     },
   },

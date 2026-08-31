@@ -33,6 +33,7 @@ describe('capability registry', () => {
       'build_obstacle',
       'build_township',
       'buy_shop_upgrade',
+      'change_equipment_set',
       'equip_food',
       'equip_item',
       'excavate_dig_site',

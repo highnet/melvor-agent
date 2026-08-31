@@ -141,6 +141,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `unlocking ${params.nodeId}`,
       );
 
+    case 'change_equipment_set':
+      return act(
+        { type: 'change_equipment_set', setIndex: params.setIndex },
+        `switching to equipment set ${params.setIndex}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-112 exports.
+113 exports.
 
 ## `act`
 
@@ -219,6 +219,21 @@ adding one of these trips over the reason first.
 
 ```ts
 CATEGORICALLY_REFUSED: readonly ["destroying unique or one-of-a-kind items", "spending one-time tokens or consumable unlock items", "permanent character choices (gamemode, ironman, skill resets)", "deleting or overwriting save slots"]
+```
+
+## `changeEquipmentSet`
+
+`function`
+
+Switches to another equipment set.
+
+Sets are how a human keeps a skilling loadout and a combat loadout without
+re-equipping eight items each time. Without this the agent has one set and
+pays the full swap cost for every context change — which in practice means
+it never changes context at all.
+
+```ts
+changeEquipmentSet: (setIndex: number, isSuspended: () => boolean) => ActionResult<{ setIndex: number; }>
 ```
 
 ## `CharacterSettings`

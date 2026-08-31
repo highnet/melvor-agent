@@ -36,6 +36,7 @@ export {
 export {
   equipFood,
   equipItem,
+  changeEquipmentSet,
   readEquipCandidates,
   readSynergyCandidates,
   type EquipProjection,
