@@ -102,6 +102,13 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  chooseEventPassive,
+  readEventCandidates,
+  startCombatEvent,
+  stopCombatEvent,
+  type EventProjection,
+} from './event.js';
+export {
   readUpgradeCandidates,
   upgradeBankItem,
   type UpgradeProjection,

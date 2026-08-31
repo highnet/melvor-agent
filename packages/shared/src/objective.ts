@@ -48,6 +48,8 @@ export const objectiveKindSchema = z.enum([
   'make_paper',
   'claim_township_task',
   'claim_casual_task',
+  'start_combat_event',
+  'choose_event_passive',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -242,6 +244,20 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     /** Unclaimed casual tasks hold one of five slots and block the next one. */
     kind: z.literal('claim_casual_task'),
     taskId: gameIdSchema,
+  }),
+  z.object({
+    /** The end-game gauntlet: stages of slayer areas ending in a final boss. */
+    kind: z.literal('start_combat_event'),
+    eventId: gameIdSchema,
+  }),
+  z.object({
+    /**
+     * Answers the choice an event stops on. Parameterless by default: the
+     * offered passives are rolled at the moment of the stage, so naming one in
+     * advance would be naming something that does not exist yet.
+     */
+    kind: z.literal('choose_event_passive'),
+    passiveId: gameIdSchema.optional(),
   }),
   z.object({
     kind: z.literal('toggle_curse'),

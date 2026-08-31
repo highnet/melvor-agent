@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-131 exports.
+136 exports.
 
 ## `act`
 
@@ -268,6 +268,20 @@ Whether the currently selected realm is refused.
 checkRealmAllowed: () => string | null
 ```
 
+## `chooseEventPassive`
+
+`function`
+
+Chooses one of the passives an event is waiting on.
+
+Between stages the event stops and offers a choice. Until it is made the run
+is frozen — no fighting, no progress, no XP — so answering promptly matters
+more than answering cleverly.
+
+```ts
+chooseEventPassive: (passiveId: string | undefined, isSuspended: () => boolean) => ActionResult<EventProjection>
+```
+
 ## `claimCasualTask`
 
 `function`
@@ -438,6 +452,16 @@ What equipping claims to change: which item occupies the slot.
 
 ```ts
 EquipProjection: any
+```
+
+## `EventProjection`
+
+`interface`
+
+What starting or advancing an event claims to change.
+
+```ts
+EventProjection: any
 ```
 
 ## `excavateDigSite`
@@ -950,6 +974,19 @@ and combat outright.
 
 ```ts
 readEquipCandidates: () => Candidate[]
+```
+
+## `readEventCandidates`
+
+`function`
+
+Events the character could enter, or is being asked to answer.
+
+A waiting passive choice comes first and is described as blocking, because it
+is: an event mid-stage earns nothing until the choice is made.
+
+```ts
+readEventCandidates: () => Candidate[]
 ```
 
 ## `readExplorationCandidates`
@@ -1500,6 +1537,25 @@ is built — and so have their own capabilities instead.
 STARTABLE_SKILL_IDS: readonly string[]
 ```
 
+## `startCombatEvent`
+
+`function`
+
+Starts a combat event.
+
+No survivability gate runs here, and that is deliberate rather than an
+oversight: the gate measures one monster or one dungeon, and an event is a
+sequence of areas whose composition changes as it progresses. Measuring the
+first stage would produce a confident number about the wrong fight.
+
+What protects the character instead is the same thing that protects a human:
+the event can be stopped, and the policy tier's HP and food floors still end
+it. Entering is the agent's call, with the difficulty stated in the label.
+
+```ts
+startCombatEvent: (eventId: string, isSuspended: () => boolean) => ActionResult<EventProjection>
+```
+
 ## `startDungeon`
 
 `function`
@@ -1598,6 +1654,20 @@ startPassiveCooking: (categoryId: string, isSuspended: () => boolean) => ActionR
 
 ```ts
 StateSnapshot: any
+```
+
+## `stopCombatEvent`
+
+`function`
+
+Leaves a running event.
+
+Stopping forfeits the stage's progress, which is why it is a decision rather
+than a reflex — but staying in an event the character cannot clear forfeits
+the time instead, and time is the thing this project measures.
+
+```ts
+stopCombatEvent: (isSuspended: () => boolean) => ActionResult<EventProjection>
 ```
 
 ## `stopGathering`

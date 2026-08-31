@@ -59,6 +59,8 @@ export type PolicyAction =
   | { type: 'make_paper'; recipeId: string }
   | { type: 'claim_township_task'; taskId: string }
   | { type: 'claim_casual_task'; taskId: string }
+  | { type: 'start_combat_event'; eventId: string }
+  | { type: 'choose_event_passive'; passiveId?: string }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

@@ -18,6 +18,7 @@ import {
   changeEquipmentSet,
   checkCharacterAllowed,
   checkRealmAllowed,
+  chooseEventPassive,
   claimCasualTask,
   claimTownshipTask,
   compostFarmPlot,
@@ -42,6 +43,7 @@ import {
   readCompostCandidates,
   readDigSiteSetupCandidates,
   readEquipCandidates,
+  readEventCandidates,
   readExplorationCandidates,
   readGameVersion,
   readGatherCandidates,
@@ -71,6 +73,7 @@ import {
   sellItem,
   setAttackStyle,
   spendMasteryPool,
+  startCombatEvent,
   startDungeon,
   startGathering,
   startGolbinRaid,
@@ -858,6 +861,10 @@ export class Agent {
         return claimTownshipTask(action.taskId, isSuspended);
       case 'claim_casual_task':
         return claimCasualTask(action.taskId, isSuspended);
+      case 'start_combat_event':
+        return startCombatEvent(action.eventId, isSuspended);
+      case 'choose_event_passive':
+        return chooseEventPassive(action.passiveId, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1074,6 +1081,7 @@ export class Agent {
       ['spell', readSpellCandidates],
       ['township', readTownshipCandidates],
       ['township tasks', readTaskCandidates],
+      ['combat event', readEventCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
       ['paper', readPaperCandidates],

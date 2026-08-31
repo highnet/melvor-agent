@@ -199,6 +199,20 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `claiming the casual task ${params.taskId}`,
       );
 
+    case 'start_combat_event':
+      return act(
+        { type: 'start_combat_event', eventId: params.eventId },
+        `starting the combat event ${params.eventId}`,
+      );
+
+    case 'choose_event_passive':
+      return act(
+        params.passiveId === undefined
+          ? { type: 'choose_event_passive' }
+          : { type: 'choose_event_passive', passiveId: params.passiveId },
+        'answering the event passive choice',
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 
