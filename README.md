@@ -155,6 +155,14 @@ and does not belong in repository secrets for a single-user tool.
 Commits before this point are not Conventional Commits, so release-please will
 not see them; the first conventional commit starts the changelog.
 
+A husky `commit-msg` hook runs commitlint, so a non-conforming message is
+rejected at commit time. That is not style enforcement: release-please parses
+these prefixes, so a message it cannot read makes the change **invisible to the
+release** — it silently never appears in the changelog or triggers a version
+bump. Cheaper to catch at the commit than to notice a release is missing things.
+
+Hooks install themselves via the `prepare` script on `pnpm install`.
+
 ### Getting a token
 
 Go to **https://mod.io/me/access** (avatar -> Access). That page offers two

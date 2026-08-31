@@ -1,0 +1,6 @@
+# Enforce Conventional Commits.
+#
+# release-please builds CHANGELOG.md and picks the next version by parsing these
+# prefixes. A non-conforming message is not a style nit: it is invisible to the
+# release tooling, so the change silently never appears in a release.
+npx --no-install commitlint --edit "$1"

@@ -22,11 +22,15 @@
     "verify": "pnpm check && pnpm typecheck && node scripts/check-adapter-boundary.mjs && pnpm docs:api:check && pnpm test",
     "release": "node --env-file=.env scripts/release-modio.mjs",
     "release:dry": "node --env-file=.env scripts/release-modio.mjs --dry-run",
-    "release:check": "node --env-file=.env scripts/release-modio.mjs --check"
+    "release:check": "node --env-file=.env scripts/release-modio.mjs --check",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "esbuild": "^0.24.0",
+    "husky": "^9.1.7",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "vitest": "^2.1.8"

@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "ignore": ["vendor/**", "dist/**", "knowledge/**", "docs/API.md", "docs/**"]
+    "ignore": ["vendor/**", "dist/**", "knowledge/**", "docs/API.md", "docs/**", ".husky/**"]
   },
   "formatter": {
     "enabled": true,
