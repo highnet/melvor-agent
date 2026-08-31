@@ -11,13 +11,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `version` input on purpose: package.json already declares
+      # "packageManager", and action-setup errors out when both are present.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Pinned to a floor rather than bare "22": the mod build uses
+          # --env-file-if-exists, which Node only gained in 22.9.
+          node-version: '22.11'
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
