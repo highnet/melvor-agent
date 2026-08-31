@@ -114,7 +114,7 @@ action. Turn it off in the panel once you have watched it make the right calls.
 ## Verifying
 
 ```bash
-pnpm ci
+pnpm verify
 ```
 
 Runs lint, typecheck, the adapter-boundary check, the API docs drift check, and

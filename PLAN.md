@@ -1,6 +1,12 @@
 # PLAN — Melvor Idle autonomous play agent
 
-Status: **awaiting approval.** Nothing below is implemented.
+Status: **Phase 1 implemented.** See README for how to run it.
+
+Scope change after approval: a **TUI** was added (`packages/tui`). It made the
+service topology explicit rather than changing it — the mod is sandboxed and
+cannot write to disk, so mod → service HTTP was already implied by "log to
+disk". The TUI is simply a third client of that service. Hand-rolled ANSI, no
+runtime deps: Ink is the obvious choice but is React-based, which is excluded.
 Grounding: [docs/api-notes.md](docs/api-notes.md). Every API named here is verified against
 the v1.3.1 typings or a cited wiki page; unverified items are called out inline.
 
@@ -47,6 +53,7 @@ melvor-agent/
     mod/          # the in-game mod
     knowledge/    # dump + wiki generators
     planner/      # Hono service
+    tui/          # terminal dashboard (added after approval)
   knowledge/                   # build artifact: dump.json, *.md, conflicts.md
 ```
 
