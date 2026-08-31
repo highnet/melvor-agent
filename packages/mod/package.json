@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
-    "dev": "node build.mjs --watch",
+    "build": "node --env-file-if-exists=../../.env build.mjs",
+    "dev": "node --env-file-if-exists=../../.env build.mjs --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

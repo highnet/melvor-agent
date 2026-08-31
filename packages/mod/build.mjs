@@ -11,8 +11,11 @@ const watch = process.argv.includes('--watch');
  * Where the built mod is written.
  *
  * Point MELVOR_CT_DIR at the folder linked in the Creator Toolkit's Directory
- * Link mode. Directory Link re-zips that folder on every game reload, so a
- * rebuild still needs a manual game reload to take effect.
+ * Link mode. It is read from `.env` via `node --env-file-if-exists`; running
+ * this file with plain `node` falls back to `dist-local`.
+ *
+ * Directory Link re-zips that folder on every game reload, so a rebuild still
+ * needs a manual game reload to take effect.
  */
 const outDir = readEnv('MELVOR_CT_DIR') ?? join(here, 'dist-local');
 

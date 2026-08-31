@@ -47,9 +47,17 @@ const active = !args.includes('--inactive');
 const version = flag('--version') ?? JSON.parse(read('package.json')).version;
 const changelog = flag('--changelog') ?? defaultChangelog();
 
-const gameId = process.env.MODIO_GAME_ID ?? '2649';
-const modId = process.env.MODIO_MOD_ID;
-const token = process.env.MODIO_TOKEN;
+// An unset variable in a .env file arrives as an empty string, not undefined,
+// so a bare `=== undefined` check lets it through and the failure surfaces as a
+// 401 stack trace instead of a readable message.
+const env = (name) => {
+  const value = process.env[name];
+  return value === undefined || value.trim() === '' ? null : value.trim();
+};
+
+const gameId = env('MODIO_GAME_ID') ?? '2649';
+const modId = env('MODIO_MOD_ID');
+const token = env('MODIO_TOKEN');
 
 // Build first, so a release can never ship a stale bundle. The build asserts
 // its own output exports `setup`, which is the failure that is silent in-game.
@@ -81,14 +89,26 @@ if (dryRun) {
   process.exit(0);
 }
 
-if (token === undefined || modId === undefined) {
-  console.error('[release] MODIO_TOKEN and MODIO_MOD_ID must be set. See the header of this file.');
+if (token === null || modId === null) {
+  console.error('[release] Missing configuration in .env:');
+  if (modId === null) {
+    console.error('  MODIO_MOD_ID  - the number in the mod.io URL for your mod');
+  }
+  if (token === null) {
+    console.error('  MODIO_TOKEN   - mod.io > avatar > Access > "Manually create an OAuth 2');
+    console.error('                  Access Token", with the `write` scope. An API key');
+    console.error('                  cannot upload.');
+  }
   console.error('[release] Re-run with --dry-run to build and verify the zip without uploading.');
   process.exit(1);
 }
 
 // Confirm we are pointed at the right game before uploading anything.
-const game = await api(`/games/${gameId}`);
+const game = await api(`/games/${gameId}`).catch((error) => {
+  console.error(`[release] could not reach mod.io: ${error.message}`);
+  console.error('[release] check MODIO_TOKEN is valid and has the `write` scope.');
+  process.exit(1);
+});
 if (!/melvor/i.test(game.name ?? '')) {
   console.error(`[release] MODIO_GAME_ID ${gameId} is "${game.name}", not Melvor Idle. Refusing.`);
   process.exit(1);
