@@ -38,6 +38,10 @@ export type PolicyAction =
   | { type: 'repair_township'; buildingId: string; biomeId: string }
   | { type: 'survey_hex' }
   | { type: 'excavate_dig_site'; digSiteId: string }
+  | { type: 'select_dig_map'; digSiteId: string; mapIndex: number }
+  | { type: 'select_dig_tool'; digSiteId: string; toolId: string }
+  | { type: 'advance_raid'; difficulty: string }
+  | { type: 'stop_raid' }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

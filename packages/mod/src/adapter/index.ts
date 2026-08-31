@@ -37,6 +37,7 @@ export {
   equipFood,
   equipItem,
   readEquipCandidates,
+  readSynergyCandidates,
   type EquipProjection,
 } from './equipment.js';
 export {
@@ -93,6 +94,13 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  advanceGolbinRaid,
+  readRaidCandidates,
+  startGolbinRaid,
+  stopGolbinRaid,
+  type RaidProjection,
+} from './raid.js';
+export {
   readLevelCapCandidates,
   readLoadoutCandidates,
   selectLevelCapIncrease,
@@ -102,7 +110,10 @@ export {
 } from './loadout.js';
 export {
   excavateDigSite,
+  readDigSiteSetupCandidates,
   readExplorationCandidates,
+  selectDigSiteMap,
+  selectDigSiteTool,
   surveyBestHex,
 } from './exploration.js';
 export { dumpRegistries } from './registries.js';

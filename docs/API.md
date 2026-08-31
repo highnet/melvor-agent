@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-95 exports.
+104 exports.
 
 ## `act`
 
@@ -81,6 +81,26 @@ re-registers will configure the existing entry rather than duplicating it.
 
 ```ts
 addSidebarPanel: (options: SidebarPanelOptions) => PanelHandle
+```
+
+## `advanceGolbinRaid`
+
+`function`
+
+Takes the next decision a running raid is waiting on.
+
+A raid is a state machine that *stops* until someone chooses, so this is
+called repeatedly rather than once: modifiers at the start, a category and an
+item between waves, and nothing at all while a wave is being fought.
+
+The choices are deliberately simple — the first offered modifier, the first
+offered item. A cleverer chooser would need to model raid scaling, and being
+wrong there is indistinguishable from being unlucky. Choosing *something*
+promptly is worth far more than choosing well slowly, because a raid waiting
+on a modal earns nothing at all.
+
+```ts
+advanceGolbinRaid: (isSuspended: () => boolean) => ActionResult<RaidProjection>
 ```
 
 ## `ARTISAN_SKILL_IDS`
@@ -590,6 +610,16 @@ What buying claims to change: one more owned, some currency gone.
 PurchaseProjection: any
 ```
 
+## `RaidProjection`
+
+`interface`
+
+What a raid action claims to change.
+
+```ts
+RaidProjection: any
+```
+
 ## `readActiveRecipeIds`
 
 `function`
@@ -697,6 +727,20 @@ Amount of a currency by namespaced id, or 0 when it is not registered.
 
 ```ts
 readCurrency: (currencyId: string) => number
+```
+
+## `readDigSiteSetupCandidates`
+
+`function`
+
+Dig site setup that is currently missing.
+
+Offered as candidates rather than done automatically because *which* map and
+*which* tools is a real trade-off — tools cost charges and target different
+artefact sizes, so the right choice depends on what the run is for.
+
+```ts
+readDigSiteSetupCandidates: () => Candidate[]
 ```
 
 ## `readEquipCandidates`
@@ -834,6 +878,23 @@ planner trap, not a choice.
 readPlantableSeeds: () => { recipeId: string; name: string; categoryId: string; level: number; xp: number; seedsHeld: number; }[]
 ```
 
+## `readRaidCandidates`
+
+`function`
+
+Raiding as an option.
+
+Only offered when nothing else is running, because a raid takes the whole
+character: it pauses the ordinary game loop, so starting one mid-objective
+would silently stop whatever was earning.
+
+Easy only. Difficulty multiplies enemy stats without changing what the agent
+can bring, and a failed raid pays nothing for the time spent.
+
+```ts
+readRaidCandidates: () => Candidate[]
+```
+
 ## `readSellCandidates`
 
 `function`
@@ -903,6 +964,26 @@ later.
 
 ```ts
 readSpellCandidates: () => Candidate[]
+```
+
+## `readSynergyCandidates`
+
+`function`
+
+Familiar pairs that would combine into a synergy.
+
+Summoning's real payoff is not the familiars individually — it is the
+synergy between a specific *pair*, which applies a bonus neither gives
+alone. A human checks the synergy table before equipping; an agent that
+equips familiars one at a time by stat score will essentially never land on
+a pair by accident, so this is the difference between Summoning being a
+source of buffs and being a source of two mediocre trinkets.
+
+Only pairs whose tablets are both in the bank and whose synergy is unlocked
+are offered, and only the half that is missing from the slots.
+
+```ts
+readSynergyCandidates: () => Candidate[]
 ```
 
 ## `readTotalLevel`
@@ -988,6 +1069,34 @@ or the runes are missing, so the selection is observed either side.
 
 ```ts
 selectAttackSpell: (spellId: string, isSuspended: () => boolean) => ActionResult<{ spellId: string | null; }>
+```
+
+## `selectDigSiteMap`
+
+`function`
+
+Selects a dig site's map.
+
+Excavating is impossible without one, so this is the step that turns a dig
+site from "listed" into "doable". Maps are held per dig site and identified
+by index, which is the game's own model — they are not namespaced objects.
+
+```ts
+selectDigSiteMap: (digSiteId: string, mapIndex: number, isSuspended: () => boolean) => ActionResult<{ selectedIndex: number; charges: number; }>
+```
+
+## `selectDigSiteTool`
+
+`function`
+
+Turns one of a dig site's tools on.
+
+Tools decide *which artefact sizes* a dig can find, so digging with none
+selected finds nothing while still consuming map charges — a silent waste
+that looks exactly like bad luck.
+
+```ts
+selectDigSiteTool: (digSiteId: string, toolId: string, isSuspended: () => boolean) => ActionResult<{ tools: string[]; }>
 ```
 
 ## `selectLevelCapIncrease`
@@ -1134,6 +1243,19 @@ on this recipe — and it is observed, not inferred from any return value.
 startGathering: (skillId: string, recipeId: string, isSuspended: () => boolean) => ActionResult<GatheringProjection>
 ```
 
+## `startGolbinRaid`
+
+`function`
+
+Starts a raid at a difficulty.
+
+`startRaid` returns `void` and refuses silently when the requirements are
+unmet, so the evidence is the raid actually running afterwards.
+
+```ts
+startGolbinRaid: (difficulty: string, isSuspended: () => boolean) => ActionResult<RaidProjection>
+```
+
 ## `StateSnapshot`
 
 `type`
@@ -1150,6 +1272,20 @@ Stops a gathering skill.
 
 ```ts
 stopGathering: (skillId: string, isSuspended: () => boolean) => ActionResult<GatheringProjection>
+```
+
+## `stopGolbinRaid`
+
+`function`
+
+Ends a raid.
+
+Fleeing keeps the coins earned so far, which makes it the right move once a
+run stops progressing — a raid that cannot clear its current wave will not
+clear the next one, and the coins are the only thing carried out.
+
+```ts
+stopGolbinRaid: (isSuspended: () => boolean) => ActionResult<RaidProjection>
 ```
 
 ## `Subscriptions`

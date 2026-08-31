@@ -11,6 +11,7 @@ import type {
 import { fail, stateSnapshotSchema } from '@melvor-agent/shared';
 import {
   Subscriptions,
+  advanceGolbinRaid,
   buildTownshipBuilding,
   buyShopPurchase,
   checkCharacterAllowed,
@@ -29,6 +30,7 @@ import {
   readBlockedOpportunities,
   readCombatGateInputs,
   readCombatTargets,
+  readDigSiteSetupCandidates,
   readEquipCandidates,
   readExplorationCandidates,
   readGameVersion,
@@ -36,20 +38,26 @@ import {
   readLevelCapCandidates,
   readLoadoutCandidates,
   readMasteryCandidates,
+  readRaidCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
   readSnapshot,
   readSpellCandidates,
+  readSynergyCandidates,
   readTownshipCandidates,
   repairTownshipBuilding,
   selectAttackSpell,
+  selectDigSiteMap,
+  selectDigSiteTool,
   selectLevelCapIncrease,
   sellItem,
   setAttackStyle,
   spendMasteryPool,
   startDungeon,
   startGathering,
+  startGolbinRaid,
   stopGathering,
+  stopGolbinRaid,
   surveyBestHex,
   toggleAurora,
   toggleBankLock,
@@ -662,6 +670,19 @@ export class Agent {
         return surveyBestHex(isSuspended);
       case 'excavate_dig_site':
         return excavateDigSite(action.digSiteId, isSuspended);
+      case 'select_dig_map':
+        return selectDigSiteMap(action.digSiteId, action.mapIndex, isSuspended);
+      case 'select_dig_tool':
+        return selectDigSiteTool(action.digSiteId, action.toolId, isSuspended);
+      case 'advance_raid': {
+        // Start and advance are one intent: whichever does not apply is refused
+        // by the adapter, which is cheaper than mirroring the raid's state
+        // machine in a tier that cannot see the game.
+        const started = startGolbinRaid(action.difficulty, isSuspended);
+        return started.ok ? started : advanceGolbinRaid(isSuspended);
+      }
+      case 'stop_raid':
+        return stopGolbinRaid(isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -879,6 +900,9 @@ export class Agent {
       ['township', readTownshipCandidates],
       ['exploration', readExplorationCandidates],
       ['loadout', readLoadoutCandidates],
+      ['dig site setup', readDigSiteSetupCandidates],
+      ['synergy', readSynergyCandidates],
+      ['raid', readRaidCandidates],
       ['level cap', readLevelCapCandidates],
       ['combat', () => this.combatCandidates()],
     ] as const) {

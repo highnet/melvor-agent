@@ -33,6 +33,9 @@ export const objectiveKindSchema = z.enum([
   'toggle_aurora',
   'toggle_bank_lock',
   'select_level_cap',
+  'select_dig_map',
+  'select_dig_tool',
+  'run_golbin_raid',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -134,6 +137,25 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('excavate_dig_site'),
     digSiteId: gameIdSchema,
+  }),
+  z.object({
+    /** Maps are held per dig site and identified by index — the game's model. */
+    kind: z.literal('select_dig_map'),
+    digSiteId: gameIdSchema,
+    mapIndex: z.number().int().nonnegative(),
+  }),
+  z.object({
+    kind: z.literal('select_dig_tool'),
+    digSiteId: gameIdSchema,
+    toolId: gameIdSchema,
+  }),
+  z.object({
+    /**
+     * A raid makes no progress on its own — it stops at each choice and waits —
+     * so this objective is answered repeatedly rather than started once.
+     */
+    kind: z.literal('run_golbin_raid'),
+    difficulty: z.enum(['easy', 'medium', 'hard']),
   }),
   z.object({
     kind: z.literal('toggle_curse'),

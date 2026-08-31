@@ -6,6 +6,7 @@ import { tendFarm } from './farm.js';
 import { fightMonster } from './fight.js';
 import { gatherResource } from './gather.js';
 import { manage } from './manage.js';
+import { runGolbinRaid } from './raid.js';
 import { sellItems } from './sell.js';
 import type { PolicyExecutor } from './types.js';
 
@@ -39,6 +40,9 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   repair_township: manage,
   survey_hex: explore,
   excavate_dig_site: explore,
+  run_golbin_raid: runGolbinRaid,
+  select_dig_map: manage,
+  select_dig_tool: manage,
   toggle_curse: manage,
   toggle_aurora: manage,
   toggle_bank_lock: manage,

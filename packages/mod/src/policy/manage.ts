@@ -101,6 +101,18 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `repairing ${params.buildingId} in ${params.biomeId}`,
       );
 
+    case 'select_dig_map':
+      return act(
+        { type: 'select_dig_map', digSiteId: params.digSiteId, mapIndex: params.mapIndex },
+        `selecting map ${params.mapIndex} for ${params.digSiteId}`,
+      );
+
+    case 'select_dig_tool':
+      return act(
+        { type: 'select_dig_tool', digSiteId: params.digSiteId, toolId: params.toolId },
+        `selecting ${params.toolId} for ${params.digSiteId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

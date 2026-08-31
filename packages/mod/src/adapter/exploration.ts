@@ -222,3 +222,147 @@ export function readExplorationCandidates(): Candidate[] {
 
   return candidates;
 }
+
+// --- archaeology setup -----------------------------------------------------
+
+/**
+ * Selects a dig site's map.
+ *
+ * Excavating is impossible without one, so this is the step that turns a dig
+ * site from "listed" into "doable". Maps are held per dig site and identified
+ * by index, which is the game's own model — they are not namespaced objects.
+ *
+ * @param digSiteId - The dig site whose map to select.
+ * @param mapIndex - Index into that dig site's `maps`.
+ */
+export function selectDigSiteMap(
+  digSiteId: string,
+  mapIndex: number,
+  isSuspended: () => boolean,
+): ActionResult<{ selectedIndex: number; charges: number }> {
+  const archaeology = game.archaeology;
+  if (archaeology === undefined) {
+    return fail('archaeology.selectMap', 'precondition', 'Archaeology is not installed');
+  }
+
+  const digSite = archaeology.actions.getObjectByID(digSiteId);
+  if (digSite === undefined) {
+    return fail('archaeology.selectMap', 'precondition', `no dig site ${digSiteId}`);
+  }
+
+  const project = (): { selectedIndex: number; charges: number } => ({
+    selectedIndex: digSite.selectedMapIndex,
+    charges: digSite.selectedMap?.charges ?? 0,
+  });
+
+  return act(
+    {
+      name: 'archaeology.selectMap',
+      observe: project,
+      precondition: () => {
+        if (!Number.isInteger(mapIndex) || mapIndex < 0 || mapIndex >= digSite.maps.length) {
+          return `${digSiteId} has ${digSite.maps.length} maps; ${mapIndex} is out of range`;
+        }
+        if ((digSite.maps[mapIndex]?.charges ?? 0) <= 0) {
+          return `map ${mapIndex} of ${digSiteId} has no charges left`;
+        }
+        return null;
+      },
+      perform: () => archaeology.setMapAsActive(digSite, mapIndex),
+      changed: (_before, after) => after.selectedIndex === mapIndex,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Turns one of a dig site's tools on.
+ *
+ * Tools decide *which artefact sizes* a dig can find, so digging with none
+ * selected finds nothing while still consuming map charges — a silent waste
+ * that looks exactly like bad luck.
+ */
+export function selectDigSiteTool(
+  digSiteId: string,
+  toolId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ tools: string[] }> {
+  const archaeology = game.archaeology;
+  if (archaeology === undefined) {
+    return fail('archaeology.selectTool', 'precondition', 'Archaeology is not installed');
+  }
+
+  const digSite = archaeology.actions.getObjectByID(digSiteId);
+  if (digSite === undefined) {
+    return fail('archaeology.selectTool', 'precondition', `no dig site ${digSiteId}`);
+  }
+
+  const tool = archaeology.tools.getObjectByID(toolId);
+  if (tool === undefined) {
+    return fail('archaeology.selectTool', 'precondition', `no archaeology tool ${toolId}`);
+  }
+
+  const project = (): { tools: string[] } => ({
+    tools: digSite.selectedTools.map((selected) => selected.id).sort(),
+  });
+
+  return act(
+    {
+      name: 'archaeology.selectTool',
+      observe: project,
+      precondition: () =>
+        digSite.selectedTools.includes(tool) ? `${toolId} is already selected` : null,
+      perform: () => archaeology.setToolAsActive(digSite, tool),
+      changed: (_before, after) => after.tools.includes(toolId),
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Dig site setup that is currently missing.
+ *
+ * Offered as candidates rather than done automatically because *which* map and
+ * *which* tools is a real trade-off — tools cost charges and target different
+ * artefact sizes, so the right choice depends on what the run is for.
+ */
+export function readDigSiteSetupCandidates(): Candidate[] {
+  const archaeology = game.archaeology;
+  if (archaeology === undefined) return [];
+
+  const candidates: Candidate[] = [];
+
+  for (const digSite of archaeology.actions.allObjects) {
+    try {
+      if (!digSite.isDiscovered) continue;
+
+      if (digSite.selectedMap === undefined) {
+        const usable = digSite.maps.findIndex((map) => map.charges > 0);
+        if (usable >= 0) {
+          candidates.push({
+            kind: 'select_dig_map',
+            params: { kind: 'select_dig_map', digSiteId: digSite.id, mapIndex: usable },
+            label: `Select a map for ${digSite.name} (${digSite.maps[usable]?.charges ?? 0} charges) — excavation is impossible without one`,
+            available: true,
+          });
+        }
+        continue;
+      }
+
+      if (digSite.selectedTools.length === 0) {
+        for (const tool of archaeology.tools.allObjects) {
+          candidates.push({
+            kind: 'select_dig_tool',
+            params: { kind: 'select_dig_tool', digSiteId: digSite.id, toolId: tool.id },
+            label: `Use the ${tool.name} at ${digSite.name} — with no tool selected a dig finds nothing and still spends charges`,
+            available: true,
+          });
+        }
+      }
+    } catch {
+      // A dig site that cannot answer for itself is not a candidate.
+    }
+  }
+
+  return candidates;
+}

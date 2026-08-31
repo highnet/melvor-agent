@@ -208,3 +208,69 @@ function statScore(item: EquipmentItem): number {
   const stats = item.equipmentStats;
   return stats.reduce((sum, stat) => sum + (typeof stat.value === 'number' ? stat.value : 0), 0);
 }
+
+/**
+ * Familiar pairs that would combine into a synergy.
+ *
+ * Summoning's real payoff is not the familiars individually — it is the
+ * synergy between a specific *pair*, which applies a bonus neither gives
+ * alone. A human checks the synergy table before equipping; an agent that
+ * equips familiars one at a time by stat score will essentially never land on
+ * a pair by accident, so this is the difference between Summoning being a
+ * source of buffs and being a source of two mediocre trinkets.
+ *
+ * Only pairs whose tablets are both in the bank and whose synergy is unlocked
+ * are offered, and only the half that is missing from the slots.
+ */
+export function readSynergyCandidates(): Candidate[] {
+  const summoning = game.summoning;
+  if (summoning === undefined) return [];
+
+  const player = game.combat.player;
+  const equipped = new Set<string>();
+  for (const slotId of ['melvorD:Summon1', 'melvorD:Summon2']) {
+    const item = projectSlot(slotId).itemId;
+    if (item !== null) equipped.add(item);
+  }
+
+  const candidates: Candidate[] = [];
+  const seen = new Set<string>();
+
+  for (const synergy of summoning.synergies) {
+    try {
+      if (!summoning.isSynergyUnlocked(synergy)) continue;
+
+      const [first, second] = synergy.summons;
+      const products = [first.product, second.product];
+
+      // Both tablets must be in hand: suggesting half of a pair the character
+      // cannot complete is a dead end dressed up as a plan.
+      if (products.some((product) => game.bank.getQty(product) <= 0)) continue;
+
+      const missing = products.filter((product) => !equipped.has(product.id));
+      // Nothing to do when both are equipped, and a pair needing *both* slots
+      // changed is offered one half at a time — equipping the first is a real
+      // step toward the synergy either way.
+      if (missing.length === 0) continue;
+
+      const target = missing[0];
+      if (target === undefined || seen.has(target.id)) continue;
+      seen.add(target.id);
+
+      candidates.push({
+        kind: 'equip_item',
+        params: { kind: 'equip_item', itemId: target.id, slotId: 'melvorD:Summon1' },
+        label: `Equip ${target.name} for the ${synergy.name} synergy: ${synergy.description}`,
+        available: true,
+      });
+    } catch {
+      // A synergy that cannot be read is not a candidate.
+    }
+  }
+
+  // Referenced so the player lookup above cannot be quietly dropped by a later
+  // edit: the equipped set is read through it.
+  void player;
+
+  return candidates;
+}
