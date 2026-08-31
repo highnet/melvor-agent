@@ -33,22 +33,7 @@ learnings/           hand-curated gotchas — read at the start of every session
 
 ## First-time setup
 
-### 1. A private mod.io entry (required — nothing persists without it)
-
-The Creator Toolkit only persists `characterStorage`, `accountStorage` and
-`settings` for a local mod **linked to mod.io and installed from there**. An
-unlinked local mod silently loses every setting on reload.
-
-1. Create a mod.io entry for Melvor Idle with **Visibility unchecked** — it will
-   not appear in the in-game Browse tab.
-2. Subscribe to it from the mod.io website (profile → My library → My Mods).
-3. Reload the game so it installs.
-4. Link your local Directory Link mod to that entry.
-
-Your mod.io login must match the account saved in the in-game mod section, or the
-link will not resolve.
-
-### 2. Point the build at your Creator Toolkit folder
+### 1. Point the build at your Creator Toolkit folder
 
 ```bash
 cp .env.example .env
@@ -58,7 +43,7 @@ Set `MELVOR_CT_DIR` to the folder you linked in the Toolkit's Directory Link
 mode. Directory Link is **Steam client only**, and it re-zips that folder on every
 game reload — so a rebuild still needs a manual game reload.
 
-### 3. Install and build
+### 2. Install and build
 
 ```bash
 pnpm install
@@ -67,6 +52,22 @@ pnpm install
 ```bash
 pnpm build
 ```
+
+### 3. Add it as a local mod
+
+Mod Manager → **Creator Toolkit** → add a local mod → **Directory Link** → point
+it at the folder from step 1 (`packages/mod/dist-local` by default). Reload the
+game.
+
+Directory Link is Steam-client only, and it re-zips the linked folder on every
+game reload — so a rebuild always needs a game reload to take effect.
+
+There is deliberately no mod.io step. `characterStorage` only persists for a
+mod.io-installed mod, and Melvor gates mod.io entries behind game-admin
+approval; depending on a moderation queue for an unattended agent's settings is
+a bad trade. Settings live in the planner service instead, with
+`characterStorage` as a best-effort cache. If you *do* link a mod.io entry, the
+cache starts working too and settings also travel with the save.
 
 ## Running it
 

@@ -140,6 +140,43 @@ function renderControls(agent: Agent): HTMLElement {
     row.appendChild(cell);
   }
 
+  // The allowlist fails closed on an empty list, which is correct but leaves no
+  // way in without hand-editing JSON. One click adds the loaded character:
+  // explicit, and impossible to typo into the wrong save.
+  const snapshot = agent.snapshot;
+  const characterName = snapshot?.characterName ?? null;
+  const allowed =
+    characterName !== null && agent.currentSettings.characterAllowlist.includes(characterName);
+
+  if (characterName !== null && !allowed) {
+    const allow = button(`Allow "${characterName}"`, 'btn-info', () => {
+      agent.updateSettings({
+        ...agent.currentSettings,
+        characterAllowlist: [...agent.currentSettings.characterAllowlist, characterName],
+      });
+    });
+    const allowCell = el('div', 'col-12 mt-2');
+    allowCell.appendChild(allow);
+    row.appendChild(allowCell);
+  }
+
+  if (allowed && characterName !== null) {
+    const revoke = button(`Revoke "${characterName}"`, 'btn-secondary', () => {
+      agent.updateSettings({
+        ...agent.currentSettings,
+        characterAllowlist: agent.currentSettings.characterAllowlist.filter(
+          (name) => name !== characterName,
+        ),
+      });
+      // Revoking while armed would otherwise leave it running on a save it is
+      // no longer permitted to touch.
+      agent.disarm();
+    });
+    const revokeCell = el('div', 'col-12 mt-2');
+    revokeCell.appendChild(revoke);
+    row.appendChild(revokeCell);
+  }
+
   // The combat gate has its own dry run, separate from the global one, so
   // non-combat automation can run for real while the gate is still being
   // validated over a few dozen fights.
@@ -195,6 +232,10 @@ function renderSnapshot(agent: Agent): HTMLElement {
     ['Realm', snapshot.currentRealmId],
     ['Offline loop', snapshot.isOfflineLoop ? 'YES — suspended' : 'no'],
     ['Objective', agent.currentSettings.objective?.rationale ?? 'none'],
+    [
+      'Allowlisted',
+      agent.currentSettings.characterAllowlist.includes(snapshot.characterName) ? 'yes' : 'NO',
+    ],
   ];
 
   for (const [label, value] of rows) {
