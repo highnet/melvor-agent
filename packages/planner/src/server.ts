@@ -25,8 +25,17 @@ const PORT = Number(process.env.PORT ?? 8787);
  * root. Resolving from this file's location makes the location the same however
  * the service is launched.
  */
-/** Where USER.md, MEMORY.md and memory/ live. */
-const MEMORY_ROOT = process.env.MELVOR_AGENT_MEMORY ?? process.cwd();
+/**
+ * Where USER.md, MEMORY.md, GOALS.md and memory/ live.
+ *
+ * Resolved from this file, not from the working directory, for the same reason
+ * as DATA_DIR — and it had the same bug: `pnpm planner` filters into
+ * `packages/planner`, so goals and memory written at the repo root were
+ * invisible to the service and every tool reported "none configured". Silent,
+ * and indistinguishable from having written nothing.
+ */
+const MEMORY_ROOT =
+  process.env.MELVOR_AGENT_MEMORY ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 
 const DATA_DIR =
   process.env.MELVOR_AGENT_DATA ??

@@ -92,6 +92,11 @@ export {
   type TownshipSummary,
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
+export {
+  excavateDigSite,
+  readExplorationCandidates,
+  surveyBestHex,
+} from './exploration.js';
 export { dumpRegistries } from './registries.js';
 export { CharacterSettings, type PersistenceHealth } from './storage.js';
 export { addSidebarPanel, type PanelHandle } from './sidebar.js';

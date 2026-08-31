@@ -92,6 +92,32 @@ export async function loadGoals(root: string): Promise<Goal[]> {
 
   for (const line of body.split('\n')) {
     const trimmed = line.trim();
+
+    // Annotations may sit on continuation lines beneath the bullet. Three
+    // annotations do not fit on one readable line, and a file meant to be
+    // edited by hand has to tolerate wrapping — silently dropping a wrapped
+    // `done:` makes every goal unmeasurable, which looks identical to the
+    // parser working and the goals simply being vague.
+    if (!trimmed.startsWith('- ') && trimmed.startsWith('<!--')) {
+      const previous = goals[goals.length - 1];
+      if (previous !== undefined) {
+        const carried = parseCondition(annotation(trimmed, 'done'));
+        const alsoRequires = splitList(annotation(trimmed, 'requires'));
+        const alsoAdvances = splitList(annotation(trimmed, 'advances'));
+        const explicitId = annotation(trimmed, 'id');
+
+        if (carried !== null) previous.done = carried;
+        if (alsoRequires.length > 0) {
+          previous.requires = [...(previous.requires ?? []), ...alsoRequires];
+        }
+        if (alsoAdvances.length > 0) {
+          previous.advancedBy = [...(previous.advancedBy ?? []), ...alsoAdvances];
+        }
+        if (explicitId !== null) previous.id = explicitId;
+      }
+      continue;
+    }
+
     if (!trimmed.startsWith('- ')) continue;
 
     // Everything before the first annotation is the human-readable intent.
@@ -116,7 +142,11 @@ export async function loadGoals(root: string): Promise<Goal[]> {
 
 /** Reads one `<!-- key: value -->` annotation from a line. */
 function annotation(line: string, key: string): string | null {
-  const pattern = new RegExp(`<!--\\s*${key}\\s*:\\s*([^>]*?)\\s*-->`, 'i');
+  // `[^>]` is the obvious character class here and is wrong: every condition
+  // contains `>=`, so the match could never reach the closing `-->` and every
+  // goal parsed as unmeasurable — indistinguishable from goals written without
+  // conditions at all, which is why it survived unnoticed.
+  const pattern = new RegExp(`<!--\\s*${key}\\s*:\\s*(.*?)\\s*-->`, 'i');
   const match = pattern.exec(line);
   return match === null ? null : (match[1] ?? '').trim();
 }

@@ -1,6 +1,7 @@
 import type { Objective, ObjectiveKind } from '@melvor-agent/shared';
 import { buyShopUpgrade } from './buy.js';
 import { equipGear } from './equip.js';
+import { explore } from './explore.js';
 import { tendFarm } from './farm.js';
 import { fightMonster } from './fight.js';
 import { gatherResource } from './gather.js';
@@ -36,6 +37,8 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   select_spell: manage,
   build_township: manage,
   repair_township: manage,
+  survey_hex: explore,
+  excavate_dig_site: explore,
   run_dungeon: fightMonster,
 };
 

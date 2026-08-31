@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-86 exports.
+89 exports.
 
 ## `act`
 
@@ -325,6 +325,21 @@ What equipping claims to change: which item occupies the slot.
 
 ```ts
 EquipProjection: any
+```
+
+## `excavateDigSite`
+
+`function`
+
+Starts excavating a dig site.
+
+`canExcavate` is the game's own answer to "is this actually doable" — it
+accounts for the map, its charges and the selected tools, all of which fail
+silently otherwise. Reimplementing that check here would be the classic way
+to get it subtly wrong.
+
+```ts
+excavateDigSite: (digSiteId: string, isSuspended: () => boolean) => ActionResult<{ digSiteId: string | null; active: boolean; }>
 ```
 
 ## `exportSave`
@@ -700,6 +715,20 @@ and combat outright.
 
 ```ts
 readEquipCandidates: () => Candidate[]
+```
+
+## `readExplorationCandidates`
+
+`function`
+
+Exploration work that is currently possible.
+
+At most one survey candidate is offered, because the choice of *which* hex is
+made from live geometry — survey range moves with the player — and a stale
+list of hexes would be worse than no list.
+
+```ts
+readExplorationCandidates: () => Candidate[]
 ```
 
 ## `readFarmPlots`
@@ -1090,6 +1119,23 @@ complete, even if one listener was already removed.
 
 ```ts
 Subscriptions: typeof Subscriptions
+```
+
+## `surveyBestHex`
+
+`function`
+
+Starts surveying the best available hex.
+
+Auto-survey rather than a single survey action: the game will keep working
+through the hex on its own, which is what an idle player leaves running, and
+what makes this survive the offline window.
+
+`startAutoSurvey` returns a boolean, but the evidence is the skill actually
+being active on the hex we chose.
+
+```ts
+surveyBestHex: (isSuspended: () => boolean) => ActionResult<{ surveying: boolean; hex: string | null; }>
 ```
 
 ## `togglePrayer`

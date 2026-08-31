@@ -27,6 +27,8 @@ export const objectiveKindSchema = z.enum([
   'select_spell',
   'build_township',
   'repair_township',
+  'survey_hex',
+  'excavate_dig_site',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -114,6 +116,20 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('repair_township'),
     buildingId: gameIdSchema,
     biomeId: gameIdSchema,
+  }),
+  z.object({
+    /**
+     * Survey the best hex available.
+     *
+     * Deliberately parameterless: hexes have no ids, and which one is worth
+     * surveying depends on where the player is standing right now. Naming one
+     * in a plan would be stale by the time it ran.
+     */
+    kind: z.literal('survey_hex'),
+  }),
+  z.object({
+    kind: z.literal('excavate_dig_site'),
+    digSiteId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('sell_items'),

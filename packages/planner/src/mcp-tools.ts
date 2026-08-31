@@ -1,3 +1,4 @@
+import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import type { Store } from './store.js';
 
@@ -38,7 +39,7 @@ export type ToolHandler = (args: Record<string, unknown>, ctx: ToolContext) => P
  * server to declare it, and therefore a restart.
  */
 export const TOOLS: Record<string, ToolHandler> = {
-  async get_agent_state(_args, { store }) {
+  async get_agent_state(_args, { store, memoryRoot }) {
     const report = store.report;
     if (report === null) {
       return 'The mod has never reported. Is the game running with a character loaded?';
@@ -68,15 +69,41 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Combat: HP ${s.combat.hitpoints}/${s.combat.maxHitpoints}, auto-eat ${
         s.combat.autoEatThreshold > 0 ? 'owned' : 'NOT owned (combat will be refused)'
       }`,
+      '',
+      'Goals (GOALS.md):',
+      renderGoals(evaluateGoals(await loadGoals(memoryRoot), s)),
     ].join('\n');
   },
 
-  async list_candidates(_args, { store }) {
+  async list_candidates(_args, { store, memoryRoot }) {
     const candidates = store.report?.candidates ?? [];
     if (candidates.length === 0) {
       return 'No candidates. The agent cannot act — check get_agent_state for why.';
     }
-    return candidates.map((c, i) => `${i}. ${describe(c)}`).join('\n');
+
+    // Each candidate carries the goals it advances, so "highest rate" and "what
+    // matters" are visibly different choices. Without this the list is a
+    // leaderboard, and reading down a leaderboard is precisely the greedy
+    // behaviour long-term goals exist to counter.
+    const snapshot = store.report?.snapshot ?? null;
+    const statuses = snapshot === null ? [] : evaluateGoals(await loadGoals(memoryRoot), snapshot);
+
+    const lines = candidates.map((c, i) => {
+      const serves = goalsAdvancedBy(c, statuses);
+      return `${i}. ${describe(c)}${serves.length === 0 ? '' : `  → ${serves.join(', ')}`}`;
+    });
+
+    const blocked = store.report?.blockedOpportunities ?? [];
+    if (blocked.length > 0) {
+      lines.push('', `Blocked (${blocked.length}) — the best moves often produce one of these:`);
+      for (const item of blocked.slice(0, 12)) {
+        const missing = item.missing.map((m) => `${m.name} ${m.have}/${m.need}`).join(', ');
+        lines.push(`- ${item.label}${missing === '' ? '' : ` — needs ${missing}`}`);
+      }
+      if (blocked.length > 12) lines.push(`- ...and ${blocked.length - 12} more`);
+    }
+
+    return lines.join('\n');
   },
 
   async set_objective(args, { store }) {

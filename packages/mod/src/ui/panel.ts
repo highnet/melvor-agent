@@ -1,4 +1,4 @@
-import type { RunState } from '@melvor-agent/shared';
+import type { Objective, RunState, StateSnapshot } from '@melvor-agent/shared';
 import type { Agent } from '../runtime/agent.js';
 import type { Logger } from '../runtime/logger.js';
 
@@ -212,6 +212,7 @@ function renderSnapshot(agent: Agent): HTMLElement {
     ['Auto Eat', autoEatSummary(snapshot.combat)],
     ['Realm', snapshot.currentRealmId],
     ['Offline loop', snapshot.isOfflineLoop ? 'YES — suspended' : 'no'],
+    ['Target', describeTarget(agent.currentSettings.objective ?? null, snapshot)],
     ['Objective', agent.currentSettings.objective?.rationale ?? 'none'],
     ['Service', agent.serviceError === null ? (agent.serviceBase ?? 'connected') : 'UNREACHABLE'],
     [
@@ -233,6 +234,42 @@ function renderSnapshot(agent: Agent): HTMLElement {
 }
 
 /** Auto Eat is off entirely when the threshold is zero, which reads better than "0". */
+/**
+ * The objective's target, with progress, in the operator's terms.
+ *
+ * The rationale says *why*; this says *what and how far*. Watching an agent
+ * work without it means reading a paragraph of reasoning and still not knowing
+ * whether it is nearly done — which is the one thing a glance at the panel
+ * should answer.
+ *
+ * One-shot objectives carry no criteria on purpose, so they are named for what
+ * they do rather than shown as a bar that would only ever read 0% or 100%.
+ */
+function describeTarget(objective: Objective | null, snapshot: StateSnapshot): string {
+  if (objective === null) return 'none';
+  if (objective.successWhen.length === 0) return `${objective.kind.replace(/_/g, ' ')} (one-shot)`;
+
+  return objective.successWhen
+    .map((criterion) => {
+      switch (criterion.type) {
+        case 'skill_level_at_least': {
+          const skill = snapshot.skills.find((entry) => entry.id === criterion.skillId);
+          const name = skill?.name ?? criterion.skillId;
+          return `${name} ${skill?.level ?? '?'} → ${criterion.level}`;
+        }
+        case 'item_qty_at_least': {
+          const item = snapshot.bank.items.find((entry) => entry.id === criterion.itemId);
+          return `${item?.name ?? criterion.itemId} ${item?.qty ?? 0} → ${criterion.qty}`;
+        }
+        case 'currency_at_least': {
+          const currency = snapshot.currencies.find((entry) => entry.id === criterion.currencyId);
+          return `${currency?.name ?? criterion.currencyId} ${(currency?.amount ?? 0).toLocaleString()} → ${criterion.amount.toLocaleString()}`;
+        }
+      }
+    })
+    .join(', ');
+}
+
 function autoEatSummary(combat: { autoEatThreshold: number; autoEatEfficiency: number }): string {
   if (combat.autoEatThreshold <= 0) return 'not owned';
   return `threshold ${combat.autoEatThreshold}, efficiency ${combat.autoEatEfficiency}`;

@@ -20,6 +20,7 @@ import {
   engageMonster,
   equipFood,
   equipItem,
+  excavateDigSite,
   exportSave,
   harvestFarmPlot,
   newSlayerTask,
@@ -29,6 +30,7 @@ import {
   readCombatGateInputs,
   readCombatTargets,
   readEquipCandidates,
+  readExplorationCandidates,
   readGameVersion,
   readGatherCandidates,
   readMasteryCandidates,
@@ -45,6 +47,7 @@ import {
   startDungeon,
   startGathering,
   stopGathering,
+  surveyBestHex,
   togglePrayer,
   usePotion,
 } from '../adapter/index.js';
@@ -604,6 +607,10 @@ export class Agent {
         return buildTownshipBuilding(action.buildingId, action.biomeId, isSuspended);
       case 'repair_township':
         return repairTownshipBuilding(action.buildingId, action.biomeId, isSuspended);
+      case 'survey_hex':
+        return surveyBestHex(isSuspended);
+      case 'excavate_dig_site':
+        return excavateDigSite(action.digSiteId, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':
@@ -811,6 +818,7 @@ export class Agent {
       ['mastery', readMasteryCandidates],
       ['spell', readSpellCandidates],
       ['township', readTownshipCandidates],
+      ['exploration', readExplorationCandidates],
       ['combat', () => this.combatCandidates()],
     ] as const) {
       try {
