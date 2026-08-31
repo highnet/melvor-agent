@@ -180,3 +180,32 @@ it the agent presses Create against an empty bank indefinitely.
 the typings — expansion content. Any accessor that casts without checking turns a
 missing skill into a `TypeError` from deep inside a routine instead of a clean
 refusal. Resolve first, null-check, then use.
+
+## `getRecipeCosts` is ArtisanSkill-only — the optional call silently offers everything
+
+Affordability has no single API, and the natural-looking check is wrong:
+
+```ts
+if (skill.getRecipeCosts?.(recipe).checkIfOwned() === false) continue;  // BROKEN
+```
+
+`getRecipeCosts(recipe)` exists on `ArtisanSkill` (Smithing, Crafting, Fletching,
+Herblore, Runecrafting, Summoning, Cooking). `CraftingSkill` — Firemaking, Alt
+Magic — has only `getCurrentRecipeCosts()`, for the *selected* recipe, which is
+useless while enumerating. The optional call yields `undefined`, `undefined === false`
+is `false`, and **nothing is filtered**.
+
+Live symptom: the agent was offered "Firemaking: Oak Logs" with zero Oak Logs
+banked, accepted it, and then refused its own action once per tick for ten
+minutes. The filter failing open looks exactly like the filter not existing.
+
+Three shapes cover it:
+
+| Skill family | Input source |
+|---|---|
+| `ArtisanSkill` | `getRecipeCosts(recipe).checkIfOwned()` |
+| Firemaking | `recipe.log` — one item, named on the recipe |
+| any `ArtisanSkillRecipe` | `recipe.itemCosts: AnyItemQuantity[]` |
+
+A recipe matching none of these consumes nothing (Woodcutting, Thieving) and is
+allowed through — refusing the unknown would silently delete whole skills.

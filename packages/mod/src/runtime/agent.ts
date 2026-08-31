@@ -46,6 +46,18 @@ const QUALITY_SAMPLE_INTERVAL_MS = 60_000;
 /** Flat progress for this long with automation on means we are stuck. */
 const STUCK_AFTER_MS = 15 * 60_000;
 
+/**
+ * Consecutive failed actions before an objective is abandoned.
+ *
+ * A precondition that fails once may clear on its own — a bank slot frees, a
+ * timer ticks over. One that fails repeatedly will not, and retrying it every
+ * three seconds is the "grinds into a wall" failure in a different costume: the
+ * time budget would eventually fire, but only after hours of no-ops. Observed
+ * live: `firemaking.burn` refused "no melvorD:Oak_Logs in the bank" once per
+ * tick for over ten minutes without escalating.
+ */
+const ACTION_FAILURE_LIMIT = 5;
+
 const GP_CURRENCY_ID = 'melvorD:GP';
 
 /**
@@ -106,6 +118,8 @@ export class Agent {
   private replanPending: string | null = null;
   /** Guards against overlapping planner calls while one is in flight. */
   private replanning = false;
+  /** Consecutive failed actions for the current objective. */
+  private consecutiveActionFailures = 0;
   private readonly changeListeners = new Set<() => void>();
 
   constructor(
@@ -339,6 +353,7 @@ export class Agent {
     this.settings = { ...this.settings, objective: usable };
     this.objectiveStartedAt = Date.now();
     this.deathsSinceStart = 0;
+    this.consecutiveActionFailures = 0;
     this.log.info('planner', `new objective (${trigger}): ${usable.rationale}`, {
       reasoning: response.reasoning,
     });
@@ -460,10 +475,33 @@ export class Agent {
 
     for (const action of actions) {
       const result = this.dispatch(action, isSuspended);
+
       if (!result.ok) {
-        this.log.warn('adapter', `${result.action} failed (${result.reason})`, result);
+        // Being suspended is not the objective's fault — the tier is simply
+        // paused, and counting it would abandon a fine objective mid catch-up.
+        if (result.reason === 'suspended') return;
+
+        this.consecutiveActionFailures += 1;
+        this.log.warn(
+          'adapter',
+          `${result.action} failed (${result.reason}) [${this.consecutiveActionFailures}/${ACTION_FAILURE_LIMIT}]`,
+          result,
+        );
+
+        if (this.consecutiveActionFailures >= ACTION_FAILURE_LIMIT) {
+          this.log.error(
+            'policy',
+            `abandoning objective after ${this.consecutiveActionFailures} consecutive failures: ${result.detail}`,
+          );
+          this.settings = { ...this.settings, objective: null };
+          this.consecutiveActionFailures = 0;
+          this.requestReplan('objective_aborted');
+        }
         return;
       }
+
+      // Any success clears the run: the objective is making progress again.
+      this.consecutiveActionFailures = 0;
       this.log.info('adapter', `${result.action} ok`, result);
     }
   }
@@ -675,6 +713,7 @@ export class Agent {
         this.settings = { ...this.settings, objective: command.objective };
         this.objectiveStartedAt = Date.now();
         this.deathsSinceStart = 0;
+        this.consecutiveActionFailures = 0;
         this.log.info('operator', `objective set: ${command.objective.rationale}`);
         break;
       case 'dump_knowledge':
