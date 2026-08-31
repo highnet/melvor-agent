@@ -79,6 +79,30 @@ export class Store {
     return path;
   }
 
+  /**
+   * Reads persisted agent settings.
+   *
+   * Settings live here rather than in the game's `characterStorage` because
+   * that only persists for a mod installed from mod.io, and Melvor requires
+   * game-admin approval for mod.io entries — which is incompatible with keeping
+   * this private. On a single machine the trade is free: settings no longer
+   * travel with the save, but there is only one machine.
+   *
+   * @returns The stored settings object, or null when none has been written.
+   */
+  async readSettings(): Promise<unknown | null> {
+    try {
+      return JSON.parse(await readFile(join(this.dataDir, 'settings.json'), 'utf8'));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Persists agent settings. Written atomically enough for a local file. */
+  async writeSettings(settings: unknown): Promise<void> {
+    await writeFile(join(this.dataDir, 'settings.json'), JSON.stringify(settings, null, 2), 'utf8');
+  }
+
   async writeDump(dump: unknown): Promise<void> {
     await writeFile(join(this.dataDir, 'dump.json'), JSON.stringify(dump, null, 2), 'utf8');
   }

@@ -1,6 +1,7 @@
 import { CharacterSettings, addSidebarPanel, dumpRegistries, onGameLoop } from './adapter/index.js';
 import { Agent, type AgentSettings, DEFAULT_SETTINGS } from './runtime/agent.js';
 import { Logger } from './runtime/logger.js';
+import { SettingsStore } from './runtime/settings-store.js';
 import { Transport } from './runtime/transport.js';
 import { createPanel } from './ui/panel.js';
 
@@ -27,21 +28,26 @@ export function setup(ctx: Modding.ModContext): void {
 
   let agent: Agent | null = null;
   let panel: ReturnType<typeof createPanel> | null = null;
+  let settingsStore: SettingsStore | null = null;
 
   ctx.onCharacterLoaded(() => {
-    // characterStorage is unusable before this hook, so settings are read here
-    // and nowhere earlier.
-    const settings = storage.read();
-    const transport = new Transport(settings.serviceUrl);
-    agent = new Agent(ctx, log, transport, settings);
+    // characterStorage is unusable before this hook, and nothing may await here,
+    // so the cached copy seeds the agent and the service corrects it later.
+    const cached = storage.read();
+    const transport = new Transport(cached.serviceUrl);
+    settingsStore = new SettingsStore(storage, transport, log, DEFAULT_SETTINGS);
+    agent = new Agent(ctx, log, transport, cached);
 
     const health = storage.checkHealth();
     if (!health.working) {
-      // Silent setting loss across a days-long run is the worst failure mode
-      // available, so this is surfaced loudly rather than logged at debug.
-      log.error('runtime', `settings will NOT persist: ${health.detail}`);
+      // Not fatal any more: the local service is the authoritative store, so
+      // this only means settings will not also travel with the save.
+      log.warn(
+        'runtime',
+        `character storage is not persisting (${health.detail}); relying on the planner service`,
+      );
     } else {
-      log.info('runtime', `settings persist ok (${health.bytesUsed}/${health.bytesLimit} bytes)`);
+      log.info('runtime', `character storage ok (${health.bytesUsed}/${health.bytesLimit} bytes)`);
     }
 
     panel = createPanel(agent, log);
@@ -57,8 +63,7 @@ export function setup(ctx: Modding.ModContext): void {
       const current = agent;
       if (current === null) return;
       sidebarHandle.setAside(current.runState, asideClass(current.runState));
-      const error = storage.write(current.currentSettings);
-      if (error !== null) log.warn('runtime', error);
+      void settingsStore?.write(current.currentSettings);
     });
 
     // The reflex tier runs off the game's own loop rather than a timer, so it
@@ -69,11 +74,17 @@ export function setup(ctx: Modding.ModContext): void {
     log.info('runtime', 'character loaded; waiting for offline progress to resolve');
   });
 
-  ctx.onInterfaceReady(() => {
+  ctx.onInterfaceReady(async () => {
     const current = agent;
     if (current === null) {
       log.error('runtime', 'interface ready but no agent was constructed');
       return;
+    }
+
+    // Now that awaiting is allowed, replace the seeded cache with the
+    // authoritative settings from the service.
+    if (settingsStore !== null) {
+      current.updateSettings(await settingsStore.hydrate());
     }
 
     // Offline progress has now been calculated. Only from here is it safe to

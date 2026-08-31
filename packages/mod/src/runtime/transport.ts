@@ -60,6 +60,26 @@ export class Transport {
     return (await this.post('/agent/dump', dump)) !== null;
   }
 
+  /**
+   * Loads persisted settings from the service.
+   *
+   * @returns The stored settings, or null when the service is unreachable or
+   *          has none — the caller falls back to defaults rather than guessing.
+   */
+  async loadSettings(): Promise<unknown | null> {
+    return this.get('/agent/settings');
+  }
+
+  /** Persists settings. Returns false when the service could not be reached. */
+  async saveSettings(settings: unknown): Promise<boolean> {
+    return (
+      (await this.request('/agent/settings', {
+        method: 'PUT',
+        body: JSON.stringify(settings),
+      })) !== null
+    );
+  }
+
   /** Fetches the stored dump so the mod can run its own staleness check. */
   async fetchDump(): Promise<unknown | null> {
     return this.get('/agent/dump');

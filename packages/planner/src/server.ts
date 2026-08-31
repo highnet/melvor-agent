@@ -49,6 +49,20 @@ app.post('/agent/dump', async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Agent settings.
+ *
+ * The mod's durable settings store. `characterStorage` cannot be used because
+ * it only persists for a mod installed from mod.io, and Melvor gates mod.io
+ * entries behind game-admin approval.
+ */
+app.get('/agent/settings', async (c) => c.json(await store.readSettings()));
+
+app.put('/agent/settings', async (c) => {
+  await store.writeSettings(await c.req.json());
+  return c.json({ ok: true });
+});
+
 /** The mod fetches this on arm to run its own staleness check against gameVersion. */
 app.get('/agent/dump', async (c) => c.json(await store.readDump()));
 
