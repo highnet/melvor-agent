@@ -50,15 +50,6 @@ export interface AgentSettings extends Record<string, unknown> {
   enabled: boolean;
   characterAllowlist: string[];
   serviceUrl: string;
-  /** Dry run: the agent decides and logs, but performs no game action. */
-  dryRun: boolean;
-  /**
-   * When true the combat gate computes and logs its verdict but never engages.
-   *
-   * Separate from `dryRun` so non-combat automation can run for real while the
-   * gate is still being validated over a few dozen fights.
-   */
-  combatGateDryRun: boolean;
   objective: Objective | null;
 }
 
@@ -66,8 +57,6 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   enabled: false,
   characterAllowlist: [],
   serviceUrl: 'http://localhost:8787',
-  dryRun: true,
-  combatGateDryRun: true,
   objective: null,
 };
 
@@ -117,6 +106,23 @@ export class Agent {
 
   get currentSettings(): AgentSettings {
     return this.settings;
+  }
+
+  /**
+   * Most recent planner-service error, or null while healthy.
+   *
+   * Surfaced in the panel because a mod that cannot reach the service fails in
+   * ways that look like something else entirely — an absent knowledge dump, an
+   * objective that never arrives — and the real cause is invisible from inside
+   * the game without this.
+   */
+  get serviceError(): string | null {
+    return this.transport.error;
+  }
+
+  /** Whether the service has failed enough times to be considered down. */
+  get serviceDegraded(): boolean {
+    return this.transport.isDegraded;
   }
 
   /** Subscribes to state changes so the panel re-renders. Returns a disposer. */
@@ -216,7 +222,7 @@ export class Agent {
     this.settings = { ...this.settings, enabled: true };
     this.objectiveStartedAt = Date.now();
     this.deathsSinceStart = 0;
-    this.log.info('runtime', this.settings.dryRun ? 'armed in dry-run mode' : 'armed');
+    this.log.info('runtime', 'armed');
     this.notify();
   }
 
@@ -262,6 +268,15 @@ export class Agent {
     // A stale dump is worse than no dump: the planner would reason over numbers
     // that no longer describe the installed game.
     const dump = await this.transport.fetchDump();
+
+    // `fetchDump` answers null both when the service has no dump and when it
+    // could not be reached, and those need completely different fixes. Reporting
+    // "no dump" for a connection failure sends the operator to press a button
+    // that cannot possibly work.
+    if (this.transport.error !== null) {
+      return `planner service unreachable at ${this.settings.serviceUrl} (${this.transport.error}). Start it with: pnpm planner`;
+    }
+
     const freshness = checkDumpFreshness(dump, readGameVersion());
     if (!freshness.fresh) {
       return `knowledge dump ${freshness.reason}: ${freshness.detail}`;
@@ -337,11 +352,6 @@ export class Agent {
    * would act on a state the policy layer never saw.
    */
   private perform(actions: readonly PolicyAction[], reason: string): void {
-    if (this.settings.dryRun) {
-      this.log.info('policy', `[dry run] would act: ${reason}`, { actions });
-      return;
-    }
-
     const isSuspended = (): boolean => this.state === 'suspended';
 
     for (const action of actions) {
@@ -379,9 +389,8 @@ export class Agent {
    * passing verdict. The planner gets no vote here by construction — it cannot
    * even express an override.
    *
-   * In dry-run mode the verdict is computed and logged in full but the fight is
-   * refused regardless. That is the validation mode the brief asks for: watch it
-   * judge a few dozen fights before trusting it.
+   * The verdict and its full workings are logged either way, so a refusal is
+   * always diagnosable after the fact.
    */
   private engageIfSurvivable(
     monsterId: string,
@@ -415,15 +424,6 @@ export class Agent {
         verdict,
       );
       return fail('combat.gate', 'precondition', reasons);
-    }
-
-    if (this.settings.combatGateDryRun) {
-      this.log.info(
-        'policy',
-        `combat gate PASSED ${gathered.inputs.targetName} but dry run is on; not engaging`,
-        verdict,
-      );
-      return fail('combat.gate', 'precondition', 'combat gate dry run is enabled');
     }
 
     this.log.info('policy', `combat gate passed ${gathered.inputs.targetName}`, verdict);
@@ -608,7 +608,7 @@ export class Agent {
     if (!stored) {
       this.log.error(
         'runtime',
-        `dump captured (${dump.gameVersion}) but the service could not store it: ${this.transport.error ?? 'unreachable'}`,
+        `dump captured for ${dump.gameVersion} (${dump.skills.length} skills) but could not be sent to ${this.settings.serviceUrl}: ${this.transport.error ?? 'unreachable'}. Is the planner service running?`,
       );
       return false;
     }

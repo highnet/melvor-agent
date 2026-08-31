@@ -114,8 +114,10 @@ Press **Dump knowledge** once to produce the dump. Then:
 pnpm knowledge:dump
 ```
 
-**Dry run is ON by default.** The agent decides and logs but performs no game
-action. Turn it off in the panel once you have watched it make the right calls.
+**It acts for real.** There is no dry-run mode: arming means the agent plays, and
+combat engages whenever the survivability gate passes. The gate itself still
+runs on every fight and refuses anything it cannot prove survivable — that is
+what keeps deaths rare, not a mode switch. Deaths are an accepted cost.
 
 ## Releasing to mod.io
 
@@ -254,11 +256,8 @@ and the worst is used; one unmeasurable monster makes the whole dungeon
 unmeasurable, because skipping it would silently judge the dungeon by the
 monsters that happened to work.
 
-**Combat ships in advisory mode.** The gate computes and logs its full verdict —
-including every failing check and all its workings — but refuses to engage until
-you flip *Combat: advisory* to *ARMED* in the panel. That toggle is separate from
-the global dry run, so the other 16 skills can run for real while you watch the
-gate judge a few dozen fights.
+Combat engages as soon as the gate passes. The gate logs its full verdict either
+way, so a refusal is always diagnosable after the fact.
 
 Independent of the gate, a runtime backup disengages at the next kill boundary if
 HP drops below 50% or food below 5 items. Combat can't be exited cleanly

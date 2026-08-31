@@ -1,3 +1,5 @@
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import {
   type Dashboard,
@@ -11,7 +13,19 @@ import { plan } from './plan.js';
 import { Store } from './store.js';
 
 const PORT = Number(process.env.PORT ?? 8787);
-const DATA_DIR = process.env.MELVOR_AGENT_DATA ?? './data';
+
+/**
+ * Durable state lives at the repo root, not beside whichever package started
+ * the process.
+ *
+ * `pnpm planner` filters into `packages/planner`, so a relative default landed
+ * data in `packages/planner/data` while every doc and CLI looked for it at the
+ * root. Resolving from this file's location makes the location the same however
+ * the service is launched.
+ */
+const DATA_DIR =
+  process.env.MELVOR_AGENT_DATA ??
+  resolve(dirname(fileURLToPath(import.meta.url)), '../../../data');
 
 const store = new Store(DATA_DIR);
 await store.init();

@@ -79,29 +79,21 @@ function renderContent(agent: Agent, log: Logger): HTMLElement[] {
 
   const content = el('div', 'block-content');
 
-  if (agent.blocked !== null) {
-    const alert = el('div', 'alert alert-danger', `Refusing to arm: ${agent.blocked}`);
-    content.appendChild(alert);
-  }
-
-  if (!agent.currentSettings.combatGateDryRun) {
+  // A connection failure masquerades as a missing dump, a missing objective, or
+  // silence. Say so plainly and first.
+  if (agent.serviceError !== null) {
     content.appendChild(
       el(
         'div',
         'alert alert-danger',
-        'Combat gate ARMED: the agent may engage and may die. Deaths are an accepted cost.',
+        `Planner service unreachable at ${agent.currentSettings.serviceUrl} — ${agent.serviceError}. Start it with: pnpm planner`,
       ),
     );
   }
 
-  if (agent.currentSettings.dryRun) {
-    content.appendChild(
-      el(
-        'div',
-        'alert alert-warning',
-        'Dry run: decisions are logged, no game actions are performed.',
-      ),
-    );
+  if (agent.blocked !== null) {
+    const alert = el('div', 'alert alert-danger', `Refusing to arm: ${agent.blocked}`);
+    content.appendChild(alert);
   }
 
   content.appendChild(renderControls(agent));
@@ -123,19 +115,8 @@ function renderControls(agent: Agent): HTMLElement {
   // The kill switch stays enabled in every state; it is the operator's exit.
   const kill = button('Kill', 'btn-danger', () => agent.kill());
 
-  const dryRun = button(
-    agent.currentSettings.dryRun ? 'Dry run: ON' : 'Dry run: OFF',
-    agent.currentSettings.dryRun ? 'btn-warning' : 'btn-secondary',
-    () => {
-      agent.updateSettings({
-        ...agent.currentSettings,
-        dryRun: !agent.currentSettings.dryRun,
-      });
-    },
-  );
-
-  for (const control of [arm, dryRun, kill]) {
-    const cell = el('div', 'col-4');
+  for (const control of [arm, kill]) {
+    const cell = el('div', 'col-6');
     cell.appendChild(control);
     row.appendChild(cell);
   }
@@ -177,23 +158,6 @@ function renderControls(agent: Agent): HTMLElement {
     row.appendChild(revokeCell);
   }
 
-  // The combat gate has its own dry run, separate from the global one, so
-  // non-combat automation can run for real while the gate is still being
-  // validated over a few dozen fights.
-  const gate = button(
-    agent.currentSettings.combatGateDryRun ? 'Combat: advisory' : 'Combat: ARMED',
-    agent.currentSettings.combatGateDryRun ? 'btn-warning' : 'btn-danger',
-    () => {
-      agent.updateSettings({
-        ...agent.currentSettings,
-        combatGateDryRun: !agent.currentSettings.combatGateDryRun,
-      });
-    },
-  );
-  const gateCell = el('div', 'col-12 mt-2');
-  gateCell.appendChild(gate);
-  row.appendChild(gateCell);
-
   // The dump must be produced from inside the game: only the running game
   // knows its own registries for the exact installed version.
   const dump = button('Dump knowledge', 'btn-secondary', () => void agent.dumpKnowledge());
@@ -232,6 +196,7 @@ function renderSnapshot(agent: Agent): HTMLElement {
     ['Realm', snapshot.currentRealmId],
     ['Offline loop', snapshot.isOfflineLoop ? 'YES — suspended' : 'no'],
     ['Objective', agent.currentSettings.objective?.rationale ?? 'none'],
+    ['Service', agent.serviceError === null ? 'connected' : 'UNREACHABLE'],
     [
       'Allowlisted',
       agent.currentSettings.characterAllowlist.includes(snapshot.characterName) ? 'yes' : 'NO',
