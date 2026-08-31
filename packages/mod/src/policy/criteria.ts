@@ -40,6 +40,12 @@ export function isObjectiveComplete(
   snapshot: StateSnapshot,
   criteria: readonly SuccessCriterion[],
 ): boolean {
+  // An empty list means "no criterion applies" — a one-shot action whose
+  // executor decides when it is done. Vacuous truth would mean the opposite:
+  // instantly complete, before acting even once. That bug is invisible, because
+  // the objective is accepted and then immediately reported completed.
+  if (criteria.length === 0) return false;
+
   return criteria.every((criterion) => isCriterionMet(snapshot, criterion));
 }
 

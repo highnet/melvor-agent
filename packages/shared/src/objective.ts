@@ -167,7 +167,12 @@ export const objectiveSchema = z.object({
   id: z.string().min(1),
   kind: objectiveKindSchema,
   params: objectiveParamsSchema,
-  successWhen: z.array(successCriterionSchema).min(1),
+  /**
+   * When the objective is done. May be empty for a one-shot action — buying,
+   * equipping, toggling — where the executor decides completion and any
+   * criterion an author invented would be either instantly true or never true.
+   */
+  successWhen: z.array(successCriterionSchema),
   abortWhen: abortConditionsSchema,
   expectedDurationMin: z.number().positive(),
   rationale: z.string(),

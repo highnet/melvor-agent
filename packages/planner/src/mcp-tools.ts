@@ -99,7 +99,7 @@ export const TOOLS: Record<string, ToolHandler> = {
         id: `session-${Date.now()}`,
         kind: chosen.kind,
         params: chosen.params,
-        successWhen: [successFor(chosen, targetLevel)],
+        successWhen: successFor(chosen, targetLevel),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
         rationale: String(args.rationale ?? 'no rationale given'),
@@ -214,8 +214,12 @@ function successFor(
 ) {
   const skillId = candidate.params.skillId;
   if (typeof skillId === 'string') {
-    return { type: 'skill_level_at_least' as const, skillId, level: targetLevel };
+    return [{ type: 'skill_level_at_least' as const, skillId, level: targetLevel }];
   }
-  // A sale or purchase has no level to reach; the point is the transition.
-  return { type: 'currency_at_least' as const, currencyId: GP, amount: 1 };
+
+  // A sale or purchase has no level to reach, and the obvious stand-in — "have
+  // at least 1 GP" — is already true, so the objective completed before it ever
+  // acted. No criterion at all is the honest answer: the executor knows when a
+  // one-shot transition is done, and nothing else does.
+  return [];
 }

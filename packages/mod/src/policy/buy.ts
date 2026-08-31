@@ -56,9 +56,13 @@ export const buyShopUpgrade: PolicyExecutor = (context: PolicyContext): PolicyDe
     };
   }
 
+  // A purchase is done once it lands. Without completeAfter the objective would
+  // sit here re-buying the same upgrade on every tick until its budget ran out,
+  // which for a stackable purchase would empty the bank.
   return {
     kind: 'act',
     actions: [{ type: 'buy', purchaseId, quantity }],
     reason: `buying ${quantity}x ${purchaseId} with ${gp} GP (floor ${gpFloor})`,
+    completeAfter: true,
   };
 };
