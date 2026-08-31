@@ -145,3 +145,23 @@ and it caught a real leak on its first run.
 disposer for a patched hook can only flip a flag so the handler stops doing work;
 the patch itself stays installed for the life of the page. Budget for that when
 designing teardown — the kill switch cannot truly un-hook the game loop.
+
+## A namespace may not start with "melvor" — and the error names no file
+
+The manifest rule is: alphanumeric and underscores only, and it **cannot start
+with the word "melvor"**. That prefix is reserved for the game's own data
+namespaces (`melvorD`, `melvorF`, `melvorTotH`, `melvorAoD`, `melvorItA`).
+
+`melvorAgent` looks like a natural name for a Melvor mod and is invalid. The
+Creator Toolkit rejects it at *link* time with:
+
+> Namespace is invalid. Namespaces must only contain alphanumeric characters and
+> underscores and cannot start with the word "melvor".
+
+Two things make this expensive to diagnose. The error appears in the Add Mod
+dialog next to the **Name** field, which is the mod's display name and has
+nothing to do with the namespace — so the obvious fix (rename the mod) does
+nothing. And the message never says the value came from `manifest.json`.
+
+`build.mjs` now validates the namespace, so it fails at build time with a message
+that names the file.

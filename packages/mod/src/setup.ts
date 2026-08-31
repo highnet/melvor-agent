@@ -101,7 +101,7 @@ export function setup(ctx: Modding.ModContext): void {
     }
   });
 
-  // Console handle for debugging from devtools: `mod.api.melvorAgent`. Not an
+  // Console handle for debugging from devtools: `mod.api.playAgent`. Not an
   // integration surface — this is a single-user tool and nothing else consumes it.
   ctx.api({
     dumpRegistries,

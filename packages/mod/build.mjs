@@ -91,6 +91,21 @@ function copyStaticAssets(target) {
   if (manifest.setup !== 'dist/setup.js') {
     throw new Error(`manifest "setup" is ${manifest.setup}, build writes dist/setup.js`);
   }
+
+  // The namespace rules are enforced by the Creator Toolkit at link time, which
+  // is a slow place to find out: the mod is already half-configured and the
+  // error names the namespace without saying which file it came from.
+  const namespace = manifest.namespace;
+  if (typeof namespace !== 'string' || !/^[A-Za-z0-9_]+$/.test(namespace)) {
+    throw new Error(
+      `manifest "namespace" must be alphanumeric plus underscores, got ${JSON.stringify(namespace)}`,
+    );
+  }
+  if (/^melvor/i.test(namespace)) {
+    throw new Error(
+      `manifest "namespace" is "${namespace}", but a namespace may not start with "melvor" — that prefix is reserved for the game data shipped with Melvor.`,
+    );
+  }
   writeFileSync(
     join(target, 'BUILD_INFO.txt'),
     `built ${new Date().toISOString()}\nformat ${options.format}\n`,

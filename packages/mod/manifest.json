@@ -1,5 +1,5 @@
 {
-  "namespace": "melvorAgent",
+  "namespace": "playAgent",
   "setup": "dist/setup.js",
   "load": ["dist/style.css"]
 }

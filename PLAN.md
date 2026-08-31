@@ -89,7 +89,7 @@ outfile: <CT_DIR>/dist/setup.js
 `manifest.json` ships as:
 
 ```json
-{ "namespace": "melvorAgent", "setup": "dist/setup.js", "load": ["dist/style.css"] }
+{ "namespace": "playAgent", "setup": "dist/setup.js", "load": ["dist/style.css"] }
 ```
 
 `load` is CSS-only, deliberately: under `load` a `.js` file is injected as a *classic script*,
