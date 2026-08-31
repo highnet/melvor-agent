@@ -88,6 +88,40 @@ server.registerTool(
 );
 
 server.registerTool(
+  'set_plan',
+  {
+    title: 'Set a multi-step plan',
+    description:
+      'Hand the agent a sequence of 2 to 8 objectives to work through unattended, each starting when the one before finishes or times out. Use this instead of set_objective whenever the next few hours are foreseeable — a single objective means the agent needs you present at every transition, and when you are not there it falls back to the dumbest action that keeps it moving. Later steps are chosen against the candidates available now, so re-plan if the character changes shape.',
+    inputSchema: {
+      steps: z
+        .array(
+          z.object({
+            candidateIndex: z.number().int().min(0).describe('Index from list_candidates.'),
+            targetLevel: z
+              .number()
+              .int()
+              .min(1)
+              .max(120)
+              .describe('Skill level to reach. Ignored for one-shot steps like buying or selling.'),
+            abortMinutes: z
+              .number()
+              .int()
+              .min(5)
+              .max(720)
+              .describe('Give up on this step after this long and move to the next one.'),
+            rationale: z.string().describe('One sentence on why this step, in this position.'),
+          }),
+        )
+        .min(2)
+        .max(8)
+        .describe('The plan, in order. Earn before you spend; the agent will not reorder it.'),
+    },
+  },
+  (args) => callTool('set_plan', args),
+);
+
+server.registerTool(
   'get_journal',
   {
     title: 'Get attempt history',

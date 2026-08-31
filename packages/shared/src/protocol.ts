@@ -39,6 +39,18 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('revive') }),
   z.object({ type: z.literal('replan'), reason: z.string() }),
   z.object({ type: z.literal('set_objective'), objective: objectiveSchema }),
+  /**
+   * A sequence to work through unattended.
+   *
+   * One objective at a time means a planning session has to be present at every
+   * transition, and when it is not the agent falls back to the dumbest thing
+   * that keeps it moving. A plan is how a session hands over several hours of
+   * intent — earn, spend, train, spend again — and then leaves.
+   *
+   * Capped, because a plan is not a schedule: the further ahead it reaches, the
+   * more of it was written against state that no longer holds.
+   */
+  z.object({ type: z.literal('set_plan'), objectives: z.array(objectiveSchema).min(1).max(8) }),
   z.object({ type: z.literal('dump_knowledge') }),
   z.object({ type: z.literal('export_save') }),
 ]);

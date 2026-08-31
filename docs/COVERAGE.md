@@ -59,3 +59,5 @@ than a return value it was told to trust.
 | Switching an existing Township worship | the first choice is a capability; switching later costs 50,000,000 GP and destroys every worship building, so it is not offered beside "build a hut" where a planner skimming labels could pick it |
 | Offering item downgrades as candidates | the capability exists and an objective may ask for a downgrade outright; it is never *proposed*, because it destroys the better item for a refund and no enumeration should tempt a planner into one |
 | Abyssal realm content | refused by the realm guard, per the original brief |
+| Limited-time events | rewards roll automatically from actions the agent already performs; there is no choice to make |
+| Clue Hunt | a puzzle chain the developers deliberately hid — the typings scold anyone reading them. Solving it by reading game data would defeat its point rather than play it |

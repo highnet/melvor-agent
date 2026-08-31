@@ -24,6 +24,9 @@ import type { Store } from './store.js';
 
 const GP = 'melvorD:GP';
 
+/** Named because a literal newline inside a template here is easy to mangle. */
+const NEWLINE = String.fromCharCode(10);
+
 export interface ToolContext {
   store: Store;
   memoryRoot: string;
@@ -134,6 +137,47 @@ export const TOOLS: Record<string, ToolHandler> = {
     });
 
     return `Queued: ${chosen.label}\nTarget: level ${targetLevel}, abort after ${abortMinutes}min.\nApplies on the mod's next report.`;
+  },
+
+  async set_plan(args, { store }) {
+    const candidates = store.report?.candidates ?? [];
+    const steps = Array.isArray(args.steps) ? args.steps : [];
+
+    if (steps.length === 0) {
+      return 'Pass steps: [{candidateIndex, targetLevel, abortMinutes, rationale}, ...] — a plan of 2 to 8 objectives.';
+    }
+
+    const objectives = [];
+    for (const [position, raw] of steps.entries()) {
+      const step = raw as Record<string, unknown>;
+      const chosen = candidates[Number(step.candidateIndex)];
+      if (chosen === undefined) {
+        return `Step ${position + 1} names candidate ${String(step.candidateIndex)}, which is out of range — there are ${candidates.length}. Call list_candidates again; the list changes with game state.`;
+      }
+
+      const abortMinutes = Number(step.abortMinutes ?? 60);
+      objectives.push({
+        id: `plan-${Date.now()}-${position}`,
+        kind: chosen.kind,
+        params: chosen.params,
+        successWhen: successFor(chosen, Number(step.targetLevel ?? 0)),
+        abortWhen: { minutesExceed: abortMinutes },
+        expectedDurationMin: Math.min(abortMinutes, 60),
+        rationale: String(step.rationale ?? 'no rationale given'),
+      });
+    }
+
+    store.enqueue({ type: 'set_plan', objectives });
+
+    // Every step is chosen from *current* candidates, so the further ahead a
+    // plan reaches the more of it was written against state that has since
+    // moved. Saying so beats letting a six-step plan look like a schedule.
+    return [
+      `Queued a plan of ${objectives.length} objectives:`,
+      ...objectives.map((objective, index) => `  ${index + 1}. ${objective.rationale}`),
+      '',
+      'Each step starts when the one before it finishes or times out. Later steps were chosen against the candidates available now, so re-plan if the character changes shape.',
+    ].join(NEWLINE);
   },
 
   async get_journal(_args, { store }) {

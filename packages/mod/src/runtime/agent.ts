@@ -143,6 +143,14 @@ export interface AgentSettings extends Record<string, unknown> {
   characterAllowlist: string[];
   serviceUrl: string;
   objective: Objective | null;
+  /**
+   * Objectives to take up, in order, as the current one ends.
+   *
+   * Persisted with everything else, so a plan survives a reload — which is the
+   * point: the session that wrote it is usually long gone by the time the
+   * second entry starts.
+   */
+  plan: Objective[];
 }
 
 export const DEFAULT_SETTINGS: AgentSettings = {
@@ -150,6 +158,7 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   characterAllowlist: [],
   serviceUrl: 'http://localhost:8787',
   objective: null,
+  plan: [],
 };
 
 /**
@@ -468,6 +477,21 @@ export class Agent {
    */
   private adoptStopgap(): Objective | null {
     const now = Date.now();
+
+    // A plan the session left behind outranks anything chosen by score. This is
+    // the whole reason plans exist: the next step was decided by something that
+    // could see the goals, and the stopgap cannot.
+    const [next, ...rest] = this.settings.plan;
+    if (next !== undefined) {
+      this.settings = { ...this.settings, objective: next, plan: rest };
+      this.objectiveStartedAt = now;
+      this.objectivelessSince = null;
+      this.deathsSinceStart = 0;
+      this.consecutiveActionFailures = 0;
+      this.log.info('planner', `plan advanced (${rest.length} left): ${next.rationale}`);
+      this.notify();
+      return next;
+    }
 
     if (this.objectivelessSince === null) {
       this.objectivelessSince = now;
@@ -1199,6 +1223,34 @@ export class Agent {
       case 'replan':
         this.requestReplan(command.reason);
         break;
+      case 'set_plan': {
+        const usable = command.objectives.filter((objective) => isSupportedKind(objective.kind));
+        if (usable.length === 0) {
+          this.log.error('planner', 'rejected plan: no objective in it has an executor');
+          return;
+        }
+        if (usable.length < command.objectives.length) {
+          // Partial acceptance beats refusal: the executable prefix is still a
+          // better night than the stopgap, and saying which parts were dropped
+          // is more useful than discarding the lot.
+          this.log.warn(
+            'planner',
+            `plan: dropped ${command.objectives.length - usable.length} objective(s) with no executor`,
+          );
+        }
+
+        const [first, ...rest] = usable;
+        this.settings = { ...this.settings, objective: first ?? null, plan: rest };
+        this.objectiveStartedAt = Date.now();
+        this.objectivelessSince = null;
+        this.deathsSinceStart = 0;
+        this.consecutiveActionFailures = 0;
+        this.log.info(
+          'operator',
+          `plan set: ${usable.length} objectives, starting with ${first?.rationale ?? 'nothing'}`,
+        );
+        break;
+      }
       case 'set_objective':
         // Already parsed by the schema; the kind check is the capability gate.
         if (!isSupportedKind(command.objective.kind)) {
