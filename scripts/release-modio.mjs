@@ -28,9 +28,10 @@ import { fileURLToPath } from 'node:url';
  *                  mod.io -> your avatar -> Access -> "Manually create an
  *                  OAuth 2 Access Token". An API key alone cannot write.
  *   MODIO_MOD_ID   Numeric id of your mod, from its mod.io URL.
- *   MODIO_GAME_ID  Melvor Idle's game id. Defaults to 2649; verified at runtime
- *                  against the game name, so a wrong value fails loudly rather
- *                  than uploading somewhere unexpected.
+ *   MODIO_GAME_ID  Melvor Idle's game id, 2869. Verified at runtime against the
+ *                  game name, so a wrong value fails loudly rather than
+ *                  uploading somewhere unexpected. (2649 is Songs of Conquest —
+ *                  this check caught exactly that mistake.)
  *
  * Verified against docs.mod.io/restapiref#add-modfile:
  *   POST https://api.mod.io/v1/games/{game_id}/mods/{mod_id}/files
@@ -38,7 +39,18 @@ import { fileURLToPath } from 'node:url';
  *   filehash optional. Authorization: Bearer <token>.
  */
 
-const API = 'https://api.mod.io/v1';
+/**
+ * Per-game API host.
+ *
+ * `api.mod.io` is deprecated and rejects writes with a 401 whose message names
+ * the domain, not the token — which reads exactly like a missing write scope and
+ * sent this on a detour. mod.io routes through per-game subdomains instead.
+ */
+const apiBase = (id) => `https://g-${id}.modapi.io/v1`;
+
+// Deliberately no `platforms[]`: Melvor Idle does not support platform-specific
+// modfiles and rejects the field with a 403. An empty `platforms` array on the
+// modfile is therefore normal here, not a misconfiguration.
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '..');
 
@@ -57,7 +69,7 @@ const env = (name) => {
   return value === undefined || value.trim() === '' ? null : value.trim();
 };
 
-const gameId = env('MODIO_GAME_ID') ?? '2649';
+const gameId = env('MODIO_GAME_ID') ?? '2869';
 const modId = env('MODIO_MOD_ID');
 const token = env('MODIO_TOKEN');
 
@@ -138,11 +150,14 @@ if (mod.visible === 1) {
 }
 
 const form = new FormData();
-form.append('filedata', new Blob([bytes]), 'melvor-agent-mod.zip');
+// Scalar fields go in BEFORE filedata. mod.io parses the multipart stream in
+// order and drops trailing fields once the file part starts — the first upload
+// landed with version and changelog both null because they came last.
 form.append('version', version);
 form.append('changelog', changelog);
 form.append('active', active ? 'true' : 'false');
 form.append('filehash', md5);
+form.append('filedata', new Blob([bytes]), 'melvor-agent-mod.zip');
 
 console.log(`[release] uploading v${version} (active=${active})…`);
 const uploaded = await api(`/games/${gameId}/mods/${modId}/files`, {
@@ -150,7 +165,27 @@ const uploaded = await api(`/games/${gameId}/mods/${modId}/files`, {
   body: form,
 });
 
-console.log(`[release] done — modfile ${uploaded.id}, version ${uploaded.version}`);
+// mod.io answers 200 with the *existing* modfile when it declines to create a
+// new one, so a successful-looking response proves nothing. Verify the uploaded
+// bytes actually landed, or this reports success for a no-op.
+const files = await api(`/games/${gameId}/mods/${modId}/files`);
+const landed = (files.data ?? []).find((file) => file.filehash?.md5 === md5);
+
+if (landed === undefined) {
+  console.error(`[release] UPLOAD DID NOT LAND. mod.io returned modfile ${uploaded.id} but no`);
+  console.error(`[release] modfile has md5 ${md5}. Known modfiles:`);
+  for (const file of files.data ?? []) {
+    console.error(`[release]   ${file.id}  md5 ${file.filehash?.md5}  ${file.filesize}B`);
+  }
+  console.error('[release] mod.io answered 200 without creating anything. Known causes are not');
+  console.error('[release] documented; the leading suspect is a per-mod rate limit on modfile');
+  console.error('[release] creation, since the first upload of the session succeeded. Wait a');
+  console.error('[release] few minutes and retry, or upload the zip by hand via the mod.io');
+  console.error('[release] File Manager.');
+  process.exit(1);
+}
+
+console.log(`[release] done — modfile ${landed.id}, version ${landed.version ?? '(unset)'}`);
 console.log(`[release] https://mod.io/g/melvoridle/m/${mod.name_id ?? modId}`);
 console.log('[release] restart the game for the Mod Manager to pick it up.');
 
@@ -201,7 +236,7 @@ async function verifyCredentials() {
   // The write scope cannot be read off the token, so probe an endpoint that
   // requires it. A 401/403 here is specifically the read-only-token case; the
   // empty form body means nothing can be created even if it is authorised.
-  const probe = await fetch(`${API}/games/${gameId}/mods/${modId}/files`, {
+  const probe = await fetch(`${apiBase(gameId)}/games/${gameId}/mods/${modId}/files`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
     body: new FormData(),
@@ -209,17 +244,19 @@ async function verifyCredentials() {
 
   if (probe.status === 401 || probe.status === 403) {
     console.error(`[check] token lacks write access (HTTP ${probe.status}).`);
-    console.error('[check] recreate it at https://mod.io/me/access with Read AND Write.');
+    console.error('[check] recreate it at https://mod.io/me/access with read AND write.');
     process.exit(1);
   }
 
+  // 415 is the expected answer: authorised, but an empty FormData sets no
+  // Content-Type boundary. Anything that is not a 401/403 proves write access.
   console.log(`[check] write access confirmed (upload probe returned ${probe.status})`);
   console.log('[check] credentials look good; pnpm release will work.');
 }
 
 /** Calls the mod.io API and throws with the server's own error text. */
 async function api(path, init = {}) {
-  const response = await fetch(`${API}${path}`, {
+  const response = await fetch(`${apiBase(gameId)}${path}`, {
     ...init,
     headers: {
       Authorization: `Bearer ${token}`,
