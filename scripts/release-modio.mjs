@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
  *   node scripts/release-modio.mjs --version 0.2.0
  *   node scripts/release-modio.mjs --changelog "..."
  *   node scripts/release-modio.mjs --dry-run          # build + zip, no upload
+ *   node scripts/release-modio.mjs --check            # verify credentials only
  *   node scripts/release-modio.mjs --inactive         # upload without activating
  *
  * Environment (put these in .env, they are secrets):
@@ -43,6 +44,7 @@ const repoRoot = resolve(here, '..');
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
+const checkOnly = args.includes('--check');
 const active = !args.includes('--inactive');
 const version = flag('--version') ?? JSON.parse(read('package.json')).version;
 const changelog = flag('--changelog') ?? defaultChangelog();
@@ -58,6 +60,13 @@ const env = (name) => {
 const gameId = env('MODIO_GAME_ID') ?? '2649';
 const modId = env('MODIO_MOD_ID');
 const token = env('MODIO_TOKEN');
+
+if (checkOnly) {
+  // Credentials only: no build, no zip, no upload. Exists so a bad token is
+  // found deliberately rather than halfway through a release.
+  await verifyCredentials();
+  process.exit(0);
+}
 
 // Build first, so a release can never ship a stale bundle. The build asserts
 // its own output exports `setup`, which is the failure that is silent in-game.
@@ -144,6 +153,69 @@ const uploaded = await api(`/games/${gameId}/mods/${modId}/files`, {
 console.log(`[release] done — modfile ${uploaded.id}, version ${uploaded.version}`);
 console.log(`[release] https://mod.io/g/melvoridle/m/${mod.name_id ?? modId}`);
 console.log('[release] restart the game for the Mod Manager to pick it up.');
+
+/**
+ * Confirms the token works and points at the expected game and mod.
+ *
+ * Read-only. Distinguishes the failures that all look like a bare 401: no
+ * token, a token without `write`, and a token for the wrong account.
+ */
+async function verifyCredentials() {
+  if (token === null || modId === null) {
+    console.error('[check] Missing configuration in .env:');
+    if (modId === null) {
+      console.error('  MODIO_MOD_ID  - the number in the mod.io URL for your mod');
+    }
+    if (token === null) {
+      console.error('  MODIO_TOKEN   - create at https://mod.io/me/access');
+      console.error('                  Needs an OAuth 2 Access Token with Read AND Write.');
+      console.error('                  An API key from that same page will NOT work.');
+    }
+    process.exit(1);
+  }
+
+  const game = await api(`/games/${gameId}`).catch((error) => {
+    console.error(`[check] token rejected, or game ${gameId} unreachable:`);
+    console.error(error.message);
+    console.error('[check] create a token at https://mod.io/me/access (Read AND Write)');
+    process.exit(1);
+  });
+
+  if (!/melvor/i.test(game.name ?? '')) {
+    console.error(`[check] MODIO_GAME_ID ${gameId} is "${game.name}", not Melvor Idle.`);
+    process.exit(1);
+  }
+  console.log(`[check] game ${gameId} is "${game.name}"`);
+
+  const mod = await api(`/games/${gameId}/mods/${modId}`).catch((error) => {
+    console.error(`[check] mod ${modId} unreachable with this token:`);
+    console.error(error.message);
+    process.exit(1);
+  });
+
+  console.log(`[check] mod ${modId} is "${mod.name}"`);
+  console.log(
+    `[check] visibility: ${mod.visible === 1 ? 'PUBLIC - release will refuse' : 'hidden - good'}`,
+  );
+
+  // The write scope cannot be read off the token, so probe an endpoint that
+  // requires it. A 401/403 here is specifically the read-only-token case; the
+  // empty form body means nothing can be created even if it is authorised.
+  const probe = await fetch(`${API}/games/${gameId}/mods/${modId}/files`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    body: new FormData(),
+  });
+
+  if (probe.status === 401 || probe.status === 403) {
+    console.error(`[check] token lacks write access (HTTP ${probe.status}).`);
+    console.error('[check] recreate it at https://mod.io/me/access with Read AND Write.');
+    process.exit(1);
+  }
+
+  console.log(`[check] write access confirmed (upload probe returned ${probe.status})`);
+  console.log('[check] credentials look good; pnpm release will work.');
+}
 
 /** Calls the mod.io API and throws with the server's own error text. */
 async function api(path, init = {}) {

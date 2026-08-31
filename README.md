@@ -123,11 +123,30 @@ uploads a new modfile to the hidden entry. It refuses outright if the entry is
 public — there is no override.
 
 ```bash
+pnpm release:check
+```
+
+Verifies credentials only - no build, no upload. Confirms the token is valid,
+that it has write access, that the game id really is Melvor Idle, and that the
+mod entry is hidden.
+
+```bash
 pnpm release:dry
 ```
 
-Builds and verifies without uploading. The real upload needs `MODIO_TOKEN` and
-`MODIO_MOD_ID` in `.env`; see `.env.example`.
+Builds and zips without uploading.
+
+### Getting a token
+
+Go to **https://mod.io/me/access** (avatar -> Access). That page offers two
+things and only one works:
+
+- an **API key** - read-only, cannot upload;
+- an **OAuth 2 Access Token** - create this one, with **Read and Write**.
+
+Paste it into `.env` as `MODIO_TOKEN`, then run `pnpm release:check`. `.env` is
+gitignored. Scripts load it via `node --env-file`, so there is no dotenv
+dependency.
 
 ## Verifying
 

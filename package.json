@@ -21,7 +21,8 @@
     "planner": "pnpm --filter @melvor-agent/planner dev",
     "verify": "pnpm check && pnpm typecheck && node scripts/check-adapter-boundary.mjs && pnpm docs:api:check && pnpm test",
     "release": "node --env-file=.env scripts/release-modio.mjs",
-    "release:dry": "node --env-file=.env scripts/release-modio.mjs --dry-run"
+    "release:dry": "node --env-file=.env scripts/release-modio.mjs --dry-run",
+    "release:check": "node --env-file=.env scripts/release-modio.mjs --check"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
