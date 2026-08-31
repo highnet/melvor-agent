@@ -136,6 +136,24 @@ pnpm release:dry
 
 Builds and zips without uploading.
 
+### Versioning
+
+Versions are managed by [release-please](https://github.com/googleapis/release-please)
+from Conventional Commits. On push to `main` it opens a release PR that bumps
+`package.json` and writes `CHANGELOG.md`; merging that PR tags the release.
+
+`pnpm release` then reads the version from `package.json`, so a release is:
+
+1. land commits using `feat:` / `fix:` / `refactor:` prefixes;
+2. merge the release PR release-please opens;
+3. `git pull && pnpm release`.
+
+Publishing stays local on purpose — the mod.io token is a personal access token
+and does not belong in repository secrets for a single-user tool.
+
+Commits before this point are not Conventional Commits, so release-please will
+not see them; the first conventional commit starts the changelog.
+
 ### Getting a token
 
 Go to **https://mod.io/me/access** (avatar -> Access). That page offers two
