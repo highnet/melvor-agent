@@ -421,6 +421,11 @@ function thievingCandidates(): Candidate[] {
   return (
     skill.actions.allObjects
       .filter((npc) => npc.level <= skill.level)
+      // Dropped while the NPC hits too hard for the health on hand; see
+      // THIEVING_MAX_HIT_FRACTION. Filtered on the NPC rather than on a marker
+      // smuggled through the label — that trick put a literal NUL byte in this
+      // file and shipped it, which is what a clever encoding buys you.
+      .filter((npc) => !hitsTooHardForNow(npc.maxHit))
       .map((npc) => {
         const intervalMs = safeNumber(() => skill.actionInterval, 3000);
         const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
@@ -449,20 +454,13 @@ function thievingCandidates(): Candidate[] {
           // a fifteenth of a full bar is a different proposition at half health,
           // and Thieving damage accrues over many failures rather than resolving
           // in one fight.
-          label: hitsTooHardForNow(npc.maxHit)
-            ? `${TOO_DANGEROUS_MARKER}${npc.name}`
-            : `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)`,
+          label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)`,
           xpPerHour: actionsPerHour * npc.baseExperience * successRate,
           gpPerHour: actionsPerHour * gpPerAction * successRate,
           requiresLevel: npc.level,
           available: true as const,
         };
       })
-      // Dropped while the NPC hits too hard for the health on hand; see
-      // THIEVING_MAX_HIT_FRACTION. The shortfall is reported separately as a
-      // blocked opportunity, because an NPC that silently vanishes from the list
-      // is the failure this whole session kept running into.
-      .filter((candidate) => !candidate.label.includes(TOO_DANGEROUS_MARKER))
   );
 }
 
@@ -485,9 +483,6 @@ function thievingCandidates(): Candidate[] {
  * funds Auto Eat, and Auto Eat is what would remove this whole problem.
  */
 const THIEVING_MAX_HIT_FRACTION = 0.25;
-
-/** Internal marker so a refused NPC is filtered without a second lookup. */
-const TOO_DANGEROUS_MARKER = ' too-dangerous:';
 
 /**
  * Whether an NPC hits too hard for the health currently available.
@@ -870,4 +865,59 @@ function missingInputs(
   }
 
   return [];
+}
+
+/**
+ * A better recipe in the skill that is already running.
+ *
+ * An objective pins a *recipe*, not a skill: "pickpocket Woman until Thieving
+ * 39" keeps pickpocketing Woman for the whole eighteen levels, even as Marauder
+ * unlocks at 21 and pays more. The agent levels past better options without
+ * ever reconsidering, because nothing re-examines the choice once it is made.
+ *
+ * Reported, never applied. Automatically switching to the highest-XP recipe
+ * would have quietly destroyed the plan running right now — Normal Trees were
+ * chosen *over* Yew on purpose, trading XP for four times the rare-drop rolls,
+ * because the seed is what Farming is blocked on. An auto-upgrade cannot tell
+ * that apart from an oversight, so it stays a planning decision with the
+ * arithmetic put in front of it.
+ *
+ * @param candidates - Current candidates, already level-filtered.
+ * @param activeSkillId - The skill currently occupying the action slot.
+ * @param activeRecipeIds - The recipes it is running.
+ */
+export function readBetterRecipeNotice(
+  candidates: readonly Candidate[],
+  activeSkillId: string | null,
+  activeRecipeIds: readonly string[],
+): { label: string; xpPerHour: number; missing: never[] }[] {
+  if (activeSkillId === null || activeRecipeIds.length === 0) return [];
+
+  const inSkill = candidates.filter(
+    (candidate) =>
+      candidate.kind === 'gather_resource' &&
+      (candidate.params as { skillId?: string }).skillId === activeSkillId,
+  );
+
+  const running = inSkill.find((candidate) =>
+    activeRecipeIds.includes(String((candidate.params as { recipeId?: unknown }).recipeId ?? '')),
+  );
+  if (running === undefined) return [];
+
+  const best = inSkill.reduce((leader, candidate) =>
+    (candidate.xpPerHour ?? 0) > (leader.xpPerHour ?? 0) ? candidate : leader,
+  );
+
+  const runningRate = running.xpPerHour ?? 0;
+  const bestRate = best.xpPerHour ?? 0;
+  // A tenth better, so noise and rounding do not produce a permanent notice.
+  if (best === running || bestRate <= runningRate * 1.1) return [];
+
+  return [
+    {
+      label: `Running ${running.label} at ${Math.round(runningRate).toLocaleString()} xp/h while ${best.label} is unlocked at ${Math.round(bestRate).toLocaleString()} xp/h. Switching is a choice, not an oversight — the slower one may be producing something the faster one does not.`,
+      xpPerHour: 0,
+      missing: [],
+    },
+  ];
 }

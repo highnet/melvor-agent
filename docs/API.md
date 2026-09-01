@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-156 exports.
+181 exports.
 
 ## `act`
 
@@ -155,16 +155,6 @@ buildAgilityObstacle: (obstacleId: string, isSuspended: () => boolean) => Action
 ## `buildTownshipBuilding`
 
 `function`
-
-Builds one building in a biome.
-
-`buildBuilding` takes no biome argument: it builds into whichever biome the
-town page is currently showing. That is a UI-driven API, so the biome is set
-first and restored afterwards — leaving it changed would silently redirect a
-human's next click to a biome they did not choose.
-
-It returns `void` and refuses silently when resources are short, so the only
-evidence that holds is the building count either side.
 
 ```ts
 buildTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
@@ -322,6 +312,34 @@ urgent than the permanent ones.
 claimCasualTask: (taskId: string, isSuspended: () => boolean) => ActionResult<{ taskId: string; remaining: number; }>
 ```
 
+## `claimMasteryToken`
+
+`function`
+
+Claims a Mastery Token, pouring its percentage into the skill's mastery pool.
+
+Tokens were invisible to this agent in the worst possible way: not merely
+unclaimable, but offered *for sale*. `readOpenableCandidates` filters on
+`instanceof OpenableItem` and a `MasteryTokenItem` is a sibling class, not a
+subclass — so the container reflex could never see one, while the sell reader,
+which filters on nothing of the sort, happily listed six Woodcutting tokens
+as a stack to liquidate.
+
+One caveat carried deliberately into the code. Unlike opening — where
+`openItemOnClick` raises a confirmation nothing here will answer and
+`processItemOpen` does the real work — the typings expose *only*
+`claimMasteryTokenOnClick`. There is no process-level counterpart to call, so
+this uses the click callback knowing it may raise a modal, which would show
+up as a no-state-change failure rather than a silent success.
+
+That is why the evidence is the pool, not the bank. A token leaving the bank
+proves a click landed; mastery pool XP rising proves the claim actually paid
+out, and it distinguishes the case where the pool is already full.
+
+```ts
+claimMasteryToken: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ held: number; poolXp: number; }>
+```
+
 ## `claimTownshipTask`
 
 `function`
@@ -427,9 +445,12 @@ convertItemToTownship: (itemId: string, resourceId: string, quantity: number, is
 
 Trades the town's resources back for items.
 
-The reverse direction is rarely the right move — the town needs its resources
-far more than the bank needs another log — so it exists for completeness and
-is not offered as a candidate. A planner that wants it can ask.
+Long treated as rarely worth doing — the town needs its resources more than
+the bank needs another log — and so left unoffered. That reasoning holds for
+logs and fails badly for anything the town alone can make: `Herbs → Herb Box`
+yields finished herbs, which is Herblore's input and the only route to it
+that does not run through Farming. A capability nothing offers is a
+capability that does not exist, which is how Herblore stayed unreachable.
 
 ```ts
 convertTownshipToItem: (resourceId: string, itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<ConversionProjection>
@@ -462,17 +483,6 @@ Disposer: any
 ## `dumpRegistries`
 
 `function`
-
-Exports the game's own data registries.
-
-These registries are ground truth: they are correct for the exact installed
-version, which the wiki is not. Everything numeric the planner ever sees
-originates here. The dump is stamped with `gameVersion` so a game update
-makes the staleness detectable rather than silent.
-
-Only the slices Phase 1 and the Phase 2 combat gate need are exported. This
-is deliberate: `game.items` alone is thousands of entries, and a dump nobody
-reads is just a large file that goes stale.
 
 ```ts
 dumpRegistries: () => KnowledgeDump
@@ -664,13 +674,6 @@ harvestFarmPlot: (plotId: string, isSuspended: () => boolean) => ActionResult<{ 
 
 `function`
 
-Spends a resource to restore town health.
-
-Health decays continuously and drags every rate in the town down with it, so
-a town left alone for a week produces a fraction of what its buildings say it
-should. Restoring it is cheap and the effect is immediate — the definition of
-upkeep a human does without thinking about it.
-
 ```ts
 increaseTownHealth: (resourceId: string, amount: number, isSuspended: () => boolean) => ActionResult<{ healthPercent: number; }>
 ```
@@ -821,8 +824,8 @@ which is the only reachable seed supply for a character whose Thieving tier
 is too low to drop them — so an agent that cannot open a nest cannot start
 Farming, and therefore cannot start Herblore either.
 
-`openItemOnClick` returns void, and the contents are random, so the evidence
-is the container leaving the bank rather than any particular reward arriving.
+The open call returns void and the contents are random, so the evidence is
+the container leaving the bank rather than any particular reward arriving.
 
 ```ts
 openItem: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ held: number; bankSlots: number; }>
@@ -920,6 +923,26 @@ forth, paying the cost each time for no gain.
 readAgilityCandidates: () => Candidate[]
 ```
 
+## `readAllSeedIds`
+
+`function`
+
+Every seed the farm can ever plant, at any level.
+
+Deliberately unfiltered by level, which is the whole point. Seeds for crops
+the character cannot plant yet are not surplus — they are exactly the stock
+that becomes useful as Farming rises, and the sell list was offering 32
+Ancient Corn Seeds and 30 Ancient Carrot Seeds while Farming sat at level 1
+blocking the only untrained skill left in scope.
+
+A seed is worth a few GP and a harvest is worth Farming XP, which is the
+scarce thing here; there is no bank balance at which that trade is correct.
+Selling seeds is not a judgement the planner should be offered.
+
+```ts
+readAllSeedIds: () => Set<string>
+```
+
 ## `readAstrologyCandidates`
 
 `function`
@@ -939,15 +962,18 @@ readAstrologyCandidates: () => Candidate[]
 
 `function`
 
-Food held in the bank, most healing first.
+```ts
+readBankedFood: () => { itemId: string; quantity: number; heals: number; }[]
+```
 
-Exists so a reflex can refill an *empty* food slot, not merely top up what is
-already there. An empty slot is precisely when the eat reflex cannot act, and
-it is reached by ordinary play: Thieving and combat both consume food until
-there is none left.
+## `readBankExpansion`
+
+`function`
+
+The shop's bank-slot purchase, or null when it is unavailable or unaffordable.
 
 ```ts
-readBankedFood: () => { itemId: string; quantity: number; }[]
+readBankExpansion: () => { purchaseId: string; gpCost: number; held: number; } | null
 ```
 
 ## `readBankPressure`
@@ -1023,6 +1049,49 @@ Name of the currently loaded character, for the save allowlist guard.
 
 ```ts
 readCharacterName: () => string
+```
+
+## `readCheapPermanentUpgrades`
+
+`function`
+
+Permanent upgrades cheap enough that not owning them is simply an oversight.
+
+These were sitting unbought for a whole session: an Iron Axe at 50 GP, an
+Iron Fishing Rod at 100, an Iron Pickaxe at 250, against 43,860 GP held.
+Each is a permanent -5% interval on a skill the agent actually trains, and
+every one of them was on the candidate list the entire time — at index 120 of
+227, where a planner reading top-down never reached it. Surfacing a thing is
+not the same as doing it.
+
+Restricted to purchases that grant *no items*: a pure modifier upgrade. That
+is not a stylistic filter but the safety property that makes this reflex-safe
+on two counts. It cannot consume a bank slot, so it can never make the
+full-bank problem worse; and it cannot buy consumables — compost, dragonhide,
+summoning shards — where "how many" is a judgement the planner should keep.
+A one-off upgrade has no such judgement: the only wrong quantity is zero.
+
+```ts
+readCheapPermanentUpgrades: () => { purchaseId: string; name: string; gpCost: number; }[]
+```
+
+## `readClaimableTasks`
+
+`function`
+
+Finished tasks the town is sitting on, ready to claim.
+
+Separate from the candidate reader because this is for the reflex tier: a
+task whose work is already done pays out rewards and Township XP, costs
+nothing, and cannot be claimed wrongly. Leaving it unclaimed also blocks the
+slot it occupies, so the next task never starts.
+
+That matters more than it sounds. Township XP is what gates the biome the
+Herb producer lives in, and Herblore is behind that — so an unclaimed task is
+not tidy-up, it is the critical path standing still.
+
+```ts
+readClaimableTasks: () => { kind: "casual" | "township"; taskId: string; }[]
 ```
 
 ## `readCombatGateInputs`
@@ -1150,6 +1219,41 @@ usually silent — which is correct, not a gap.
 readEquipmentSetCandidates: () => Candidate[]
 ```
 
+## `readEquippedFood`
+
+`function`
+
+The equipped food slot and what the bank holds of that food, read live.
+
+The food reflexes were fed a mix: banked food read live, but the equipped
+slot and bank quantities taken from the snapshot, which refreshes only when
+the agent reports. So the reflex acted on a picture of the bank that could be
+a minute old, and produced a steady drip of failures — "bank holds no
+melvorD:Chicken" for a stack that had since been eaten, and "state unchanged"
+for a slot it thought was empty and was not.
+
+Individually harmless, since every one was caught by the adapter's own
+preconditions. Collectively not: 570 of them buried the single warning that
+actually mattered, which was Thieving refusing to release the action slot.
+Noise is not free when the log is the diagnostic.
+
+The same fix as `readPlayerHitpoints`, applied to the reflex next door — the
+hitpoints half was corrected this session and the food half was missed.
+
+```ts
+readEquippedFood: () => { itemId: string | null; quantity: number; bankQuantityOf: (itemId: string) => number; }
+```
+
+## `readEquippedFoodHealing`
+
+`function`
+
+What the equipped food heals for, so a better one can be recognised.
+
+```ts
+readEquippedFoodHealing: () => number
+```
+
 ## `readEventCandidates`
 
 `function`
@@ -1210,6 +1314,29 @@ player loses every cycle after the first.
 readFarmPlots: () => FarmPlotState[]
 ```
 
+## `readFoodReserve`
+
+`function`
+
+Whether the food reserve is running out, and by how much.
+
+The thing that actually limits unattended play, and nothing was watching it.
+Without Auto Eat the eat reflex is the only thing between the character and
+death, and it consumes an item every time it fires — Thieving damages on
+every failed pickpocket, so a long run burns food steadily. When the last
+meal goes, the reflex has nothing to work with, the Thieving gate starts
+refusing NPCs as health falls, and the run quietly stops progressing.
+
+Reported rather than acted on. Restocking is a genuine plan — fish, then
+cook, then come back — and inventing that as a reflex would have the agent
+abandoning objectives to go fishing. Naming the shortfall lets a planning
+session decide, which is the split this codebase already draws between
+oversights and trade-offs.
+
+```ts
+readFoodReserve: (minimumMeals?: number) => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+```
+
 ## `readGameVersion`
 
 `function`
@@ -1233,6 +1360,16 @@ recipes are not emitted at all, which is what makes `available` a literal
 
 ```ts
 readGatherCandidates: () => Candidate[]
+```
+
+## `readHeldCompost`
+
+`function`
+
+The cheapest compost actually held, or null when there is none.
+
+```ts
+readHeldCompost: () => { itemId: string; held: number; } | null
 ```
 
 ## `readIsInOnlineLoop`
@@ -1304,6 +1441,60 @@ Skills whose mastery pool has XP worth spending.
 readMasteryCandidates: () => Candidate[]
 ```
 
+## `readMasteryTokenCandidates`
+
+`function`
+
+Mastery Tokens sitting in the bank.
+
+Their own reader, because they are not `OpenableItem`s and the container
+reader's `instanceof` check excludes them by construction.
+
+```ts
+readMasteryTokenCandidates: () => Candidate[]
+```
+
+## `readMasteryTokenIds`
+
+`function`
+
+Ids of every Mastery Token held, so the sell reader can refuse them.
+
+```ts
+readMasteryTokenIds: () => Set<string>
+```
+
+## `readMonsterDropsOfInterest`
+
+`function`
+
+What a monster drops that the agent is currently short of.
+
+Dumping monster loot made it knowable; this makes it *reachable*. Knowing
+that Bob the Farmer drops Potato Seeds is only useful if something connects
+"Farming is blocked on this item" to "here is a fight that produces it" —
+otherwise every fight candidate reads identically and the planner picks by
+combat level, which is a proxy for danger, not for value.
+
+The comparison is against items the agent already knows it wants: what an
+open Township task is asking for, and seeds it holds too few of to plant.
+Deliberately not "everything in the bank is low" — a note attached to every
+monster is the same as no note at all.
+
+```ts
+readMonsterDropsOfInterest: (monsterId: string, wanted: ReadonlySet<string>) => string[]
+```
+
+## `readNextContainer`
+
+`function`
+
+The first container in the bank worth opening, if any.
+
+```ts
+readNextContainer: () => { itemId: string; quantity: number; } | null
+```
+
 ## `readOpenableCandidates`
 
 `function`
@@ -1334,6 +1525,21 @@ Cooking categories that have a recipe selected but are not cooking.
 readPassiveCookingCandidates: () => Candidate[]
 ```
 
+## `readPenalisingGear`
+
+`function`
+
+Worn gear that is working against the current attack style.
+
+Reads only; the decision to remove it is {@link removePenalisingGear } in the
+reflex tier. The weapon slot is excluded deliberately — a weapon *defines*
+the style rather than fighting it, and stripping it would leave the character
+unarmed, which is a worse position than a bad bonus.
+
+```ts
+readPenalisingGear: () => { slotId: string; itemName: string; }[]
+```
+
 ## `readPlantableSeeds`
 
 `function`
@@ -1344,7 +1550,26 @@ Only seeds actually held in the bank are offered — an unplantable seed is a
 planner trap, not a choice.
 
 ```ts
-readPlantableSeeds: () => { recipeId: string; name: string; categoryId: string; level: number; xp: number; seedsHeld: number; }[]
+readPlantableSeeds: () => { recipeId: string; name: string; categoryId: string; level: number; xp: number; seedsHeld: number; seedCost: number; }[]
+```
+
+## `readPlayerHitpoints`
+
+`function`
+
+The player's hitpoints, read live.
+
+The eat reflex was taking these from the snapshot, which refreshes only when
+the mod reports. Two consequences, and the second is the serious one: it
+retried an eat it had already done — "already at full hitpoints; eating would
+waste the item" — and, in the other direction, it could read a healthy figure
+for a character that had since been hurt, and decline to eat at all.
+
+The whole point of the reflex tier is reacting faster than a planning cycle,
+which it cannot do from a number a planning cycle produced.
+
+```ts
+readPlayerHitpoints: () => { hitpoints: number; maxHitpoints: number; }
 ```
 
 ## `readRaidCandidates`
@@ -1362,6 +1587,27 @@ can bring, and a failed raid pays nothing for the time spent.
 
 ```ts
 readRaidCandidates: () => Candidate[]
+```
+
+## `readSeedShortfalls`
+
+`function`
+
+Seeds the character holds but not enough of to plant.
+
+Farming sat at level 1 for a whole session on a two-seed shortfall, and
+nothing said so. The candidate list offered "Plant Potatoes — 2 seeds held",
+which reads like an opportunity; the reflex correctly declined it; and the
+only trace was a reflex warning that stopped appearing once the reflex was
+fixed. The shortfall itself was never stated anywhere.
+
+It is a blocked opportunity in the exact sense the blocked list exists for: a
+thing the character is level-unlocked for and lacks the inputs to do, with
+the missing item named. Farming 30 gates Herblore, so this two-seed gap was
+the last skill in scope waiting on something nobody had said out loud.
+
+```ts
+readSeedShortfalls: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readSellCandidates`
@@ -1406,6 +1652,16 @@ and there is no rate to express it as.
 readShopObjectiveCandidates: () => Candidate[]
 ```
 
+## `readShortSeedIds`
+
+`function`
+
+Seed ids the character holds too few of to plant; see readSeedShortfalls.
+
+```ts
+readShortSeedIds: () => Set<string>
+```
+
 ## `readSkillTreeCandidates`
 
 `function`
@@ -1414,6 +1670,28 @@ Skill tree nodes that can be afforded and unlocked now.
 
 ```ts
 readSkillTreeCandidates: () => Candidate[]
+```
+
+## `readSlayerBlockedReason`
+
+`function`
+
+Why Slayer is offering nothing, or null when it is.
+
+{@link readSlayerCandidates} returns an empty array in three unrelated
+situations — a task is already running, no food is equipped, or every
+category is above the character's Slayer level — and an empty list looks
+identical in all three. Slayer sat at level 1 for a whole session without the
+agent or the operator ever being told which of those was true, and the answer
+turned out to matter: no food equipped is a thing a reflex fixes in seconds,
+while an active task means the work is to go and kill the assigned monster.
+
+The lesson is one this session kept relearning. An empty candidate list is
+not self-explanatory, and the difference between "cannot" and "already done"
+is invisible until something says which.
+
+```ts
+readSlayerBlockedReason: () => string | null
 ```
 
 ## `readSlayerCandidates`
@@ -1464,6 +1742,29 @@ later.
 readSpellCandidates: () => Candidate[]
 ```
 
+## `readSpellRuneIds`
+
+`function`
+
+Runes that an attack spell the character could cast actually requires.
+
+Selling these is how Magic became unreachable. A bank-clearing pass sold all
+81 Mind Runes with the note "not the runes Township wants" — true, and beside
+the point: the basic strike spells take a Mind Rune as catalyst alongside the
+elemental one, so the stack that looked like spare change was half of every
+castable spell. The failure surfaced much later and in a completely different
+place: a staff equipped, 821 Air Runes banked, and a fight that could not
+land a cast.
+
+Deliberately restricted to spells within the character's Magic level. Runes
+for spells decades away are genuinely surplus, and a guard that protects
+everything protects nothing — the bank filling up has stalled this agent
+repeatedly, and selling is the planner's lever for that.
+
+```ts
+readSpellRuneIds: () => Set<string>
+```
+
 ## `readSynergyCandidates`
 
 `function`
@@ -1501,11 +1802,6 @@ readTargetCombatLevel: (targetId: string) => number | null
 
 `function`
 
-Tasks whose goals are met and whose rewards are waiting.
-
-Casual tasks are listed first: the five-slot limit means an unclaimed one
-blocks the next task from arriving, so it costs more than its own reward.
-
 ```ts
 readTaskCandidates: () => Candidate[]
 ```
@@ -1528,6 +1824,25 @@ task is not an action: it is a reason to choose among the actions there are.
 
 ```ts
 readTaskOpportunities: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+```
+
+## `readTaskWantedItemIds`
+
+`function`
+
+Items an unfinished Township task is asking for.
+
+Selling one of these throws away a task cycle. It happened: 500 Potatoes
+were sold as "free from a Point of Interest, not food the character needs
+and not something the town accepts" — true when written, and wrong an hour
+later when a task appeared wanting 100 Potatoes. Tasks rotate, so today's
+junk is tomorrow's requirement, and task cycles are currently the fastest
+Township XP there is.
+
+Casual tasks count too: they hold the same kind of item goal.
+
+```ts
+readTaskWantedItemIds: () => Set<string>
 ```
 
 ## `readTotalLevel`
@@ -1569,6 +1884,21 @@ purchase is — it is simply not a move yet.
 readTownshipCandidates: () => Candidate[]
 ```
 
+## `readTownshipGoodsCandidates`
+
+`function`
+
+Goods only the town can make.
+
+Offered from a surplus, never from a town that needs the resource itself, and
+only for items the bank does not already hold a pile of. The point is the
+things with no other source — Herb Boxes above all, which carry the herbs
+Herblore needs and which no skill the character has can otherwise produce.
+
+```ts
+readTownshipGoodsCandidates: () => Candidate[]
+```
+
 ## `readTownshipSummary`
 
 `function`
@@ -1596,6 +1926,20 @@ plenty of does nothing.
 
 ```ts
 readTraderCandidates: () => Candidate[]
+```
+
+## `readTravelCandidates`
+
+`function`
+
+Points of interest that have been surveyed but never visited.
+
+Offered cheapest-first. Each one is a one-off with a fixed reward, and the
+chain matters more than any single entry — travelling to one reveals the
+next, and somewhere along it are the dig sites.
+
+```ts
+readTravelCandidates: () => Candidate[]
 ```
 
 ## `readUpgradeCandidates`
@@ -2092,6 +2436,72 @@ The town's state, for the planner to reason about.
 
 ```ts
 TownshipSummary: any
+```
+
+## `travelToPointOfInterest`
+
+`function`
+
+Travels to a surveyed but undiscovered Point of Interest.
+
+The gap this closes was found the hard way. Surveying a hex queues a POI and
+the game raises a "Travel there now?" modal — which an unattended agent can
+neither see nor answer, so it sat there swallowing input while every reload
+click went into it. Discovering POIs is not optional decoration either: the
+Old Village dig site, and therefore Archaeology at all, is reached only by
+travelling to one.
+
+`travelOnClick` is the modal's button. `movePlayer` is the operation, and it
+takes a path rather than a destination, so the path is computed first and the
+cost is checked before spending anything — `ignoreCosts` stays false so the
+game deducts and refuses exactly as it would for a player.
+
+```ts
+travelToPointOfInterest: (poiId: string, isSuspended: () => boolean) => ActionResult<{ discovered: number; undiscovered: number; position: string; }>
+```
+
+## `unequipItem`
+
+`function`
+
+Takes something off.
+
+The counterpart that did not exist. The agent could put gear on and never
+remove it, which is not a small omission: a human unequips constantly — to
+swap damage types, to clear a slot, to undo a mistake — and without it every
+equip was one-way and permanent.
+
+It became urgent rather than theoretical when a Steel Platebody was equipped
+for its defence and turned out to carry a negative ranged attack bonus. The
+candidate reader now refuses to offer such gear, but refusing to offer it
+does nothing about the piece already worn, and there was no way to take it
+off short of a human doing it by hand.
+
+The bank check is a real precondition, not defensiveness: unequipping moves
+the item back to the bank, and a full bank is the one state where that can
+fail.
+
+```ts
+unequipItem: (slotId: string, isSuspended: () => boolean) => ActionResult<EquipProjection>
+```
+
+## `unlockFarmPlot`
+
+`function`
+
+Buys a locked plot.
+
+Every farming plot starts locked, including the first, and a locked plot can
+never be planted. The agent held sixteen allotment seeds and Farming level 1
+for a full day while the farm reported "no empty plots" — the capability to
+open a plot simply did not exist, so Farming was unreachable no matter what
+else was fixed.
+
+`unlockPlotOnClick` returns void, so the state leaving `locked` is the
+evidence rather than any return value.
+
+```ts
+unlockFarmPlot: (plotId: string, isSuspended: () => boolean) => ActionResult<{ state: string; recipeId: string | null; }>
 ```
 
 ## `unlockSkillTreeNode`
