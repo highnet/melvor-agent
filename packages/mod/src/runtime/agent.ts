@@ -56,6 +56,7 @@ import {
   readEventCandidates,
   readExplorationCandidates,
   readFarmCandidates,
+  readFarmPlots,
   readGameVersion,
   readGatherCandidates,
   readHeldCompost,
@@ -411,6 +412,13 @@ export class Agent {
         ? selected
         : (snapshot.combat.food.find((entry) => entry.qty > 0) ?? selected);
 
+    // Read live rather than from the snapshot. The snapshot refreshes only on
+    // report, so a reflex could not see the effect of its own previous tick and
+    // retried a plot it had just finished — "already fully composted", once a
+    // second. Every farm reflex below shares this, so they compose correctly
+    // within a single tick too.
+    const livePlots = readFarmPlots();
+
     const outcomes = [
       refillFood(
         {
@@ -461,7 +469,7 @@ export class Agent {
       // would idle a whole growth cycle waiting.
       harvestReadyPlots(
         {
-          readyPlotIds: snapshot.farm
+          readyPlotIds: livePlots
             .filter((plot) => plot.state === 'grown' || plot.state === 'dead')
             .map((plot) => plot.id),
         },
@@ -471,7 +479,7 @@ export class Agent {
       // cycle, and an uncomposted crop has only a 50% chance to grow.
       compostBeforePlanting(
         {
-          bareplotIds: snapshot.farm
+          bareplotIds: livePlots
             .filter((plot) => plot.state === 'empty' && plot.compostLevel < 100)
             .map((plot) => plot.id),
           compost: readHeldCompost(),
@@ -482,9 +490,7 @@ export class Agent {
       // replanted on the next rather than being read as still occupied.
       plantEmptyPlots(
         {
-          emptyPlotIds: snapshot.farm
-            .filter((plot) => plot.state === 'empty')
-            .map((plot) => plot.id),
+          emptyPlotIds: livePlots.filter((plot) => plot.state === 'empty').map((plot) => plot.id),
           plentifulSeeds: readPlantableSeeds()
             .map((seed) => ({
               recipeId: seed.recipeId,
