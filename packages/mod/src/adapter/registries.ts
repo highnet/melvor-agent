@@ -44,6 +44,18 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // Thieving NPCs carry the level gates that decide whether a whole skill
+    // chain is reachable. Herblore waits on herb seeds, herb seeds come off a
+    // specific NPC, and with only the *nearest* locked action reported there
+    // was no way to see how far away that NPC was without grinding toward it
+    // and watching. A level in a dump answers it in one read.
+    thievingNpcs: game.thieving.actions.allObjects.map((npc) => ({
+      id: npc.id,
+      name: npc.name,
+      level: npc.level,
+      maxHit: npc.maxHit,
+      lootTable: npc.lootTable.drops.map((drop) => drop.item.name),
+    })),
     monsters: game.monsters.allObjects.map((monster) => ({
       id: monster.id,
       name: monster.name,

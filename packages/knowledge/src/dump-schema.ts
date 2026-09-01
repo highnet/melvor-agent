@@ -42,6 +42,24 @@ export const knowledgeDumpSchema = z.object({
   ),
 
   /**
+   * Thieving NPCs, with the level that gates each one.
+   *
+   * These carry the requirements that decide whether a whole skill chain is
+   * reachable: Herblore waits on herb seeds, and herb seeds come off a specific
+   * NPC. With only the *nearest* locked action reported anywhere, how far away
+   * that NPC sat could not be seen without grinding toward it and watching.
+   */
+  thievingNpcs: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      level: z.number().int().nonnegative(),
+      maxHit: z.number().nonnegative(),
+      lootTable: z.array(z.string()),
+    }),
+  ),
+
+  /**
    * Note the absence of `maxHit`. A `Monster` in the registry is data with no
    * computed max hit — only an instantiated `Enemy` has one. Recording a
    * plausible-looking number here would poison the combat gate, so the field
