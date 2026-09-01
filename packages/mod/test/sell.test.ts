@@ -243,3 +243,32 @@ describe('sell candidate ordering', () => {
     expect(after).toEqual(['Teak Logs', 'Ancient Corn Seeds']);
   });
 });
+
+describe('items an open task wants', () => {
+  it('are excluded from the sell list', () => {
+    // 500 Potatoes were sold as junk — "free from a Point of Interest, not
+    // food the character needs, not something the town accepts" — which was
+    // true when written and wrong an hour later, when a Township task appeared
+    // wanting 100 Potatoes. Tasks rotate, so today's junk is tomorrow's
+    // requirement, and a task cycle is worth far more than a stack's sale
+    // price: one took Township from 2 to 5.
+    const wanted = new Set(['melvorD:Potatoes']);
+    const bank = [
+      { itemId: 'melvorD:Potatoes', quantity: 500 },
+      { itemId: 'melvorD:Normal_Logs', quantity: 644 },
+    ];
+
+    const offered = bank.filter((entry) => !wanted.has(entry.itemId)).map((entry) => entry.itemId);
+
+    expect(offered).toEqual(['melvorD:Normal_Logs']);
+  });
+
+  it('leaves everything else sellable', () => {
+    // The guard must not turn into "never sell anything" — the bank filling up
+    // stalled the agent repeatedly today, and selling is the planner's lever.
+    const wanted = new Set<string>();
+    const bank = [{ itemId: 'melvorD:Potatoes', quantity: 500 }];
+
+    expect(bank.filter((e) => !wanted.has(e.itemId))).toHaveLength(1);
+  });
+});

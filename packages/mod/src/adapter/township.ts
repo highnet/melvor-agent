@@ -537,6 +537,48 @@ export function claimCasualTask(
  * blocks the next task from arriving, so it costs more than its own reward.
  */
 /**
+ * Items an unfinished Township task is asking for.
+ *
+ * Selling one of these throws away a task cycle. It happened: 500 Potatoes
+ * were sold as "free from a Point of Interest, not food the character needs
+ * and not something the town accepts" — true when written, and wrong an hour
+ * later when a task appeared wanting 100 Potatoes. Tasks rotate, so today's
+ * junk is tomorrow's requirement, and task cycles are currently the fastest
+ * Township XP there is.
+ *
+ * Casual tasks count too: they hold the same kind of item goal.
+ */
+export function readTaskWantedItemIds(): Set<string> {
+  const wanted = new Set<string>();
+  const township = game.township;
+  if (!township.townData.townCreated) return wanted;
+
+  const collect = (goals: { itemGoals: { item: { id: string } }[] }): void => {
+    for (const goal of goals.itemGoals) wanted.add(goal.item.id);
+  };
+
+  for (const task of township.tasks.tasks.allObjects) {
+    try {
+      if (township.tasks.completedTasks.has(task)) continue;
+      collect(task.goals);
+    } catch {
+      // A task that cannot describe its goals protects nothing.
+    }
+  }
+
+  for (const task of township.casualTasks.currentCasualTasks) {
+    try {
+      if (township.casualTasks.isTaskComplete(task)) continue;
+      collect(task.goals);
+    } catch {
+      // Same.
+    }
+  }
+
+  return wanted;
+}
+
+/**
  * Finished tasks the town is sitting on, ready to claim.
  *
  * Separate from the candidate reader because this is for the reflex tier: a

@@ -7,6 +7,7 @@ import {
   WOODCUTTING_ID,
 } from './gathering.js';
 import { readShopCandidates } from './shop.js';
+import { readTaskWantedItemIds } from './township.js';
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -440,8 +441,15 @@ function fishingCandidates(): Candidate[] {
  * @returns One candidate per sellable stack, most valuable first.
  */
 export function readSellCandidates(): Candidate[] {
+  // Never offer to sell what an open Township task is asking for. Selling one
+  // of those throws away a whole task cycle, and task cycles are the fastest
+  // Township XP available — 500 Potatoes went for a few hundred GP an hour
+  // before a task appeared wanting 100 of them.
+  const wantedByTasks = readTaskWantedItemIds();
+
   return (
     [...game.bank.items.values()]
+      .filter((entry) => !wantedByTasks.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({
