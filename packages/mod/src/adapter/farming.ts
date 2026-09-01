@@ -480,7 +480,16 @@ export function readFarmCandidates(): Candidate[] {
   // growing and two unlockable, the farm offered nothing at all.
   if (empty.length === 0) return candidates;
 
-  for (const seed of readPlantableSeeds().slice(0, 3)) {
+  // Only seeds there are actually enough of. An allotment takes three seeds,
+  // and offering "Plant Potatoes — 2 seeds held" invites the planner to choose
+  // something the game will refuse.
+  //
+  // This is the third instance today of asking "is any held" where the question
+  // was "is there enough" — the others equipped one arrow of 1,259 and pointed
+  // a Summoning recipe at a log there was nowhere near enough of.
+  const plantable = readPlantableSeeds().filter((seed) => seed.seedsHeld >= seed.seedCost);
+
+  for (const seed of plantable.slice(0, 3)) {
     candidates.push({
       kind: 'tend_farm',
       params: { kind: 'tend_farm', seedRecipeId: seed.recipeId },
@@ -490,4 +499,54 @@ export function readFarmCandidates(): Candidate[] {
   }
 
   return candidates;
+}
+
+/**
+ * Seeds the character holds but not enough of to plant.
+ *
+ * Farming sat at level 1 for a whole session on a two-seed shortfall, and
+ * nothing said so. The candidate list offered "Plant Potatoes — 2 seeds held",
+ * which reads like an opportunity; the reflex correctly declined it; and the
+ * only trace was a reflex warning that stopped appearing once the reflex was
+ * fixed. The shortfall itself was never stated anywhere.
+ *
+ * It is a blocked opportunity in the exact sense the blocked list exists for: a
+ * thing the character is level-unlocked for and lacks the inputs to do, with
+ * the missing item named. Farming 30 gates Herblore, so this two-seed gap was
+ * the last skill in scope waiting on something nobody had said out loud.
+ */
+export function readSeedShortfalls(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    // Only when there is somewhere to plant; a shortfall for a farm with no
+    // empty plot is not what is blocking anything.
+    const hasEmptyPlot = readFarmPlots().some((plot) => plot.state === 'empty');
+    if (!hasEmptyPlot) return [];
+
+    return game.farming.actions.allObjects
+      .filter((recipe) => game.farming.level >= recipe.level)
+      .map((recipe) => ({
+        recipe,
+        held: game.bank.getQty(recipe.seedCost.item),
+        cost: recipe.seedCost.quantity,
+      }))
+      .filter((entry) => entry.held > 0 && entry.held < entry.cost)
+      .map((entry) => ({
+        label: `Farming: ${entry.recipe.name} needs ${entry.cost} seeds to plant one plot`,
+        xpPerHour: 0,
+        missing: [
+          {
+            itemId: entry.recipe.seedCost.item.id,
+            name: entry.recipe.seedCost.item.name,
+            need: entry.cost,
+            have: entry.held,
+          },
+        ],
+      }));
+  } catch {
+    return [];
+  }
 }

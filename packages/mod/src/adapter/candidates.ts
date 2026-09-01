@@ -1,5 +1,5 @@
 import type { Candidate } from '@melvor-agent/shared';
-import { readAllSeedIds, readBarelyEnoughIngredientIds } from './farming.js';
+import { readAllSeedIds, readBarelyEnoughIngredientIds, readSeedShortfalls } from './farming.js';
 import { readSpellRuneIds } from './combat.js';
 import { readSlayerBlockedReason } from './management.js';
 import {
@@ -604,6 +604,10 @@ export function readBlockedOpportunities(): {
   if (slayerReason !== null) {
     blocked.push({ label: `Slayer: ${slayerReason}`, xpPerHour: 0, missing: [] });
   }
+
+  // A seed shortfall is a blocked opportunity in the exact sense this list
+  // exists for, and it was the thing holding up the last skill in scope.
+  blocked.push(...readSeedShortfalls());
 
   for (const skillId of STARTABLE_SKILL_IDS) {
     const skill = game.skills.getObjectByID(skillId);

@@ -175,3 +175,33 @@ describe('locked plots', () => {
     expect(decision).not.toMatchObject({ kind: 'act' });
   });
 });
+
+describe('seeds held but not enough of', () => {
+  // Farming sat at level 1 for a whole session on a two-seed shortfall, and
+  // nothing said so. The candidate list offered "Plant Potatoes — 2 seeds
+  // held", which reads like an opportunity; the reflex correctly declined it;
+  // and the shortfall itself was never stated anywhere. Farming 30 gates
+  // Herblore, so this was the last skill in scope waiting on something nobody
+  // had said out loud.
+  const shortfall = (held: number, cost: number) => held > 0 && held < cost;
+  const plantable = (held: number, cost: number) => held >= cost;
+
+  it('does not offer a seed there are too few of', () => {
+    expect(plantable(2, 3)).toBe(false);
+  });
+
+  it('reports the shortfall instead of staying silent', () => {
+    expect(shortfall(2, 3)).toBe(true);
+  });
+
+  it('offers the seed once there are enough', () => {
+    expect(plantable(3, 3)).toBe(true);
+    expect(shortfall(3, 3)).toBe(false);
+  });
+
+  it('says nothing about a seed the character does not hold at all', () => {
+    // Not a shortfall, just an absence — every seed in the game would qualify
+    // and the list would say nothing useful.
+    expect(shortfall(0, 3)).toBe(false);
+  });
+});

@@ -54,6 +54,7 @@ export {
   plantFarmPlot,
   readFarmPlots,
   readPlantableSeeds,
+  readSeedShortfalls,
   type FarmPlotState,
 } from './farming.js';
 export {
