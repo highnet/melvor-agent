@@ -301,3 +301,44 @@ export function plantEmptyPlots(
 
   return { name: 'reflex.plantPlot', result: plant(plotId, seed.recipeId) };
 }
+
+/**
+ * Fraction of held GP a single automatic bank slot may cost.
+ *
+ * The agent saves for large purchases — Auto Eat is a 1,000,000 GP goal — and a
+ * reflex that drains the pot to store more logs would be quietly undoing the
+ * planner's work. Scaling the limit means it buys freely when rich and stops on
+ * its own when the savings matter more than the slot.
+ */
+const BANK_SLOT_GP_FRACTION = 0.25;
+
+/**
+ * Buys a bank slot when the bank is completely full.
+ *
+ * A full bank does not stop a skill; it silently discards every new item type
+ * while the action keeps running, so an unattended agent can dig for hours and
+ * bank nothing. The candidate list already said so in plain words — "Bank is
+ * FULL, any new item type is being discarded silently" — and nothing acted on
+ * it, because saying it to a human who is not there is not a fix.
+ *
+ * Buying, never selling. Which stack is worth destroying is a judgement with no
+ * undo, and the brief rules irreversible actions out; a slot is additive,
+ * permanent, and cannot lose anything.
+ */
+export function expandBankWhenFull(
+  state: {
+    freeSlots: number;
+    expansion: { purchaseId: string; gpCost: number; held: number } | null;
+  },
+  buy: (purchaseId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  // Only at zero. One slot left is tight, not lossy, and the planner may be
+  // deliberately spending down to a floor.
+  if (state.freeSlots > 0) return null;
+
+  const expansion = state.expansion;
+  if (expansion === null) return null;
+  if (expansion.gpCost > expansion.held * BANK_SLOT_GP_FRACTION) return null;
+
+  return { name: 'reflex.expandBank', result: buy(expansion.purchaseId) };
+}

@@ -41,6 +41,7 @@ import {
   plantFarmPlot,
   readAgilityCandidates,
   readAstrologyCandidates,
+  readBankExpansion,
   readBankPressure,
   readBankedFood,
   readBlockedOpportunities,
@@ -122,6 +123,7 @@ import {
   abandonIfOutmatched,
   collectPendingLoot,
   eatWhenLow,
+  expandBankWhenFull,
   harvestReadyPlots,
   openPendingContainers,
   plantEmptyPlots,
@@ -442,6 +444,15 @@ export class Agent {
       collectPendingLoot(
         { inCombat: snapshot.combat.inCombat, hasLootWorthTaking: shouldCollectLoot() },
         () => collectLoot(isSuspended),
+      ),
+      // Before the farm reflexes, because a full bank loses whatever they
+      // harvest just as surely as it loses an artefact.
+      expandBankWhenFull(
+        {
+          freeSlots: snapshot.bank.slotsMax - snapshot.bank.slotsUsed,
+          expansion: readBankExpansion(),
+        },
+        (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
       ),
       // Farming does not occupy the action slot, so a ready plot can be
       // cleared without interrupting anything. Left to the objective tier it

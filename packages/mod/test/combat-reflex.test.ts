@@ -5,6 +5,7 @@ import {
   collectPendingLoot,
   dropUnpayablePrayers,
   eatWhenLow,
+  expandBankWhenFull,
   harvestReadyPlots,
   openPendingContainers,
   plantEmptyPlots,
@@ -403,5 +404,46 @@ describe('plantEmptyPlots', () => {
         ok(),
       ),
     ).toBeNull();
+  });
+});
+
+describe('expandBankWhenFull', () => {
+  const ok = () => ({ ok: true }) as never;
+  const slot = { purchaseId: 'melvorD:Extra_Bank_Slot', gpCost: 10_028, held: 116_327 };
+
+  it('buys a slot when the bank is completely full', () => {
+    const bought: string[] = [];
+    expandBankWhenFull({ freeSlots: 0, expansion: slot }, (id) => {
+      bought.push(id);
+      return ok();
+    });
+
+    expect(bought).toEqual(['melvorD:Extra_Bank_Slot']);
+  });
+
+  it('leaves a bank with room alone', () => {
+    // One slot left is tight, not lossy, and the planner may be spending down
+    // to a floor on purpose.
+    expect(expandBankWhenFull({ freeSlots: 1, expansion: slot }, () => ok())).toBeNull();
+  });
+
+  it('will not spend a large fraction of savings on a slot', () => {
+    // Auto Eat is a 1,000,000 GP goal. A reflex that drains the pot to store
+    // more logs would quietly undo the planner's work.
+    const poor = { ...slot, held: 20_000 };
+
+    expect(expandBankWhenFull({ freeSlots: 0, expansion: poor }, () => ok())).toBeNull();
+  });
+
+  it('does nothing when no slot can be bought', () => {
+    expect(expandBankWhenFull({ freeSlots: 0, expansion: null }, () => ok())).toBeNull();
+  });
+
+  it('never sells to make room', () => {
+    // Which stack is worth destroying is a judgement with no undo, and the
+    // brief rules irreversible actions out. The only lever here is buying.
+    const outcome = expandBankWhenFull({ freeSlots: 0, expansion: slot }, () => ok());
+
+    expect(outcome?.name).toBe('reflex.expandBank');
   });
 });

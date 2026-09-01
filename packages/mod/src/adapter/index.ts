@@ -17,6 +17,7 @@ export { act, type ActSpec } from './act.js';
 export {
   buryBones,
   openItem,
+  readBankExpansion,
   readBankPressure,
   readBankQuantity,
   readBoneCandidates,

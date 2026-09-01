@@ -138,6 +138,22 @@ export function readBankPressure(): {
   ];
 }
 
+/** The shop's bank-slot purchase, or null when it is unavailable or unaffordable. */
+export function readBankExpansion(): { purchaseId: string; gpCost: number; held: number } | null {
+  const purchase = game.shop.purchases.getObjectByID('melvorD:Extra_Bank_Slot');
+  if (purchase === undefined) return null;
+  if (game.shop.isPurchaseAtBuyLimit(purchase)) return null;
+  if (!game.checkRequirements(purchase.purchaseRequirements, false)) return null;
+
+  const costs = game.shop.getPurchaseCosts(purchase, 1);
+  if (!costs.checkIfOwned()) return null;
+
+  const gpCost =
+    costs.getCurrencyQuantityArray().find((entry) => entry.currency === game.gp)?.quantity ?? 0;
+
+  return { purchaseId: purchase.id, gpCost, held: game.gp.amount };
+}
+
 /**
  * Buries bones for Prayer XP and Prayer points.
  *
