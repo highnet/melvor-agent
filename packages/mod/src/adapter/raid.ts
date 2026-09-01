@@ -220,7 +220,17 @@ export function readRaidCandidates(): Candidate[] {
     {
       kind: 'run_golbin_raid',
       params: { kind: 'run_golbin_raid', difficulty: 'easy' },
-      label: 'Start a Golbin Raid on Easy — its own bank and gear, so nothing here is risked',
+      // "Nothing is risked" reads as an invitation, and it is only half the
+      // story: the raid is self-contained in both directions. It grants no
+      // skill XP — neither raidManager nor raidPlayer references experience
+      // anywhere in the typings — so it cannot advance Magic, Hitpoints or any
+      // other goal, and an agent short of combat levels will find nothing here.
+      //
+      // Said plainly because the old label invited exactly that mistake: it was
+      // read as a safe way to train combat while the character had no Auto Eat,
+      // which it is not.
+      label:
+        'Start a Golbin Raid on Easy — its own bank and gear, so nothing is risked and no skill XP is earned either; the rewards are raid-only',
       available: true,
     },
   ];
