@@ -1,6 +1,25 @@
 import { z } from 'zod';
 
 /**
+ * A note on `.default()`, learned by defeating this file's own mechanism.
+ *
+ * A stored dump is regenerated when it fails to validate against this schema,
+ * which is what keeps the reference from going stale across a game update. A
+ * field declared with `.default()` never fails: the old dump validates, the
+ * default is filled in, and nothing regenerates.
+ *
+ * Monster loot tables were added with `.default([])` for safety and were
+ * therefore never captured — 377 monsters with every loot table empty, while
+ * `summoningRecipes` and `skillRareDrops`, added the same day without
+ * defaults, appeared immediately. The defensive-looking option was the one
+ * that silently did nothing, and the section read as "no monster drops seeds"
+ * rather than "this was never collected".
+ *
+ * Add new sections and fields as required. A dump that refuses to load is a
+ * dump that regenerates; a dump that loads with holes is a dump that lies.
+ */
+
+/**
  * The shape of `knowledge/dump.json`.
  *
  * The game's registries are the numeric source of truth: they are correct for
@@ -187,7 +206,7 @@ export const knowledgeDumpSchema = z.object({
       maxHit: z.number().nonnegative(),
       lootTable: z.array(z.string()),
       /** The guaranteed drop, which the loot table does not include. */
-      uniqueDrop: z.string().default(''),
+      uniqueDrop: z.string(),
     }),
   ),
 
@@ -209,9 +228,9 @@ export const knowledgeDumpSchema = z.object({
        * table that rolls one kill in fifty is not comparable to a Bird Nest,
        * and comparing them is the reason to have either.
        */
-      lootChance: z.number().nonnegative().default(0),
-      lootTable: z.array(z.string()).default([]),
-      bones: z.string().default(''),
+      lootChance: z.number().nonnegative(),
+      lootTable: z.array(z.string()),
+      bones: z.string(),
     }),
   ),
 
