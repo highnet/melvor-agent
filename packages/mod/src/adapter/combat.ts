@@ -152,6 +152,30 @@ function worstCaseStats(monsters: readonly Monster[]): ProbedStats | null {
  * a second later against the live enemy, whose stats the game computes for
  * real — see `verifyLiveEngagement`.
  */
+/**
+ * A target's combat level, for the screen.
+ *
+ * A dungeon is rated by its hardest monster, the same way the gate judges it:
+ * a dungeon cannot be left partway, so its worst fight is the one that decides.
+ */
+export function readTargetCombatLevel(targetId: string): number | null {
+  try {
+    const monster = game.monsters.getObjectByID(targetId);
+    if (monster !== undefined) return monster.combatLevel;
+
+    const dungeon = game.dungeons.getObjectByID(targetId);
+    if (dungeon === undefined) return null;
+
+    let hardest = 0;
+    for (const inhabitant of dungeon.monsters) {
+      hardest = Math.max(hardest, inhabitant.combatLevel);
+    }
+    return hardest > 0 ? hardest : null;
+  } catch {
+    return null;
+  }
+}
+
 export function screenByCombatLevel(monsterCombatLevel: number): { ok: boolean; detail: string } {
   const playerLevel = playerCombatLevel();
 

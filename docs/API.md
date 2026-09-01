@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-143 exports.
+144 exports.
 
 ## `act`
 
@@ -1294,6 +1294,19 @@ are offered, and only the half that is missing from the slots.
 readSynergyCandidates: () => Candidate[]
 ```
 
+## `readTargetCombatLevel`
+
+`function`
+
+A target's combat level, for the screen.
+
+A dungeon is rated by its hardest monster, the same way the gate judges it:
+a dungeon cannot be left partway, so its worst fight is the one that decides.
+
+```ts
+readTargetCombatLevel: (targetId: string) => number | null
+```
+
 ## `readTaskCandidates`
 
 `function`
@@ -1456,19 +1469,6 @@ SaleProjection: any
 ## `screenByCombatLevel`
 
 `function`
-
-A conservative screen using only data the game states plainly.
-
-Used when the probe cannot measure, which outside combat is always. It makes
-no attempt to predict damage — predicting it would mean reimplementing the
-game's formulas, which is how a safety check quietly becomes fiction. It only
-asks the question a human answers by glancing at a monster: is this thing
-obviously out of my league?
-
-Deliberately strict. Screening out a fight the character could have won costs
-some XP; screening in one it cannot costs the run. The real judgement happens
-a second later against the live enemy, whose stats the game computes for
-real — see `verifyLiveEngagement`.
 
 ```ts
 screenByCombatLevel: (monsterCombatLevel: number) => { ok: boolean; detail: string; }

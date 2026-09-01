@@ -61,6 +61,7 @@ import {
   readSnapshot,
   readSpellCandidates,
   readSynergyCandidates,
+  readTargetCombatLevel,
   readTaskCandidates,
   readTaskOpportunities,
   readTownHealthCandidates,
@@ -986,10 +987,27 @@ export class Agent {
 
     const gathered = readCombatGateInputs(targetId, sessionMinutes);
     if (!gathered.ok) {
-      // Could not measure means could not prove, which is a refusal — never an
-      // assumption that the fight is fine.
-      this.log.warn('policy', `combat gate: cannot assess ${targetId} — ${gathered.detail}`);
-      return fail('combat.gate', 'precondition', gathered.detail);
+      // The same fallback the enumeration uses. Without it here, a fight could
+      // be offered as a candidate and then refused when chosen — the candidate
+      // and the executor disagreeing, which is the failure this whole
+      // constrained-selection design exists to prevent.
+      const combatLevel = readTargetCombatLevel(targetId);
+      if (combatLevel === null) {
+        this.log.warn('policy', `combat gate: cannot assess ${targetId} — ${gathered.detail}`);
+        return fail('combat.gate', 'precondition', gathered.detail);
+      }
+
+      const screen = screenByCombatLevel(combatLevel);
+      if (!screen.ok) {
+        this.log.warn('policy', `combat gate REFUSED ${targetId}: ${screen.detail}`);
+        return fail('combat.gate', 'precondition', screen.detail);
+      }
+
+      this.log.info(
+        'policy',
+        `combat screen passed ${targetId}: ${screen.detail}. Enemy stats cannot be computed outside combat, so the live check takes over once the fight starts.`,
+      );
+      return null;
     }
 
     // The auto-eat getters are documented only by name; normalising guards
