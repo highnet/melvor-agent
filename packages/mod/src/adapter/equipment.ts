@@ -31,6 +31,25 @@ function projectSlot(slotId: string): EquipProjection {
 }
 
 /**
+ * How many of an item to put in a slot.
+ *
+ * Ammunition is the reason this exists. The call passed a hardcoded `1`, which
+ * is right for a platebody and catastrophic for arrows: the agent equipped a
+ * single Bronze Arrow out of a bank holding 1,259, fired it, and stood in a
+ * fight with an empty quiver and no way to notice. The bank count dropping by
+ * exactly one is what gave it away — a quantity bug is invisible in a slot
+ * projection that only records which item is worn.
+ *
+ * Takes the slot's `allowQuantity` flag rather than the slot, so the rule is
+ * testable without a live game: the flag is the game's own answer to "does this
+ * slot hold a stack", and everything else here is arithmetic.
+ */
+export function equipQuantity(allowQuantity: boolean, heldQuantity: number): number {
+  if (!allowQuantity) return 1;
+  return Math.max(1, heldQuantity);
+}
+
+/**
  * Equips an item from the bank.
  *
  * `Player.equipItem` returns a boolean, but a `true` return does not prove the
@@ -55,10 +74,15 @@ export function equipItem(
     return fail('equipment.equip', 'precondition', `no equipment item registered as ${itemId}`);
   }
 
-  const slot = slotId ?? item.validSlots[0]?.id;
-  if (slot === undefined) {
+  const targetSlot =
+    slotId === undefined
+      ? item.validSlots[0]
+      : (item.validSlots.find((valid) => valid.id === slotId) ??
+        game.equipmentSlots.getObjectByID(slotId));
+  if (targetSlot === undefined) {
     return fail('equipment.equip', 'precondition', `${itemId} has no valid equipment slot`);
   }
+  const slot = targetSlot.id;
 
   const player = game.combat.player;
 
@@ -86,7 +110,13 @@ export function equipItem(
         // catch a swap that made things worse.
         return null;
       },
-      perform: () => player.equipItem(item, player.selectedEquipmentSet, item.validSlots[0], 1),
+      perform: () =>
+        player.equipItem(
+          item,
+          player.selectedEquipmentSet,
+          targetSlot,
+          equipQuantity(targetSlot.allowQuantity, game.bank.getQty(item)),
+        ),
       changed: (_before, after) => after.itemId === itemId,
     },
     isSuspended,

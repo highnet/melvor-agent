@@ -425,10 +425,25 @@ describe('expandBankWhenFull', () => {
     expect(bought).toEqual(['melvorD:Extra_Bank_Slot']);
   });
 
-  it('leaves a bank with room alone', () => {
-    // One slot left is tight, not lossy, and the planner may be spending down
-    // to a floor on purpose.
-    expect(expandBankWhenFull({ freeSlots: 1, expansion: slot }, () => ok())).toBeNull();
+  it('leaves a bank with real room alone', () => {
+    expect(expandBankWhenFull({ freeSlots: 8, expansion: slot }, () => ok())).toBeNull();
+  });
+
+  it('buys early when the slot is small change', () => {
+    // The premise this replaces said one slot left was "tight, not lossy". At
+    // zero the loss has already started, so waiting for zero is waiting for the
+    // damage. When a slot is 5% of what is held, pre-empting is nearly free.
+    const cheap = { purchaseId: 'melvorD:Extra_Bank_Slot', gpCost: 2_000, held: 100_000 };
+
+    expect(expandBankWhenFull({ freeSlots: 2, expansion: cheap }, () => ok())).not.toBeNull();
+  });
+
+  it('waits for the emergency when the slot is dear', () => {
+    // 27,044 against 49,356 held is 55% — real money. Under mere pressure that
+    // waits; at zero free slots the same purchase goes through below.
+    const dear = { purchaseId: 'melvorD:Extra_Bank_Slot', gpCost: 27_044, held: 49_356 };
+
+    expect(expandBankWhenFull({ freeSlots: 2, expansion: dear }, () => ok())).toBeNull();
   });
 
   it('buys even when the slot is a sizeable slice of what is held', () => {

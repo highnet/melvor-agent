@@ -319,13 +319,40 @@ export function plantEmptyPlots(
 const BANK_SLOT_GP_FRACTION = 0.5;
 
 /**
- * Buys a bank slot when the bank is completely full.
+ * Slot cost as a fraction of held GP that is worth paying *before* anything is
+ * being lost.
+ *
+ * The old rule fired only at zero free slots, on the reasoning that "one slot
+ * left is tight, not lossy". That reasoning is wrong in one specific way, and
+ * the session showed it: at zero, the loss has already started. Items were
+ * being discarded while Mining ran, and the reflex was waiting for exactly the
+ * moment that means the damage is underway.
+ *
+ * Reacting a few slots early costs GP; reacting at zero costs items that cannot
+ * be recovered. So the threshold is graduated rather than moved: buy early when
+ * a slot is small change, and hold out to the last moment when it is dear.
+ */
+const BANK_SLOT_CHEAP_FRACTION = 0.05;
+
+/** Free slots at or below which a cheap slot is worth buying pre-emptively. */
+const BANK_PRESSURE_SLOTS = 3;
+
+/**
+ * Buys a bank slot under pressure, earlier when the slot is cheap.
  *
  * A full bank does not stop a skill; it silently discards every new item type
  * while the action keeps running, so an unattended agent can dig for hours and
  * bank nothing. The candidate list already said so in plain words — "Bank is
  * FULL, any new item type is being discarded silently" — and nothing acted on
  * it, because saying it to a human who is not there is not a fix.
+ *
+ * Two thresholds, because the two situations are genuinely different:
+ *
+ * - At zero free slots the bank is losing continuously, and half of held GP is
+ *   worth paying to stop it.
+ * - At three or fewer, nothing is lost yet, so it is only worth pre-empting
+ *   while the slot is small change. A character that is nearly broke, or one
+ *   whose slot price has climbed into real money, waits for the emergency.
  *
  * Buying, never selling. Which stack is worth destroying is a judgement with no
  * undo, and the brief rules irreversible actions out; a slot is additive,
@@ -338,13 +365,13 @@ export function expandBankWhenFull(
   },
   buy: (purchaseId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  // Only at zero. One slot left is tight, not lossy, and the planner may be
-  // deliberately spending down to a floor.
-  if (state.freeSlots > 0) return null;
+  if (state.freeSlots > BANK_PRESSURE_SLOTS) return null;
 
   const expansion = state.expansion;
   if (expansion === null) return null;
-  if (expansion.gpCost > expansion.held * BANK_SLOT_GP_FRACTION) return null;
+
+  const fraction = state.freeSlots <= 0 ? BANK_SLOT_GP_FRACTION : BANK_SLOT_CHEAP_FRACTION;
+  if (expansion.gpCost > expansion.held * fraction) return null;
 
   return { name: 'reflex.expandBank', result: buy(expansion.purchaseId) };
 }
