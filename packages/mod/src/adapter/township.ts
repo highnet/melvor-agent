@@ -86,6 +86,13 @@ export function buildTownshipBuilding(
         }
         if (township.isBuildingMaxed(building, biome))
           return `${buildingId} is maxed in ${biomeId}`;
+        // Tier requirements are separate from availability: a building can be
+        // available in a biome and still refuse to build because the town lacks
+        // the population or Township level its tier demands. Without this,
+        // Market, Gardens and Library were all offered and all did nothing.
+        if (!township.canBuildTierOfBuilding(building, false)) {
+          return `${buildingId} is a tier the town cannot build yet (population or Township level)`;
+        }
         if (!township.canAffordBuilding(building, biome, 1)) {
           return `cannot afford ${buildingId} in ${biomeId}`;
         }
@@ -209,6 +216,8 @@ export function readTownshipCandidates(): Candidate[] {
 
         if (township.isBuildingMaxed(building, biome)) continue;
         if (!township.isBuildingAvailable(building, biome)) continue;
+        // Availability and tier are different questions; see the precondition.
+        if (!township.canBuildTierOfBuilding(building, false)) continue;
         if (!township.canAffordBuilding(building, biome, 1)) continue;
 
         const provides = township.getProvidesForBiome(building, biome);
