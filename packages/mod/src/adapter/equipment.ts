@@ -343,6 +343,16 @@ export function eatFood(
 ): ActionResult<{ hp: number; quantity: number }> {
   const player = game.combat.player;
 
+  // Point the game at a slot that actually holds food before eating.
+  // `currentSlot` returns the *selection*, not the food, and equipping food
+  // does not select it — so a character can hold 33 chickens in slot 1 with
+  // slot 0 selected and every attempt to eat reports "no food equipped".
+  // That is how this character died with a full larder.
+  if (player.food.currentSlot.quantity <= 0) {
+    const stocked = player.food.slots.findIndex((slot) => slot.quantity > 0);
+    if (stocked >= 0) player.food.selectedSlot = stocked;
+  }
+
   const project = (): { hp: number; quantity: number } => ({
     hp: player.hitpoints,
     quantity: player.food.currentSlot.quantity,
