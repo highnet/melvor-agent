@@ -436,13 +436,41 @@ function thievingCandidates(): Candidate[] {
           skillId: THIEVING_ID,
           recipeId: npc.id,
         },
-        label: `Thieving: ${npc.name}`,
+        // Damage is named, because Thieving hurts and the number is not
+        // proportional to level. Golbin Chief hits 10.1 at level 16 while
+        // Marauder hits 6.8 at 21 and Assistant Cook 8.6 at 26 — so choosing by
+        // XP alone picks the hardest-hitting NPC of its tier without ever
+        // seeing the figure. It was chosen exactly that way, and the operator
+        // had to point out that it hits hard for the character's health.
+        //
+        // Shown as a share of *current* health rather than maximum: a hit worth
+        // a fifteenth of a full bar is a different proposition at half health,
+        // and Thieving damage accrues over many failures rather than resolving
+        // in one fight.
+        label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)`,
         xpPerHour: actionsPerHour * npc.baseExperience * successRate,
         gpPerHour: actionsPerHour * gpPerAction * successRate,
         requiresLevel: npc.level,
         available: true as const,
       };
     });
+}
+
+/**
+ * A hit expressed against the health actually available.
+ *
+ * The planner reads these labels as text; a bare number invites comparing max
+ * hits to each other rather than to the character, which is the comparison that
+ * decides whether a run is survivable.
+ */
+function hpShare(maxHit: number): string {
+  try {
+    const current = game.combat.player.hitpoints;
+    if (current <= 0) return 'unknown share';
+    return `${Math.round((maxHit / current) * 100)}%`;
+  } catch {
+    return 'unknown share';
+  }
 }
 
 function fishingCandidates(): Candidate[] {
