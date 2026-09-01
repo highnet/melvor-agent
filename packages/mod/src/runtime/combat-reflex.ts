@@ -14,8 +14,16 @@ import type { ActionResult } from '@melvor-agent/shared';
  * work added to it is paid for on every frame of every fight.
  */
 
-/** Below this many items in the slot, top up. Auto-eat empties a slot fast. */
-const FOOD_TOPUP_THRESHOLD = 5;
+/**
+ * Below this many items in the slot, top up.
+ *
+ * Raised from five after watching it live: a failed pickpocket can take a
+ * quarter of the character's health, so five meals is a couple of bad seconds,
+ * not a buffer. The cost of topping up early is nothing — the food returns to
+ * the bank untouched if it is not eaten — while the cost of being empty is the
+ * eat reflex having nothing to work with, which is how this character died.
+ */
+const FOOD_TOPUP_THRESHOLD = 15;
 
 /** What one reflex pass did, for the journal. */
 export interface ReflexOutcome {
