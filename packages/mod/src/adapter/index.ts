@@ -182,7 +182,9 @@ export {
   readExplorationCandidates,
   readPaperCandidates,
   startPaperMaking,
+  readTravelCandidates,
   selectDigSiteMap,
+  travelToPointOfInterest,
   selectDigSiteTool,
   surveyBestHex,
 } from './exploration.js';

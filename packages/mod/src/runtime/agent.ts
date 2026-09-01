@@ -80,6 +80,7 @@ import {
   readTownHealthCandidates,
   readTownshipCandidates,
   readTraderCandidates,
+  readTravelCandidates,
   readUpgradeCandidates,
   readWorshipCandidates,
   repairTownshipBuilding,
@@ -106,6 +107,7 @@ import {
   toggleBankLock,
   toggleCurse,
   togglePrayer,
+  travelToPointOfInterest,
   unlockFarmPlot,
   unlockSkillTreeNode,
   upgradeBankItem,
@@ -1041,6 +1043,8 @@ export class Agent {
         return toggleBankLock(action.itemId, isSuspended);
       case 'select_level_cap':
         return selectLevelCapIncrease(action.capIncreaseId, action.skillId, isSuspended);
+      case 'travel_to_poi':
+        return travelToPointOfInterest(action.poiId, isSuspended);
       case 'unlock_plot':
         return unlockFarmPlot(action.plotId, isSuspended);
       case 'harvest_plot':
@@ -1287,6 +1291,7 @@ export class Agent {
       ['mastery', readMasteryCandidates],
       ['slayer', readSlayerCandidates],
       ['farm', readFarmCandidates],
+      ['travel', readTravelCandidates],
       ['combat setup', readCombatSetupCandidates],
       ['equipment sets', readEquipmentSetCandidates],
       ['spell', readSpellCandidates],

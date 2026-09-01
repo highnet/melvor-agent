@@ -68,6 +68,7 @@ describe('capability registry', () => {
       'toggle_bank_lock',
       'toggle_curse',
       'toggle_prayer',
+      'travel_to_poi',
       'unlock_skill_node',
       'upgrade_constellation',
       'upgrade_item',

@@ -133,6 +133,114 @@ export function surveyBestHex(isSuspended: () => boolean): ActionResult<{
   );
 }
 
+/**
+ * Travels to a surveyed but undiscovered Point of Interest.
+ *
+ * The gap this closes was found the hard way. Surveying a hex queues a POI and
+ * the game raises a "Travel there now?" modal — which an unattended agent can
+ * neither see nor answer, so it sat there swallowing input while every reload
+ * click went into it. Discovering POIs is not optional decoration either: the
+ * Old Village dig site, and therefore Archaeology at all, is reached only by
+ * travelling to one.
+ *
+ * `travelOnClick` is the modal's button. `movePlayer` is the operation, and it
+ * takes a path rather than a destination, so the path is computed first and the
+ * cost is checked before spending anything — `ignoreCosts` stays false so the
+ * game deducts and refuses exactly as it would for a player.
+ */
+export function travelToPointOfInterest(
+  poiId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ discovered: number; undiscovered: number; position: string }> {
+  const cartography = game.cartography;
+  if (cartography === undefined) {
+    return fail('cartography.travel', 'precondition', 'Cartography is not installed');
+  }
+
+  const map = cartography.activeMap;
+  if (map === undefined) {
+    return fail('cartography.travel', 'precondition', 'no world map is active');
+  }
+
+  const poi = map.undiscoveredPOIs.find((candidate) => candidate.id === poiId);
+  if (poi === undefined) {
+    return fail(
+      'cartography.travel',
+      'precondition',
+      `no surveyed-but-undiscovered point of interest ${poiId}`,
+    );
+  }
+
+  const project = (): { discovered: number; undiscovered: number; position: string } => ({
+    discovered: map.discoveredPOIs.length,
+    undiscovered: map.undiscoveredPOIs.length,
+    position: `${map.playerPosition.q},${map.playerPosition.r}`,
+  });
+
+  return act(
+    {
+      name: 'cartography.travel',
+      observe: project,
+      precondition: () => {
+        if (poi.isDiscovered) return `${poi.name} is already discovered`;
+        const path = map.computePath(map.playerPosition, poi.hex);
+        if (path === undefined) return `no path from the player's position to ${poi.name}`;
+        // The game prices the whole path, and the price rises with distance —
+        // so this is asked here rather than assumed from a remembered number.
+        if (!cartography.getTravelCosts(path).checkIfOwned()) {
+          return `cannot afford the journey to ${poi.name}`;
+        }
+        return null;
+      },
+      perform: () => {
+        const path = map.computePath(map.playerPosition, poi.hex);
+        if (path !== undefined) cartography.movePlayer(path, false);
+      },
+      // Arriving is not the point; discovering is. A move that ends somewhere
+      // else, or that stops short because the path was blocked, leaves this
+      // count unchanged and is reported as the no-op it was.
+      changed: (before, after) => after.discovered > before.discovered,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Points of interest that have been surveyed but never visited.
+ *
+ * Offered cheapest-first. Each one is a one-off with a fixed reward, and the
+ * chain matters more than any single entry — travelling to one reveals the
+ * next, and somewhere along it are the dig sites.
+ */
+export function readTravelCandidates(): Candidate[] {
+  const cartography = game.cartography;
+  if (cartography === undefined) return [];
+  const map = cartography.activeMap;
+  if (map === undefined) return [];
+
+  const candidates: Candidate[] = [];
+
+  for (const poi of map.undiscoveredPOIs) {
+    try {
+      if (poi.isDiscovered) continue;
+      const path = map.computePath(map.playerPosition, poi.hex);
+      if (path === undefined) continue;
+      if (!cartography.getTravelCosts(path).checkIfOwned()) continue;
+
+      candidates.push({
+        kind: 'travel_to_poi',
+        params: { kind: 'travel_to_poi', poiId: poi.id },
+        label: `Travel to ${poi.name} (${path.length} hexes) — a surveyed point of interest stays unclaimed until someone goes there, and dig sites are found this way`,
+        available: true,
+      });
+    } catch {
+      // A POI that cannot report a path is not a candidate.
+    }
+  }
+
+  return candidates;
+}
+
 // --- archaeology -----------------------------------------------------------
 
 /**

@@ -34,6 +34,7 @@ export const objectiveKindSchema = z.enum([
   'toggle_bank_lock',
   'select_level_cap',
   'select_dig_map',
+  'travel_to_poi',
   'select_dig_tool',
   'run_golbin_raid',
   'build_obstacle',
@@ -160,6 +161,16 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('select_dig_map'),
     digSiteId: gameIdSchema,
     mapIndex: z.number().int().nonnegative(),
+  }),
+  z.object({
+    /**
+     * Travel to a surveyed but undiscovered Point of Interest.
+     *
+     * The game raises a modal asking this, which an unattended agent cannot
+     * answer — and dig sites, and therefore Archaeology, are reached this way.
+     */
+    kind: z.literal('travel_to_poi'),
+    poiId: gameIdSchema,
   }),
   z.object({
     kind: z.literal('select_dig_tool'),

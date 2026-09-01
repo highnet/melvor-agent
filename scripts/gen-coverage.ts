@@ -51,6 +51,7 @@ const DESCRIPTIONS: Record<string, string> = {
   survey_hex: 'Survey the best available Cartography hex',
   excavate_dig_site: 'Excavate an Archaeology dig site',
   select_dig_map: 'Select the map a dig site digs with',
+  travel_to_poi: 'Travel to a surveyed Point of Interest, which is how dig sites are reached',
   select_dig_tool: 'Select which tools a dig site uses',
   build_obstacle: 'Build an Agility course obstacle',
   upgrade_constellation: 'Spend stardust on a constellation modifier',

@@ -107,6 +107,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `selecting map ${params.mapIndex} for ${params.digSiteId}`,
       );
 
+    case 'travel_to_poi':
+      return act(
+        { type: 'travel_to_poi', poiId: params.poiId },
+        `travelling to point of interest ${params.poiId}`,
+      );
+
     case 'select_dig_tool':
       return act(
         { type: 'select_dig_tool', digSiteId: params.digSiteId, toolId: params.toolId },

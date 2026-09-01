@@ -59,6 +59,7 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   open_item: manage,
   restore_town_health: manage,
   select_dig_map: manage,
+  travel_to_poi: manage,
   select_dig_tool: manage,
   toggle_curse: manage,
   toggle_aurora: manage,
