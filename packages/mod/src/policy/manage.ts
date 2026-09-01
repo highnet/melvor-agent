@@ -213,6 +213,17 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         'answering the event passive choice',
       );
 
+    case 'convert_to_township':
+      return act(
+        {
+          type: 'convert_to_township',
+          itemId: params.itemId,
+          resourceId: params.resourceId,
+          quantity: params.quantity,
+        },
+        `trading ${params.quantity}x ${params.itemId} to the town for ${params.resourceId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

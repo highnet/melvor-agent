@@ -61,6 +61,7 @@ export type PolicyAction =
   | { type: 'claim_casual_task'; taskId: string }
   | { type: 'start_combat_event'; eventId: string }
   | { type: 'choose_event_passive'; passiveId?: string }
+  | { type: 'convert_to_township'; itemId: string; resourceId: string; quantity: number }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }

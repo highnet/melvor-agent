@@ -372,7 +372,13 @@ export function selectTownshipWorship(
  */
 export function readWorshipCandidates(): Candidate[] {
   const township = game.township;
-  if (township.townData.worship !== township.noWorship) return [];
+  // An uncreated town always offers this, even when a worship is already
+  // staged: the selection screen keeps the choice across a reload, so filtering
+  // on "has a worship" strands the character with a deity, no town, and no
+  // candidate that can finish founding it.
+  if (township.townData.townCreated && township.townData.worship !== township.noWorship) {
+    return [];
+  }
 
   const candidates: Candidate[] = [];
 

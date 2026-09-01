@@ -50,6 +50,7 @@ export const objectiveKindSchema = z.enum([
   'claim_casual_task',
   'start_combat_event',
   'choose_event_passive',
+  'convert_to_township',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -258,6 +259,13 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
      */
     kind: z.literal('choose_event_passive'),
     passiveId: gameIdSchema.optional(),
+  }),
+  z.object({
+    /** Bank items into town resources — how a new town gets anything at all. */
+    kind: z.literal('convert_to_township'),
+    itemId: gameIdSchema,
+    resourceId: gameIdSchema,
+    quantity: z.number().int().positive(),
   }),
   z.object({
     kind: z.literal('toggle_curse'),

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-137 exports.
+141 exports.
 
 ## `act`
 
@@ -351,6 +351,44 @@ either side instead.
 
 ```ts
 compostFarmPlot: (plotId: string, compostId: string, amount: number, isSuspended: () => boolean) => ActionResult<{ plotId: string; compostLevel: number; }>
+```
+
+## `ConversionProjection`
+
+`interface`
+
+What a conversion claims to change: bank down, town resource up.
+
+```ts
+ConversionProjection: any
+```
+
+## `convertItemToTownship`
+
+`function`
+
+Trades bank items to the town for a resource.
+
+`processConversionToTownship` returns void, and the quantity is *staged*
+separately by `updateConvertToQty` rather than passed in — so both sides are
+observed instead: the item leaving the bank and the resource arriving.
+
+```ts
+convertItemToTownship: (itemId: string, resourceId: string, quantity: number, isSuspended: () => boolean) => ActionResult<ConversionProjection>
+```
+
+## `convertTownshipToItem`
+
+`function`
+
+Trades the town's resources back for items.
+
+The reverse direction is rarely the right move — the town needs its resources
+far more than the bank needs another log — so it exists for completeness and
+is not offered as a candidate. A planner that wants it can ask.
+
+```ts
+convertTownshipToItem: (resourceId: string, itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<ConversionProjection>
 ```
 
 ## `disengageCombat`
@@ -1325,6 +1363,21 @@ nothing per hour no matter how many buildings it has.
 
 ```ts
 readTownshipSummary: () => TownshipSummary | null
+```
+
+## `readTraderCandidates`
+
+`function`
+
+Trades the town actually needs.
+
+Only offered for resources the town is short of, and only for items the bank
+has a real surplus of. Both halves matter: trading away a stack the character
+is about to use is a loss, and topping up a resource the town already has
+plenty of does nothing.
+
+```ts
+readTraderCandidates: () => Candidate[]
 ```
 
 ## `readUpgradeCandidates`

@@ -22,6 +22,7 @@ import {
   claimCasualTask,
   claimTownshipTask,
   compostFarmPlot,
+  convertItemToTownship,
   disengageCombat,
   dumpRegistries,
   eatFood,
@@ -63,6 +64,7 @@ import {
   readTaskCandidates,
   readTownHealthCandidates,
   readTownshipCandidates,
+  readTraderCandidates,
   readUpgradeCandidates,
   readWorshipCandidates,
   repairTownshipBuilding,
@@ -878,6 +880,13 @@ export class Agent {
         return startCombatEvent(action.eventId, isSuspended);
       case 'choose_event_passive':
         return chooseEventPassive(action.passiveId, isSuspended);
+      case 'convert_to_township':
+        return convertItemToTownship(
+          action.itemId,
+          action.resourceId,
+          action.quantity,
+          isSuspended,
+        );
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1094,6 +1103,7 @@ export class Agent {
       ['spell', readSpellCandidates],
       ['township', readTownshipCandidates],
       ['township tasks', readTaskCandidates],
+      ['township trader', readTraderCandidates],
       ['combat event', readEventCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],

@@ -103,6 +103,12 @@ export {
 } from './township.js';
 export { readActiveRecipeIds } from './active.js';
 export {
+  convertItemToTownship,
+  convertTownshipToItem,
+  readTraderCandidates,
+  type ConversionProjection,
+} from './trader.js';
+export {
   chooseEventPassive,
   readEventCandidates,
   startCombatEvent,
