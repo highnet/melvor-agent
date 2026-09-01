@@ -1,7 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
-import { affordableAlternative } from './candidates.js';
+import { affordableAlternative, affordableNonShardItem } from './candidates.js';
 import type { GatheringProjection } from './gathering.js';
 
 /**
@@ -46,6 +46,8 @@ interface ArtisanLike {
   getRecipeCosts(recipe: object): { checkIfOwned(): boolean };
   /** Present on skills whose recipes accept alternative inputs, e.g. Fletching. */
   setAltRecipes?: Map<object, number>;
+  /** Summoning's equivalent: which secondary material a tablet is made from. */
+  selectedNonShardCosts?: Map<object, AnyItem>;
   selectRecipeOnClick(recipe: object): void;
   createButtonOnClick(): void;
   stop(): boolean;
@@ -149,7 +151,8 @@ export function startArtisan(
         // can plainly make reads as unaffordable until the right one is chosen.
         if (
           !skill.getRecipeCosts(recipe).checkIfOwned() &&
-          affordableAlternative(recipe) === null
+          affordableAlternative(recipe) === null &&
+          affordableNonShardItem(recipe) === null
         ) {
           return `missing materials for ${recipeId}`;
         }
@@ -170,6 +173,12 @@ export function startArtisan(
         const alternative = affordableAlternative(recipe);
         if (alternative !== null && typeof skill.setAltRecipes?.set === 'function') {
           skill.setAltRecipes.set(recipe, alternative);
+        }
+
+        // Summoning's equivalent: pick a secondary material actually held.
+        const nonShard = affordableNonShardItem(recipe);
+        if (nonShard !== null && typeof skill.selectedNonShardCosts?.set === 'function') {
+          skill.selectedNonShardCosts.set(recipe, nonShard);
         }
 
         if (skill.selectedRecipe?.id !== recipeId) {

@@ -241,6 +241,28 @@ export function affordableAlternative(recipe: object): number | null {
   return null;
 }
 
+/**
+ * A Summoning secondary material the bank can pay for.
+ *
+ * Summoning tablets take shards plus *one of several* secondary items — a
+ * familiar might accept logs or ore or fish. The game prices whichever is
+ * selected, and with nothing selected the recipe reads as unaffordable, so
+ * Summoning appeared in neither the candidate list nor the blocked list: the
+ * skill was simply absent.
+ *
+ * The same shape as {@link affordableAlternative} under a different field name,
+ * which is why it is checked alongside it rather than folded in: one is a set
+ * of cost *lists*, the other a set of interchangeable *items*.
+ *
+ * @returns An affordable secondary item, or null if none is held.
+ */
+export function affordableNonShardItem(recipe: object): AnyItem | null {
+  const options = (recipe as { nonShardItemCosts?: AnyItem[] }).nonShardItemCosts;
+  if (!Array.isArray(options)) return null;
+
+  return options.find((item) => game.bank.getQty(item) > 0) ?? null;
+}
+
 function canAfford(
   skill: { getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean } },
   recipe: object,
@@ -251,7 +273,7 @@ function canAfford(
     // shafts default to Normal Logs, so a character holding 300 Oak and 258
     // Mahogany read as unable to fletch anything at all, and the skill had no
     // candidates whatsoever.
-    return affordableAlternative(recipe) !== null;
+    return affordableAlternative(recipe) !== null || affordableNonShardItem(recipe) !== null;
   }
 
   const consumes = recipe as {
