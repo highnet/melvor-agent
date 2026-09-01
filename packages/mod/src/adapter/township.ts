@@ -309,7 +309,13 @@ export function selectTownshipWorship(
     return fail('township.worship', 'precondition', `no township worship ${worshipId}`);
   }
 
-  const project = (): { worshipId: string } => ({ worshipId: township.townData.worship.id });
+  // Founding is two things at once: the worship is chosen *and* the town comes
+  // into existence. Both are observed, because the first can succeed while the
+  // second silently does not — which is exactly what happened the first time.
+  const project = (): { worshipId: string; created: boolean } => ({
+    worshipId: township.townData.worship.id,
+    created: township.townData.townCreated,
+  });
 
   return act(
     {
@@ -320,7 +326,10 @@ export function selectTownshipWorship(
         // it is *how a town is created*. Requiring a town first made every
         // Township capability unreachable — the skill could never be started at
         // all, which is how it sat at level 1 while everything else advanced.
-        if (project().worshipId === worshipId) return `${worshipId} is already the town's worship`;
+        const current = project();
+        if (current.created && current.worshipId === worshipId) {
+          return `${worshipId} is already the town's worship`;
+        }
         // `isWorshipUnlocked` lives on the Township *UI* class, not the skill,
         // so the requirement check is the reachable equivalent.
         if (!game.checkRequirements(worship.unlockRequirements, false)) {
@@ -335,9 +344,19 @@ export function selectTownshipWorship(
       },
       perform: () => {
         township.selectWorship(worship);
-        township.confirmWorship();
+        if (township.townData.townCreated) {
+          // An established town is only changing its deity.
+          township.confirmWorship();
+          return;
+        }
+        // A new town needs the creation confirmed as well. `confirmWorship`
+        // alone leaves the game sitting on the selection screen with the
+        // worship set and no town — the skill stays unusable and nothing says
+        // why.
+        township.confirmTownCreation();
       },
-      changed: (_before, after) => after.worshipId === worshipId,
+      changed: (before, after) =>
+        after.worshipId === worshipId && (before.created || after.created),
     },
     isSuspended,
   );
@@ -366,8 +385,8 @@ export function readWorshipCandidates(): Candidate[] {
         kind: 'select_worship',
         params: { kind: 'select_worship', worshipId: worship.id },
         label: township.townData.townCreated
-          ? `Worship ${worship.name} — free now, 50,000,000 GP to change later`
-          : `Found the town under ${worship.name} — this creates the town and unlocks Township, its tasks and every building. Free now, 50,000,000 GP to change later`,
+          ? `Worship ${worship.name} — ${describeWorship(worship)}. Free now, 50,000,000 GP to change later`
+          : `Found the town under ${worship.name} — creates the town and unlocks Township, its tasks and every building. Bonuses: ${describeWorship(worship)}. Free now, 50,000,000 GP to change later`,
         available: true,
       });
     } catch {
@@ -509,4 +528,30 @@ export function readTaskCandidates(): Candidate[] {
   }
 
   return candidates;
+}
+
+/**
+ * What a worship actually does, in words.
+ *
+ * Choosing between five names is not a choice, it is a guess — and this
+ * particular guess is permanent until 50,000,000 GP says otherwise. The
+ * modifiers are the only thing that distinguishes them, so they belong in the
+ * label where the decision is made.
+ */
+function describeWorship(worship: TownshipWorship): string {
+  try {
+    // `print()` returns a StatDescription, not a string: the text is what the
+    // game shows, and `isDisabled` marks a modifier that is not in effect.
+    const described = worship.modifiers
+      .map((modifier) => modifier.print())
+      .filter((description) => !description.isDisabled && description.text.length > 0)
+      .map((description) => description.text);
+
+    if (described.length === 0) return 'no modifiers of its own';
+    return described.join(', ');
+  } catch {
+    // A modifier that cannot describe itself must not remove the option; the
+    // name is still better than nothing.
+    return 'bonuses could not be read';
+  }
 }
