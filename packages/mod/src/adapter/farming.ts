@@ -228,6 +228,8 @@ export function readPlantableSeeds(): {
   level: number;
   xp: number;
   seedsHeld: number;
+  /** Seeds consumed per plot. Three for an allotment, not one. */
+  seedCost: number;
 }[] {
   return game.farming.actions.allObjects
     .filter((recipe) => game.farming.level >= recipe.level)
@@ -238,6 +240,7 @@ export function readPlantableSeeds(): {
       level: recipe.level,
       xp: recipe.baseExperience,
       seedsHeld: game.bank.getQty(recipe.seedCost.item),
+      seedCost: recipe.seedCost.quantity,
     }))
     .filter((entry) => entry.seedsHeld > 0)
     .sort((a, b) => b.xp - a.xp);

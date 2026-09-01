@@ -460,7 +460,11 @@ export class Agent {
             .filter((plot) => plot.state === 'empty')
             .map((plot) => plot.id),
           plentifulSeeds: readPlantableSeeds()
-            .map((seed) => ({ recipeId: seed.recipeId, held: seed.seedsHeld }))
+            .map((seed) => ({
+              recipeId: seed.recipeId,
+              held: seed.seedsHeld,
+              cost: seed.seedCost,
+            }))
             .sort((a, b) => b.held - a.held),
         },
         (plotId, recipeId) => plantFarmPlot(plotId, recipeId, isSuspended),

@@ -357,7 +357,7 @@ describe('plantEmptyPlots', () => {
   it('plants an empty plot with a seed held in quantity', () => {
     const planted: string[] = [];
     plantEmptyPlots(
-      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Potato', held: 6 }] },
+      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Potato', held: 6, cost: 3 }] },
       (plotId, recipeId) => {
         planted.push(`${plotId}:${recipeId}`);
         return ok();
@@ -367,25 +367,25 @@ describe('plantEmptyPlots', () => {
     expect(planted).toEqual(['p1:Potato']);
   });
 
-  it('leaves a seed held singly for the planner', () => {
-    // The one herb seed the whole Herblore chain waits on must not be spent on
-    // an allotment by a reflex nobody asked.
+  it('will not plant a seed there are too few of to cover the cost', () => {
+    // A plot costs three seeds. Asking for one chose a seed that could not be
+    // planted and failed once a second: "need 3x Potato Seeds, hold 2".
     const outcome = plantEmptyPlots(
-      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Herb', held: 1 }] },
+      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Herb', held: 1, cost: 3 }] },
       () => ok(),
     );
 
     expect(outcome).toBeNull();
   });
 
-  it('skips the singleton and uses the plentiful seed behind it', () => {
+  it('skips the seed it cannot afford and uses the one behind it', () => {
     const planted: string[] = [];
     plantEmptyPlots(
       {
         emptyPlotIds: ['p1'],
         plentifulSeeds: [
-          { recipeId: 'Herb', held: 1 },
-          { recipeId: 'Cabbage', held: 6 },
+          { recipeId: 'Herb', held: 1, cost: 3 },
+          { recipeId: 'Cabbage', held: 6, cost: 3 },
         ],
       },
       (_plotId, recipeId) => {

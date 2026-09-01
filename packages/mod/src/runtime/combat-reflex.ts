@@ -277,22 +277,26 @@ export function harvestReadyPlots(
  * plots sat empty through a whole Cartography objective because the agent had
  * moved on and nothing looked back at the farm.
  *
- * Only seeds held in quantity are used. A seed held singly may be the only one
- * of its kind — the herb seed the whole Herblore chain waits on — and spending
- * that on an allotment is a decision the planner should make, not a reflex.
+ * Only seeds there are enough of to actually plant are used, measured against
+ * the recipe's own seed cost. Scarcity takes care of itself here: a seed cannot
+ * be planted in the wrong category, so an allotment can never consume the herb
+ * seed the Herblore chain is waiting on.
  */
 export function plantEmptyPlots(
   state: {
     emptyPlotIds: readonly string[];
     /** Seeds held, richest first. Callers filter to what is plantable. */
-    plentifulSeeds: readonly { recipeId: string; held: number }[];
+    plentifulSeeds: readonly { recipeId: string; held: number; cost: number }[];
   },
   plant: (plotId: string, recipeId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   const plotId = state.emptyPlotIds[0];
   if (plotId === undefined) return null;
 
-  const seed = state.plentifulSeeds.find((entry) => entry.held > 1);
+  // The game's own cost, not a guess. A plot takes three seeds, and the first
+  // version of this asked for one — so it chose a seed it could not plant and
+  // reported "need 3x Potato Seeds, hold 2" once a second.
+  const seed = state.plentifulSeeds.find((entry) => entry.held >= entry.cost);
   if (seed === undefined) return null;
 
   return { name: 'reflex.plantPlot', result: plant(plotId, seed.recipeId) };
