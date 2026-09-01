@@ -43,6 +43,7 @@ function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot {
       combatLevel: 12,
       food: [],
       selectedEquipmentSet: 0,
+      selectedFoodSlot: 0,
       equipment: [],
       enemy: null,
     },

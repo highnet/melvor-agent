@@ -382,8 +382,14 @@ export class Agent {
     if (snapshot === null) return;
 
     const isSuspended = (): boolean => this.state === 'suspended';
+    // The slot the game will actually eat from. Indexing by
+    // `selectedEquipmentSet` read an empty slot while food sat in the next one,
+    // so every reflex concluded there was nothing to eat and the character
+    // died with 33 chickens equipped.
     const slot =
-      snapshot.combat.food[snapshot.combat.selectedEquipmentSet] ?? snapshot.combat.food[0];
+      snapshot.combat.food[snapshot.combat.selectedFoodSlot] ??
+      snapshot.combat.food.find((entry) => entry.qty > 0) ??
+      snapshot.combat.food[0];
 
     const outcomes = [
       refillFood(

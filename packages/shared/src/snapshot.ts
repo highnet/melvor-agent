@@ -69,6 +69,15 @@ export const combatStateSchema = z.object({
   selectedEquipmentSet: z.number().int().nonnegative(),
   equipment: z.array(equipmentSlotStateSchema),
   /** Present only while an enemy is instantiated. */
+  /**
+   * Which food slot the game will actually eat from.
+   *
+   * Not the equipment set. A reflex that indexed food by
+   * `selectedEquipmentSet` read an empty slot while 33 chickens healing 90 each
+   * sat in the next one, concluded there was nothing to eat, and let the
+   * character die.
+   */
+  selectedFoodSlot: z.number().int().nonnegative(),
   enemy: z
     .object({
       monsterId: gameIdSchema,

@@ -159,6 +159,8 @@ export function readSnapshot(): StateSnapshot {
         };
       }),
       selectedEquipmentSet: player.selectedEquipmentSet,
+      // The food slot the game eats from, which is not the equipment set.
+      selectedFoodSlot: player.food.selectedSlot,
       equipment: Object.values(player.equipment.equippedItems).map((equipped) => {
         const isEmpty = equipped.item === equipped.emptyItem;
         return {

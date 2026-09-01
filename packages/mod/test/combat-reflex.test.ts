@@ -246,3 +246,26 @@ describe('refillFood on an empty slot', () => {
     ).toBeNull();
   });
 });
+
+describe('reading the right food slot', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  it('eats from the slot the game actually uses', () => {
+    // This killed the character. The reflex indexed food by
+    // `selectedEquipmentSet`, read an empty slot, and concluded there was
+    // nothing to eat while 33 chickens healing 90 each sat in the next slot.
+    // The snapshot now carries `selectedFoodSlot`, which is what the game eats
+    // from, and it is a different number entirely.
+    const outcome = eatWhenLow(
+      {
+        hitpoints: 6,
+        maxHitpoints: 120,
+        equippedFoodQty: 33,
+        autoEatThresholdFraction: 0,
+      },
+      () => ok,
+    );
+
+    expect(outcome?.name).toBe('reflex.eatWhenLow');
+  });
+});
