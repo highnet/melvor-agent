@@ -1,4 +1,5 @@
 import type { Candidate } from '@melvor-agent/shared';
+import { readActiveRecipeIds } from './active.js';
 import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
 import { readFoodReserve } from './equipment.js';
@@ -914,21 +915,26 @@ function readBetterRecipeNotice(): {
   const active = game.activeAction;
   if (active === undefined) return [];
 
-  let runningRecipeId = '';
-  try {
-    const selected = (active as { selectedRecipe?: { id?: string } }).selectedRecipe;
-    runningRecipeId = selected?.id ?? '';
-  } catch {
-    return [];
-  }
-  if (runningRecipeId === '') return [];
+  // `readActiveRecipeIds` rather than `active.selectedRecipe`, which was the
+  // first attempt and silently did nothing. `selectedRecipe` exists on
+  // ArtisanSkill and Farming only — not on Woodcutting, Fishing, Mining or
+  // Thieving, which are exactly the skills where grinding a superseded recipe
+  // for hours is possible. The notice was written for "pickpocketing Woman
+  // while Marauder is unlocked" and could never have fired for it.
+  //
+  // The snapshot has solved this since it was written: one function that knows
+  // where each skill keeps its selection. Reaching for a cast instead of the
+  // adapter's own reader is how a feature ends up shaped like a capability and
+  // behaving like an absence.
+  const runningRecipeIds = readActiveRecipeIds();
+  if (runningRecipeIds.length === 0) return [];
 
   const inSkill = readGatherCandidates().filter(
     (candidate) => (candidate.params as { skillId?: string }).skillId === active.id,
   );
 
-  const running = inSkill.find(
-    (candidate) => (candidate.params as { recipeId?: string }).recipeId === runningRecipeId,
+  const running = inSkill.find((candidate) =>
+    runningRecipeIds.includes(String((candidate.params as { recipeId?: unknown }).recipeId ?? '')),
   );
   const best = inSkill.reduce<Candidate | null>(
     (leader, candidate) =>
