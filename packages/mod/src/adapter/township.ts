@@ -316,7 +316,10 @@ export function selectTownshipWorship(
       name: 'township.worship',
       observe: project,
       precondition: () => {
-        if (!township.townData.townCreated) return 'the town has not been created yet';
+        // Deliberately no townCreated check: choosing a worship and confirming
+        // it is *how a town is created*. Requiring a town first made every
+        // Township capability unreachable — the skill could never be started at
+        // all, which is how it sat at level 1 while everything else advanced.
         if (project().worshipId === worshipId) return `${worshipId} is already the town's worship`;
         // `isWorshipUnlocked` lives on the Township *UI* class, not the skill,
         // so the requirement check is the reachable equivalent.
@@ -350,7 +353,6 @@ export function selectTownshipWorship(
  */
 export function readWorshipCandidates(): Candidate[] {
   const township = game.township;
-  if (!township.townData.townCreated) return [];
   if (township.townData.worship !== township.noWorship) return [];
 
   const candidates: Candidate[] = [];
@@ -363,7 +365,9 @@ export function readWorshipCandidates(): Candidate[] {
       candidates.push({
         kind: 'select_worship',
         params: { kind: 'select_worship', worshipId: worship.id },
-        label: `Worship ${worship.name} — free now, 50,000,000 GP to change later`,
+        label: township.townData.townCreated
+          ? `Worship ${worship.name} — free now, 50,000,000 GP to change later`
+          : `Found the town under ${worship.name} — this creates the town and unlocks Township, its tasks and every building. Free now, 50,000,000 GP to change later`,
         available: true,
       });
     } catch {
