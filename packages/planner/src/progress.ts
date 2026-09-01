@@ -91,9 +91,8 @@ function describe(
   gpPerHour: number,
   timesBetterThanControl: number | null,
 ): string {
-  const window =
-    `${hours.toFixed(1)}h window, ${levelsPerHour.toFixed(2)} total levels/hour` +
-    (gpPerHour > 0 ? ` and ${Math.round(gpPerHour).toLocaleString()} GP/hour` : '');
+  const earned = gpPerHour > 0 ? ` and ${Math.round(gpPerHour).toLocaleString()} GP/hour` : '';
+  const window = `${hours.toFixed(1)}h window, ${levelsPerHour.toFixed(2)} total levels/hour${earned}`;
 
   if (timesBetterThanControl === null) {
     return `${window}. No control rate available to compare against.`;
