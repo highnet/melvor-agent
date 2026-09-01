@@ -119,6 +119,7 @@ import {
   abandonIfOutmatched,
   collectPendingLoot,
   eatWhenLow,
+  harvestReadyPlots,
   openPendingContainers,
   refillFood,
 } from './combat-reflex.js';
@@ -437,6 +438,17 @@ export class Agent {
       collectPendingLoot(
         { inCombat: snapshot.combat.inCombat, hasLootWorthTaking: shouldCollectLoot() },
         () => collectLoot(isSuspended),
+      ),
+      // Farming does not occupy the action slot, so a ready plot can be
+      // cleared without interrupting anything. Left to the objective tier it
+      // would idle a whole growth cycle waiting.
+      harvestReadyPlots(
+        {
+          readyPlotIds: snapshot.farm
+            .filter((plot) => plot.state === 'grown' || plot.state === 'dead')
+            .map((plot) => plot.id),
+        },
+        (plotId) => harvestFarmPlot(plotId, isSuspended),
       ),
       // The live check that makes the pre-fight screen safe: outside combat the
       // game cannot compute enemy stats, so the screen guesses from combat

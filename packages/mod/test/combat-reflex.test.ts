@@ -5,6 +5,7 @@ import {
   collectPendingLoot,
   dropUnpayablePrayers,
   eatWhenLow,
+  harvestReadyPlots,
   openPendingContainers,
   refillFood,
 } from '../src/runtime/combat-reflex.js';
@@ -319,5 +320,32 @@ describe('openPendingContainers', () => {
 
   it('does nothing when there is no container', () => {
     expect(openPendingContainers({ hasContainer: false }, () => ok)).toBeNull();
+  });
+});
+
+describe('harvestReadyPlots', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  it('harvests a grown plot without waiting for an objective', () => {
+    // Farming is passive, so this can fire during combat or gathering alike.
+    const outcome = harvestReadyPlots({ readyPlotIds: ['p1'] }, () => ok());
+
+    expect(outcome?.name).toBe('reflex.harvestPlot');
+  });
+
+  it('does nothing when no plot is ready', () => {
+    expect(harvestReadyPlots({ readyPlotIds: [] }, () => ok())).toBeNull();
+  });
+
+  it('takes one plot per tick rather than batching', () => {
+    // Each harvest is verified by its own state transition; batching them into
+    // one reflex outcome would report a single result for several actions.
+    const harvested: string[] = [];
+    harvestReadyPlots({ readyPlotIds: ['p1', 'p2'] }, (id) => {
+      harvested.push(id);
+      return ok();
+    });
+
+    expect(harvested).toEqual(['p1']);
   });
 });

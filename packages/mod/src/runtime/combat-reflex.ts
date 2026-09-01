@@ -245,3 +245,26 @@ export function openPendingContainers(
 
   return { name: 'reflex.openContainers', result: open() };
 }
+
+/**
+ * Harvests a grown or dead plot.
+ *
+ * Farming is passive — it never occupies the game's single action slot — so a
+ * `tend_farm` objective spends a twenty-minute growth cycle returning `idle`
+ * while the character does nothing else. That is precisely the wasted-transition
+ * problem this project exists to remove, so tending belongs beside eating and
+ * looting rather than in the objective tier.
+ *
+ * Harvest only. Replanting picks a seed, and choosing what to grow is a decision
+ * the planner should keep — a reflex that silently spent the last herb seed on
+ * an allotment would be making a real choice unasked.
+ */
+export function harvestReadyPlots(
+  state: { readyPlotIds: readonly string[] },
+  harvest: (plotId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const plotId = state.readyPlotIds[0];
+  if (plotId === undefined) return null;
+
+  return { name: 'reflex.harvestPlot', result: harvest(plotId) };
+}
