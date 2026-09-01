@@ -314,11 +314,27 @@ function cannotAttackRefusal(): string | null {
     }
   }
 
-  if (player.attackType === 'magic' && player.spellSelection.attack === undefined) {
-    // Equipping a staff is only half of arming a mage. The other half has no
-    // slot and no inventory entry, so it is invisible in every projection the
-    // agent takes.
-    return 'the weapon is a staff but no attack spell is selected, so no attack can be cast';
+  if (player.attackType === 'magic') {
+    // Equipping a staff is only half of arming a mage. The other half — a
+    // selected spell, and runes to pay for it — has no slot and no inventory
+    // entry, so it is invisible in every projection the agent takes.
+    const spell = player.spellSelection.attack;
+    if (spell === undefined) {
+      return 'the weapon is a staff but no attack spell is selected, so no attack can be cast';
+    }
+
+    // Checking only that a spell is *selected* was the wrong half of the
+    // question, and it would have missed the failure it was written for. Wind
+    // Strike was selected the whole time; what was missing were the Mind Runes
+    // it spends, sold earlier as spare change. A selected spell with no runes
+    // is exactly as unfireable as no spell at all, and just as quiet.
+    const missing = spell.runesRequired.filter(
+      (rune) => game.bank.getQty(rune.item) < rune.quantity,
+    );
+    if (missing.length > 0) {
+      const names = missing.map((rune) => `${rune.quantity}x ${rune.item.name}`).join(', ');
+      return `${spell.name} is selected but the bank cannot pay for it (needs ${names})`;
+    }
   }
 
   return null;
