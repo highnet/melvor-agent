@@ -337,3 +337,38 @@ all.
 Note also `Bird_Nest_Potion_I..IV` — Herblore boosts nest drops, which closes a
 loop worth remembering: Farming needs seeds, seeds come from nests, nests are
 boosted by a Herblore potion, and Herblore is gated on Farming.
+
+## A dump section can exist, load, and answer the wrong question
+
+Three failures in one evening, all in the knowledge dump, all invisible:
+
+1. **`.default()` stopped regeneration.** A stored dump is refreshed when it
+   fails validation. A field with a default never fails, so monster loot was
+   added and never collected — 377 monsters, every table empty. The two
+   sections added the same day *without* defaults appeared immediately.
+
+2. **`skillRareDrops` answered a different question.** Added specifically to
+   find which skill drops Bird Nests; it holds the universal rares every skill
+   rolls. Sixty rows, not one nest. Nests are not in the data at all — the only
+   trace is an `increasedBirdNestDropRate` modifier, so the rate lives in game
+   logic and no dump could have answered it.
+
+3. **`lootChance` is not a drop rate.** It is the chance the table rolls at
+   all; which item emerges is `weight / totalWeight`. Reading them as one
+   produced "Golbin drops Garum Seeds at 100% loot chance" — two true facts
+   welded into a false one — and a night's plan was rewritten on it before the
+   weights were even captured.
+
+The shape is the same each time: the section was present, loaded cleanly, and
+looked authoritative. Nothing errored. An empty list read as "nothing matches"
+rather than "never collected", and a percentage read as a rate because it was
+shaped like one.
+
+What to do instead:
+
+- After adding a section, **read the data back** and count non-empty entries.
+  A commit is not a result.
+- Prefer a schema that **refuses** over one that fills in. A dump that will not
+  load regenerates; a dump that loads with holes lies.
+- Before quoting a number, ask what it is the numerator and denominator *of*.
+  `lootChance` passed that test and `100%` did not.
