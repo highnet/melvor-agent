@@ -473,10 +473,11 @@ function batchSizeFor(purchase: { purchaseId: string; gpCost: number; owned: num
   const shopPurchase = game.shop.purchases.getObjectByID(purchase.purchaseId);
   if (shopPurchase === undefined) return 1;
 
-  // A purchase that grants items is a consumable; one that grants an upgrade is
-  // not. `contains.items` is the game's own distinction.
-  const grantsItems = shopPurchase.contains.items.length > 0;
-  if (!grantsItems) return 1;
+  // The game states outright whether a purchase may be bought in quantity.
+  // Bank slots are the case that matters: an upgrade, bought repeatedly, and
+  // the constraint that has blocked production all session while the character
+  // held 178,000 GP and slots cost under a hundred.
+  if (!shopPurchase.allowQuantityPurchase) return 1;
 
   const affordable = purchase.gpCost > 0 ? Math.floor(game.gp.amount / purchase.gpCost) : 1;
   return Math.max(1, Math.min(CONSUMABLE_BATCH, affordable));
