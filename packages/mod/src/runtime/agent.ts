@@ -47,6 +47,7 @@ import {
   readBankedFood,
   readBlockedOpportunities,
   readBoneCandidates,
+  readClaimableTasks,
   readCombatGateInputs,
   readCombatSetupCandidates,
   readCombatTargets,
@@ -125,6 +126,7 @@ import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
 import type { PolicyAction } from '../policy/types.js';
 import {
   abandonIfOutmatched,
+  claimFinishedTasks,
   collectPendingLoot,
   compostBeforePlanting,
   eatWhenLow,
@@ -477,6 +479,13 @@ export class Agent {
             .map((plot) => plot.id),
         },
         (plotId) => harvestFarmPlot(plotId, isSuspended),
+      ),
+      // Finished work the town is sitting on. Free, and it unblocks the slot
+      // so the next task can start.
+      claimFinishedTasks({ claimable: readClaimableTasks() }, (kind, taskId) =>
+        kind === 'casual'
+          ? claimCasualTask(taskId, isSuspended)
+          : claimTownshipTask(taskId, isSuspended),
       ),
       // Ahead of every other farm reflex: a plot that does not exist cannot be
       // composted, planted or harvested.

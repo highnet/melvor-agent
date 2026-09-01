@@ -2,6 +2,7 @@ import type { ActionResult } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   abandonIfOutmatched,
+  claimFinishedTasks,
   collectPendingLoot,
   compostBeforePlanting,
   dropUnpayablePrayers,
@@ -521,5 +522,56 @@ describe('unlockAffordablePlots', () => {
     });
 
     expect(bought).toEqual(['p1']);
+  });
+});
+
+describe('claimFinishedTasks', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  it('claims a finished task without waiting for a planner', () => {
+    // Free, additive and impossible to get wrong. An unclaimed task also holds
+    // its slot, so the next one never starts — and Township XP gates the biome
+    // the Herb producer lives in.
+    const claimed: string[] = [];
+    claimFinishedTasks({ claimable: [{ kind: 'township', taskId: 'melvorF:Task1' }] }, (k, id) => {
+      claimed.push(`${k}:${id}`);
+      return ok();
+    });
+
+    expect(claimed).toEqual(['township:melvorF:Task1']);
+  });
+
+  it('routes a casual task to the casual claim', () => {
+    // The two claims are different calls; sending one to the other silently
+    // does nothing.
+    const claimed: string[] = [];
+    claimFinishedTasks({ claimable: [{ kind: 'casual', taskId: 'melvorF:Casual1' }] }, (k, id) => {
+      claimed.push(`${k}:${id}`);
+      return ok();
+    });
+
+    expect(claimed).toEqual(['casual:melvorF:Casual1']);
+  });
+
+  it('does nothing when no task is finished', () => {
+    expect(claimFinishedTasks({ claimable: [] }, () => ok())).toBeNull();
+  });
+
+  it('takes one per tick so each claim is verified on its own', () => {
+    const claimed: string[] = [];
+    claimFinishedTasks(
+      {
+        claimable: [
+          { kind: 'township', taskId: 'a' },
+          { kind: 'township', taskId: 'b' },
+        ],
+      },
+      (_k, id) => {
+        claimed.push(id);
+        return ok();
+      },
+    );
+
+    expect(claimed).toEqual(['a']);
   });
 });

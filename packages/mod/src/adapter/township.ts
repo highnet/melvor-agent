@@ -532,6 +532,46 @@ export function claimCasualTask(
  * Casual tasks are listed first: the five-slot limit means an unclaimed one
  * blocks the next task from arriving, so it costs more than its own reward.
  */
+/**
+ * Finished tasks the town is sitting on, ready to claim.
+ *
+ * Separate from the candidate reader because this is for the reflex tier: a
+ * task whose work is already done pays out rewards and Township XP, costs
+ * nothing, and cannot be claimed wrongly. Leaving it unclaimed also blocks the
+ * slot it occupies, so the next task never starts.
+ *
+ * That matters more than it sounds. Township XP is what gates the biome the
+ * Herb producer lives in, and Herblore is behind that — so an unclaimed task is
+ * not tidy-up, it is the critical path standing still.
+ */
+export function readClaimableTasks(): { kind: 'casual' | 'township'; taskId: string }[] {
+  const township = game.township;
+  if (!township.townData.townCreated) return [];
+
+  const claimable: ReturnType<typeof readClaimableTasks> = [];
+
+  for (const task of township.casualTasks.currentCasualTasks) {
+    try {
+      if (township.casualTasks.isTaskComplete(task)) {
+        claimable.push({ kind: 'casual', taskId: task.id });
+      }
+    } catch {
+      // A task that cannot report completion is not claimable.
+    }
+  }
+
+  for (const task of township.tasks.tasks.allObjects) {
+    try {
+      if (township.tasks.completedTasks.has(task)) continue;
+      if (task.goals.checkIfMet()) claimable.push({ kind: 'township', taskId: task.id });
+    } catch {
+      // Same.
+    }
+  }
+
+  return claimable;
+}
+
 export function readTaskCandidates(): Candidate[] {
   const township = game.township;
   if (!township.townData.townCreated) return [];

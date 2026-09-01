@@ -115,6 +115,7 @@ export {
   buildTownshipBuilding,
   claimCasualTask,
   claimTownshipTask,
+  readClaimableTasks,
   readTaskCandidates,
   readTaskOpportunities,
   readTownshipCandidates,

@@ -401,3 +401,24 @@ export function unlockAffordablePlots(
 
   return { name: 'reflex.unlockPlot', result: unlock(plotId) };
 }
+
+/**
+ * Claims a Township task whose work is already finished.
+ *
+ * Free, additive and impossible to get wrong — the same shape as buying a bank
+ * slot or opening a plot, and it belongs in the same tier for the same reason:
+ * it only ever happened while a planner was watching.
+ *
+ * An unclaimed task also holds its slot, so the next one never starts. Township
+ * XP is what gates the biome the Herb producer lives in, which makes this the
+ * critical path rather than housekeeping.
+ */
+export function claimFinishedTasks(
+  state: { claimable: readonly { kind: 'casual' | 'township'; taskId: string }[] },
+  claim: (kind: 'casual' | 'township', taskId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const task = state.claimable[0];
+  if (task === undefined) return null;
+
+  return { name: 'reflex.claimTask', result: claim(task.kind, task.taskId) };
+}
