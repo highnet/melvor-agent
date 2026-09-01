@@ -71,6 +71,18 @@ server.registerTool(
         .describe(
           'Skill level to reach. Pick something reachable in the budget, not a distant round number.',
         ),
+      untilItemId: z
+        .string()
+        .optional()
+        .describe(
+          'Optional. Finish when the bank holds untilQuantity of this item, instead of at a level. Township tasks ask for stock — "give 250 Air Rune", "give 100 Iron Arrows" — and a level target either stops short of the count or runs hours past it.',
+        ),
+      untilQuantity: z
+        .number()
+        .int()
+        .min(1)
+        .optional()
+        .describe('Optional. How many of untilItemId to end with. Requires untilItemId.'),
       abortMinutes: z
         .number()
         .int()

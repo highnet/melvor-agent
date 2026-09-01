@@ -157,13 +157,24 @@ export const TOOLS: Record<string, ToolHandler> = {
     const targetLevel = Number(args.targetLevel);
     const abortMinutes = Number(args.abortMinutes);
 
+    // Optional: finish when the bank holds this much of an item, rather than at
+    // a level. Both must be present to mean anything.
+    const stockItemId = typeof args.untilItemId === 'string' ? args.untilItemId : undefined;
+    const stockQuantity = Number(args.untilQuantity);
+    const stockTarget =
+      stockItemId !== undefined && Number.isFinite(stockQuantity) && stockQuantity > 0
+        ? { itemId: stockItemId, quantity: stockQuantity }
+        : undefined;
+
     // A target the character has already passed makes an objective that
     // completes on its first tick without acting — it looks like success and
     // does nothing. Live, "fletch bows to level 20" at Fletching 20 finished
     // instantly and produced no bows.
     const snapshot = store.report?.snapshot ?? null;
     const alreadyThere =
-      snapshot === null ? null : levelAlreadyReached(chosen, targetLevel, snapshot);
+      snapshot === null || stockTarget !== undefined
+        ? null
+        : levelAlreadyReached(chosen, targetLevel, snapshot);
     if (alreadyThere !== null) {
       return `Refused: ${alreadyThere}. Pick a level above it, or a different candidate.`;
     }
@@ -176,7 +187,7 @@ export const TOOLS: Record<string, ToolHandler> = {
         id: `session-${Date.now()}`,
         kind: chosen.kind,
         params: chosen.params,
-        successWhen: successFor(chosen, targetLevel),
+        successWhen: successFor(chosen, targetLevel, stockTarget),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
         rationale: String(args.rationale ?? 'no rationale given'),
@@ -355,7 +366,24 @@ function levelAlreadyReached(
 function successFor(
   candidate: { kind: string; params: Record<string, unknown> },
   targetLevel: number,
+  stockTarget?: { itemId: string; quantity: number },
 ) {
+  // A quantity target, when one is given, beats a level target outright.
+  // Township tasks ask for stock — "give 250 Air Rune", "give 100 Iron
+  // Arrows", "give 25 Beef" — and a level is the wrong shape for that: it
+  // either stops short of the count or runs hours past it. `item_qty_at_least`
+  // has existed in the contract, in `criteria.ts` and in the panel the whole
+  // time; nothing could ever set one, so it may as well not have existed.
+  if (stockTarget !== undefined) {
+    return [
+      {
+        type: 'item_qty_at_least' as const,
+        itemId: stockTarget.itemId,
+        qty: stockTarget.quantity,
+      },
+    ];
+  }
+
   const skillId = candidate.params.skillId;
   if (typeof skillId === 'string') {
     return [{ type: 'skill_level_at_least' as const, skillId, level: targetLevel }];
