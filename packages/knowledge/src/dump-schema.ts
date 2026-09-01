@@ -49,6 +49,18 @@ export const knowledgeDumpSchema = z.object({
    * NPC. With only the *nearest* locked action reported anywhere, how far away
    * that NPC sat could not be seen without grinding toward it and watching.
    */
+  /** Live farming plot state, including whether a growth timer actually exists. */
+  farmingPlotStates: z.array(
+    z.object({
+      id: z.string(),
+      rawState: z.number().int(),
+      growthTimeSeconds: z.number(),
+      compostLevel: z.number(),
+      plantedRecipeId: z.string().nullable(),
+      hasGrowthTimer: z.boolean(),
+    }),
+  ),
+
   /** Farming recipes, the level gating each, and what its seed costs. */
   farmingRecipes: z.array(
     z.object({

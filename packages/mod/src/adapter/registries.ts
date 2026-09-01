@@ -44,6 +44,29 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // Live plot state, as the raw enum the game holds.
+    //
+    // The harvest reflex has never once fired. Two plots have read "Growing:
+    // Potato Seeds, Time Left: About 0 mins" for the best part of an hour,
+    // including ten minutes with the game untouched, and still offer Destroy
+    // rather than Harvest — so the crops are not reaching the grown state at
+    // all. Whether that is the growth timer being lost across a mod reload or
+    // something else is unresolved, and the string mapping the adapter uses
+    // hides the raw value that would settle it.
+    farmingPlotStates: (() => {
+      try {
+        return game.farming.plots.allObjects.map((plot) => ({
+          id: plot.id,
+          rawState: plot.state as number,
+          growthTimeSeconds: plot.growthTime,
+          compostLevel: plot.compostLevel,
+          plantedRecipeId: plot.plantedRecipe?.id ?? null,
+          hasGrowthTimer: game.farming.growthTimerMap.has(plot),
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     // Farming recipes with the level that gates each one.
     //
     // Which seeds a character can actually plant decides how fast Farming
