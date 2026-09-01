@@ -1,3 +1,4 @@
+import { releaseActionSlot } from './action-slot.js';
 import { checkAbort, elapsedMinutes, isObjectiveComplete } from './criteria.js';
 import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
 
@@ -46,9 +47,6 @@ const SUPPORTED_GATHERING_SKILLS: ReadonlySet<string> = new Set([
  * Their selection APIs differ substantially, so the adapter holds one verified
  * routine per skill and this tier only names the skill and recipe.
  */
-/** Combat occupies the action slot under this id, but is not a gathering skill. */
-const COMBAT_ACTION_ID = 'melvorD:Combat';
-
 export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDecision => {
   const { snapshot, objective, now, objectiveStartedAt, deathsSinceStart } = context;
 
@@ -138,23 +136,12 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
   // Stop and start are separate ticks rather than one batch: `stop` has to be
   // observed to have actually taken the slot free before `gather` can claim it,
   // and batching them would start against a state the stop has not produced yet.
-  if (active !== null && active.id !== skillId) {
-    // Combat holds the same single action slot but is not a gathering skill,
-    // so it is left the way it is entered. Sending `stop_gathering` for it
-    // refused with "no verified routine for skill melvorD:Combat" and stranded
-    // the agent in a fight it had been told to leave.
-    if (active.id === COMBAT_ACTION_ID) {
-      return {
-        kind: 'act',
-        actions: [{ type: 'disengage' }],
-        reason: `combat holds the action slot; disengaging to run ${skill.name}`,
-      };
-    }
-
+  const inTheWay = releaseActionSlot(snapshot, [skillId]);
+  if (inTheWay !== null) {
     return {
       kind: 'act',
-      actions: [{ type: 'stop_gathering', skillId: active.id }],
-      reason: `${active.name} holds the action slot; stopping it to run ${skill.name}`,
+      actions: [inTheWay.action],
+      reason: `${inTheWay.reason} to run ${skill.name}`,
     };
   }
 

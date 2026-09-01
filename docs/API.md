@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-152 exports.
+153 exports.
 
 ## `act`
 
@@ -914,6 +914,21 @@ shallower than the unique ones.
 
 ```ts
 readAstrologyCandidates: () => Candidate[]
+```
+
+## `readBankedFood`
+
+`function`
+
+Food held in the bank, most healing first.
+
+Exists so a reflex can refill an *empty* food slot, not merely top up what is
+already there. An empty slot is precisely when the eat reflex cannot act, and
+it is reached by ordinary play: Thieving and combat both consume food until
+there is none left.
+
+```ts
+readBankedFood: () => { itemId: string; quantity: number; }[]
 ```
 
 ## `readBankPressure`

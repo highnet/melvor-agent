@@ -1,3 +1,4 @@
+import { COMBAT_ACTION_ID, releaseActionSlot } from './action-slot.js';
 import { checkAbort, elapsedMinutes, isObjectiveComplete } from './criteria.js';
 import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
 
@@ -85,20 +86,15 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
     };
   }
 
-  const active = snapshot.activeAction;
-  if (active !== null) {
-    // Melvor runs one action at a time, so a skill still running is not a
-    // reason to wait — it is the thing to clear. Idling here meant an objective
-    // to fight, set while the character was fishing, did nothing at all and
-    // said nothing about why.
-    //
-    // Stop and engage are separate ticks, as in the gathering executor: `stop`
-    // has to be observed before the engage is attempted, and batching them
-    // would engage against a state the stop has not produced yet.
+  // Stop and engage are separate ticks: `stop` has to be observed before the
+  // engage is attempted, or the engage runs against a state the stop has not
+  // produced yet.
+  const inTheWay = releaseActionSlot(snapshot, [COMBAT_ACTION_ID]);
+  if (inTheWay !== null) {
     return {
       kind: 'act',
-      actions: [{ type: 'stop_gathering', skillId: active.id }],
-      reason: `${active.name} holds the action slot; stopping it to fight`,
+      actions: [inTheWay.action],
+      reason: `${inTheWay.reason} to fight`,
     };
   }
 

@@ -1,3 +1,4 @@
+import { releaseActionSlot } from './action-slot.js';
 import { checkAbort, elapsedMinutes, isObjectiveComplete } from './criteria.js';
 import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
 
@@ -50,6 +51,13 @@ export const explore: PolicyExecutor = (context: PolicyContext): PolicyDecision 
   }
 
   const active = snapshot.activeAction;
+
+  // Cartography and Archaeology are this executor's own skills; anything else
+  // holding the slot has to release it first.
+  const inTheWay = releaseActionSlot(snapshot, ['melvorAoD:Cartography', 'melvorAoD:Archaeology']);
+  if (inTheWay !== null) {
+    return { kind: 'act', actions: [inTheWay.action], reason: `${inTheWay.reason} to explore` };
+  }
 
   if (params.kind === 'survey_hex') {
     if (active !== null && active.id === 'melvorAoD:Cartography') {
