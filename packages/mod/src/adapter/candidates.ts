@@ -429,7 +429,21 @@ function thievingCandidates(): Candidate[] {
       .map((npc) => {
         const intervalMs = safeNumber(() => skill.actionInterval, 3000);
         const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
-        const successRate = Math.max(0, Math.min(1, skill.getNPCSuccessRate(npc) / 100));
+        // Reads 0 unless Thieving is the skill currently running, the same
+        // active-selection dependency documented for Mining.actionInterval
+        // above. The consequence is quiet and one-directional: every Thieving
+        // candidate shows no rate at all while the agent is doing anything
+        // else, so a planner comparing options sees Thieving as worthless
+        // exactly when it is deciding whether to start it.
+        //
+        // Left as zero rather than filled with a guess — an invented success
+        // rate would make the comparison confidently wrong instead of visibly
+        // absent — and the absence is now stated in the blocked list so it
+        // reads as "not measurable from here" rather than "not worth doing".
+        const successRate = Math.max(
+          0,
+          Math.min(1, safeNumber(() => skill.getNPCSuccessRate(npc), 0) / 100),
+        );
 
         const gpPerAction = npc.currencyDrops
           .filter((drop) => drop.currency === game.gp)
@@ -697,6 +711,7 @@ export function readBlockedOpportunities(): {
   // recipe, not a skill, so the agent levels past better options without ever
   // reconsidering — it ground Woman while Marauder unlocked and paid more.
   blocked.push(...readBetterRecipeNotice());
+  blocked.push(...readThievingRateNotice());
 
   for (const skillId of STARTABLE_SKILL_IDS) {
     const skill = game.skills.getObjectByID(skillId);
@@ -891,7 +906,7 @@ function missingInputs(
  * @param activeSkillId - The skill currently occupying the action slot.
  * @param activeRecipeIds - The recipes it is running.
  */
-export function readBetterRecipeNotice(): {
+function readBetterRecipeNotice(): {
   label: string;
   xpPerHour: number;
   missing: { itemId: string; name: string; need: number; have: number }[];
@@ -934,4 +949,42 @@ export function readBetterRecipeNotice(): {
       missing: [],
     },
   ];
+}
+
+/**
+ * Says when Thieving's rates cannot be measured, rather than showing zero.
+ *
+ * `getNPCSuccessRate` reads 0 unless Thieving is the skill currently running —
+ * the same active-selection dependency the Mining interval has. So every
+ * Thieving candidate loses its xp/h and gp/h the moment the agent does
+ * anything else, and a planner comparing options sees a skill worth nothing
+ * precisely when it is choosing whether to start it.
+ *
+ * The bias is one-directional and therefore worse than noise: Thieving is
+ * under-rated only while it is not running, which is exactly when the decision
+ * is made. Naming it costs one line and turns a silent zero into a known gap —
+ * the same reason Slayer explains its empty list and monsters carry their
+ * loot chance.
+ */
+function readThievingRateNotice(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    const skill = game.thieving;
+    if (game.activeAction === skill) return [];
+    if (skill.level < 1) return [];
+
+    return [
+      {
+        label:
+          'Thieving candidates show no xp/h or gp/h because the game only reports a success rate while Thieving is the running skill. The rates are unknown here, not zero — Marauder was measured at 8,078 xp/h and 47,829 gp/h while it ran.',
+        xpPerHour: 0,
+        missing: [],
+      },
+    ];
+  } catch {
+    return [];
+  }
 }
