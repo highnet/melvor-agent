@@ -499,3 +499,14 @@ Flagging rather than assuming, per the project rule.
   extract formulas. Enemy max hit is not readable from the registry at all.
 - Game action return types are inconsistent enough (`void`, `boolean`, `boolean | undefined`)
   that `ActionResult` is carrying more weight than the brief credits it with.
+
+## Burying bones grants points, not Prayer XP
+
+Verified live on 2026-09-01: burying 52 Bones took the stack to zero and left
+`Prayer.xp` at 0, while `player.prayerPoints` rose. Prayer XP is granted when
+those points are *spent* during combat, not when the bones are buried.
+
+This matters for any action whose verification asks "did the skill advance":
+the honest evidence here is the stack falling, not the skill moving. Requiring
+XP made every successful bury report `no_state_change` and retry until the
+bank was empty.

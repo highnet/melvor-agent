@@ -146,10 +146,15 @@ export function readBankPressure(): {
  * left unplayed — and combat produces them steadily whether or not anything
  * uses them.
  *
+ * **Burying grants prayer points, not Prayer XP.** Verified live: 52 bones went
+ * from the bank and Prayer XP stayed at 0. The XP comes later, from *spending*
+ * those points during combat. Requiring XP to rise made every successful bury
+ * report as a no-op and retry.
+ *
  * `buryItemOnClick` returns void and silently does nothing for a non-bone, so
- * the evidence taken is the stack falling and Prayer XP rising. XP rather than
- * points, because points cap out and a full bar would make a successful bury
- * look like a no-op.
+ * the evidence taken is the stack falling while points do not fall. Points are
+ * not required to rise, because they cap: burying into a full bar is wasteful
+ * but not a failure to observe.
  *
  * @param itemId - Namespaced `BoneItem` id, already in the bank.
  * @param quantity - How many to bury. Capped at what the bank holds.
@@ -158,17 +163,15 @@ export function buryBones(
   itemId: string,
   quantity: number,
   isSuspended: () => boolean,
-): ActionResult<{ held: number; prayerXp: number }> {
+): ActionResult<{ held: number; prayerPoints: number }> {
   const item = game.items.getObjectByID(itemId);
   if (item === undefined || !(item instanceof BoneItem)) {
     return fail('bank.buryBones', 'precondition', `${itemId} is not a bone`);
   }
 
-  const prayer = game.skills.getObjectByID('melvorD:Prayer');
-
-  const project = (): { held: number; prayerXp: number } => ({
+  const project = (): { held: number; prayerPoints: number } => ({
     held: game.bank.getQty(item),
-    prayerXp: prayer?.xp ?? 0,
+    prayerPoints: game.combat.player.prayerPoints,
   });
 
   return act(
@@ -184,7 +187,8 @@ export function buryBones(
         return null;
       },
       perform: () => game.bank.buryItemOnClick(item, Math.min(quantity, game.bank.getQty(item))),
-      changed: (before, after) => after.held < before.held && after.prayerXp > before.prayerXp,
+      changed: (before, after) =>
+        after.held < before.held && after.prayerPoints >= before.prayerPoints,
     },
     isSuspended,
   );
@@ -207,7 +211,7 @@ export function readBoneCandidates(): Candidate[] {
       candidates.push({
         kind: 'bury_bones',
         params: { kind: 'bury_bones', itemId: entry.item.id, quantity: entry.quantity },
-        label: `Bury ${entry.quantity}x ${entry.item.name} for ${points} prayer points each — the only way to train Prayer or to pay for a prayer`,
+        label: `Bury ${entry.quantity}x ${entry.item.name} for ${points} prayer points each — points are what prayers spend, and spending them in combat is what trains Prayer`,
         available: true,
       });
     } catch {
