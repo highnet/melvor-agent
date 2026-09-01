@@ -66,6 +66,7 @@ export {
   eatFood,
   unequipItem,
   readBankedFood,
+  readFoodReserve,
   readEquippedFood,
   readEquippedFoodHealing,
   equipFood,

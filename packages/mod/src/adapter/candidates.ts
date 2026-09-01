@@ -1,6 +1,7 @@
 import type { Candidate } from '@melvor-agent/shared';
 import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
+import { readFoodReserve } from './equipment.js';
 import { readAllSeedIds, readBarelyEnoughIngredientIds, readSeedShortfalls } from './farming.js';
 import {
   FISHING_ID,
@@ -692,6 +693,10 @@ export function readBlockedOpportunities(): {
   // A seed shortfall is a blocked opportunity in the exact sense this list
   // exists for, and it was the thing holding up the last skill in scope.
   blocked.push(...readSeedShortfalls());
+
+  // Food is what sustains everything that damages the character, and running
+  // out is how an unattended run stops without failing.
+  blocked.push(...readFoodReserve());
 
   for (const skillId of STARTABLE_SKILL_IDS) {
     const skill = game.skills.getObjectByID(skillId);

@@ -652,3 +652,57 @@ export function readPenalisingGear(): { slotId: string; itemName: string }[] {
 
   return worn;
 }
+
+/**
+ * Whether the food reserve is running out, and by how much.
+ *
+ * The thing that actually limits unattended play, and nothing was watching it.
+ * Without Auto Eat the eat reflex is the only thing between the character and
+ * death, and it consumes an item every time it fires — Thieving damages on
+ * every failed pickpocket, so a long run burns food steadily. When the last
+ * meal goes, the reflex has nothing to work with, the Thieving gate starts
+ * refusing NPCs as health falls, and the run quietly stops progressing.
+ *
+ * Reported rather than acted on. Restocking is a genuine plan — fish, then
+ * cook, then come back — and inventing that as a reflex would have the agent
+ * abandoning objectives to go fishing. Naming the shortfall lets a planning
+ * session decide, which is the split this codebase already draws between
+ * oversights and trade-offs.
+ *
+ * @param minimumMeals - Below this many items across all food, say so.
+ */
+export function readFoodReserve(minimumMeals = 40): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    // Auto Eat removes the whole concern: it is fed from the bank directly and
+    // the manual reflex stands down.
+    if (game.combat.player.autoEatThreshold > 0) return [];
+
+    const banked = readBankedFood();
+    const total = banked.reduce((sum, entry) => sum + entry.quantity, 0);
+    const equipped = game.combat.player.food.currentSlot.quantity;
+    const meals = total + equipped;
+    if (meals >= minimumMeals) return [];
+
+    const best = banked[0];
+    return [
+      {
+        label: `Food is down to ${meals} meals and there is no Auto Eat — the eat reflex spends one per fire, and Thieving fires it often. Cook or fish before the reserve runs out.`,
+        xpPerHour: 0,
+        missing: [
+          {
+            itemId: best?.itemId ?? 'melvorD:Shrimp',
+            name: best === undefined ? 'any food' : 'more of the best food held',
+            need: minimumMeals,
+            have: meals,
+          },
+        ],
+      },
+    ];
+  } catch {
+    return [];
+  }
+}
