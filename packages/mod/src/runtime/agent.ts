@@ -712,7 +712,12 @@ export class Agent {
     }
     if (now - this.objectivelessSince < STOPGAP_DELAY_MS) return null;
 
-    const objective = chooseStopgap(this.safeCandidates(), now);
+    // Skill XP so the stopgap can compare candidates in levels rather than in
+    // XP; see chooseStopgap.
+    const skillXp = new Map(
+      (this.lastSnapshot?.skills ?? []).map((skill) => [skill.id, skill.xp] as const),
+    );
+    const objective = chooseStopgap(this.safeCandidates(), skillXp, now);
     if (objective === null) {
       // Nothing sustained is available — usually mid offline catch-up, or a
       // character with no unlocked skills. Saying so beats silence, but only

@@ -1,4 +1,4 @@
-import type { Candidate, Objective } from '@melvor-agent/shared';
+import { type Candidate, type Objective, levelsPerHour } from '@melvor-agent/shared';
 
 /**
  * How long the agent will wait for a planning session before acting anyway.
@@ -21,9 +21,16 @@ const STOPGAP_MINUTES = 30;
  * the failure mode when nobody is there: an unplanned agent used to stand
  * still, which converts every gap in coverage into hours of nothing.
  *
- * So this is deliberately the dumbest defensible choice: the highest-XP
- * sustained action available. It is not trying to be a planner and should not
- * be improved into one. Its only job is to make the floor "some progress"
+ * So this is deliberately the dumbest defensible choice: the sustained action
+ * that gains the most *levels* per hour. It is not trying to be a planner and
+ * should not be improved into one.
+ *
+ * Levels, not XP, and that is the whole of the change. Ranking by XP per hour
+ * silently prefers whichever skill is already highest, because a level costs
+ * more XP the further up the curve it sits. Left to it, the stopgap picked
+ * Mahogany on a level-60 Woodcutting and scored 0.78x the control condition —
+ * losing to the very thing the metric compares against, while Ranged and Magic
+ * sat at level 1 nearby. Same rule, same lack of ambition, correct unit. Its only job is to make the floor "some progress"
  * rather than "no progress", and every stopgap objective is short and says in
  * its rationale that it is a stopgap, so a session that arrives later replaces
  * it within half an hour.
@@ -34,10 +41,18 @@ const STOPGAP_MINUTES = 30;
  * spend the bank on whatever was cheapest.
  *
  * @param candidates - What the mod has proven it can do right now.
+ * @param skillXp - Current XP per skill, to compare candidates in levels rather
+ *   than in XP. An unknown skill is treated as zero XP, which flatters an
+ *   untrained one — acceptable, because an untrained skill genuinely is where
+ *   the cheap levels are.
  * @param now - Wall clock, for the objective id.
  * @returns An objective to run, or null when nothing sustained is available.
  */
-export function chooseStopgap(candidates: readonly Candidate[], now: number): Objective | null {
+export function chooseStopgap(
+  candidates: readonly Candidate[],
+  skillXp: ReadonlyMap<string, number>,
+  now: number,
+): Objective | null {
   // Before falling back to grinding, take anything that is free.
   //
   // The rule this bends is "a stopgap makes no decisions", and it bends it only
@@ -79,8 +94,14 @@ export function chooseStopgap(candidates: readonly Candidate[], now: number): Ob
   const earners = sustained.filter((candidate) => (candidate.gpPerHour ?? 0) > 0);
   const pool = earners.length > 0 ? earners : sustained;
 
+  const rate = (candidate: Candidate): number => {
+    const skillId = (candidate.params as { skillId?: string }).skillId;
+    if (skillId === undefined) return 0;
+    return levelsPerHour(skillXp.get(skillId) ?? 0, candidate.xpPerHour ?? 0);
+  };
+
   const best = pool.reduce((leader, candidate) =>
-    (candidate.xpPerHour ?? 0) > (leader.xpPerHour ?? 0) ? candidate : leader,
+    rate(candidate) > rate(leader) ? candidate : leader,
   );
 
   const skillId = (best.params as { skillId?: string }).skillId;
@@ -94,7 +115,7 @@ export function chooseStopgap(candidates: readonly Candidate[], now: number): Ob
     successWhen: [],
     abortWhen: { minutesExceed: STOPGAP_MINUTES },
     expectedDurationMin: STOPGAP_MINUTES,
-    rationale: `stopgap: no planning session answered, so running the best sustained action available (${best.label}). A real plan should replace this.${
+    rationale: `stopgap: no planning session answered, so running the sustained action that gains the most levels per hour (${best.label}, about ${rate(best).toFixed(2)} levels/hour). A real plan should replace this.${
       skillId === undefined ? '' : ` Training ${skillId}.`
     }`,
   };

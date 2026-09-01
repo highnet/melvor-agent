@@ -4,6 +4,9 @@ import { chooseStopgap } from '../src/policy/stopgap.js';
 
 const NOW = 1_700_000_000_000;
 
+/** Every skill untrained, so ranking falls back to raw rate differences. */
+const FRESH = new Map<string, number>();
+
 function gather(skillId: string, recipeId: string, xpPerHour: number): Candidate {
   return {
     kind: 'gather_resource',
@@ -15,6 +18,27 @@ function gather(skillId: string, recipeId: string, xpPerHour: number): Candidate
 }
 
 describe('stopgap', () => {
+  it('ranks in levels per hour, not XP per hour', () => {
+    // The live failure this fixes: ranking by XP picked Mahogany on a level-60
+    // Woodcutting and scored 0.78x the control condition, losing to the very
+    // thing the metric compares against — while Ranged and Magic sat at level
+    // 1. Here Woodcutting is deep into the curve and Mining is untouched, so
+    // the smaller XP rate is worth more levels.
+    const developed = new Map([['melvorD:Woodcutting', 800_000]]);
+
+    const objective = chooseStopgap(
+      [
+        gather('melvorD:Woodcutting', 'melvorD:Mahogany', 25_412),
+        gather('melvorD:Mining', 'melvorD:Copper', 8400),
+      ],
+      developed,
+      NOW,
+    );
+
+    expect(objective?.params).toMatchObject({ recipeId: 'melvorD:Copper' });
+    expect(objective?.rationale).toMatch(/levels per hour/i);
+  });
+
   it('runs the best sustained action rather than standing still', () => {
     const objective = chooseStopgap(
       [
@@ -22,6 +46,7 @@ describe('stopgap', () => {
         gather('melvorD:Woodcutting', 'melvorD:Willow', 15_840),
         gather('melvorD:Mining', 'melvorD:Copper', 8400),
       ],
+      FRESH,
       NOW,
     );
 
@@ -50,13 +75,17 @@ describe('stopgap', () => {
       gpPerHour: 12_000,
     };
 
-    const objective = chooseStopgap([burning, cutting], NOW);
+    const objective = chooseStopgap([burning, cutting], FRESH, NOW);
 
     expect(objective?.params).toMatchObject({ recipeId: 'melvorD:Teak' });
   });
 
   it('falls back to raw XP when nothing on offer earns anything', () => {
-    const objective = chooseStopgap([gather('melvorD:Firemaking', 'melvorD:Oak', 72_000)], NOW);
+    const objective = chooseStopgap(
+      [gather('melvorD:Firemaking', 'melvorD:Oak', 72_000)],
+      FRESH,
+      NOW,
+    );
     expect(objective?.params).toMatchObject({ recipeId: 'melvorD:Oak' });
   });
 
@@ -85,6 +114,7 @@ describe('stopgap', () => {
           available: true,
         },
       ],
+      FRESH,
       NOW,
     );
 
@@ -92,7 +122,7 @@ describe('stopgap', () => {
   });
 
   it('carries a budget, so a real plan replaces it within the half hour', () => {
-    const objective = chooseStopgap([gather('melvorD:Mining', 'melvorD:Copper', 8400)], NOW);
+    const objective = chooseStopgap([gather('melvorD:Mining', 'melvorD:Copper', 8400)], FRESH, NOW);
 
     expect(objective?.abortWhen.minutesExceed).toBe(30);
     // No success criterion: a stopgap is not trying to reach anything, and its
@@ -101,7 +131,7 @@ describe('stopgap', () => {
   });
 
   it('returns null when there is nothing sustained to do', () => {
-    expect(chooseStopgap([], NOW)).toBeNull();
+    expect(chooseStopgap([], FRESH, NOW)).toBeNull();
   });
 });
 
@@ -119,6 +149,7 @@ describe('free actions', () => {
           available: true,
         },
       ],
+      FRESH,
       NOW,
     );
 
@@ -138,6 +169,7 @@ describe('free actions', () => {
           available: true,
         },
       ],
+      FRESH,
       NOW,
     );
 
@@ -162,6 +194,7 @@ describe('free actions', () => {
           available: true,
         },
       ],
+      FRESH,
       NOW,
     );
 

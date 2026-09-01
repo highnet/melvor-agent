@@ -1,6 +1,6 @@
 import { appendFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Candidate, StateSnapshot } from '@melvor-agent/shared';
+import { type Candidate, type StateSnapshot, xpForLevel } from '@melvor-agent/shared';
 
 /**
  * Long-horizon goals, and what currently advances them.
@@ -325,23 +325,6 @@ export function nextRung(
   const neededXp = Math.max(0, xpForLevel(target) - currentXp);
 
   return { level: target, estimatedMinutes: (neededXp / xpPerHour) * 60 };
-}
-
-/**
- * Total XP required for a level, by the standard Melvor/RuneScape curve.
- *
- * Reimplemented rather than read from the game because the planner service has
- * no access to game objects — the mod does, but shipping the whole curve in
- * every snapshot to answer one question would be worse. It is an **estimate**,
- * and is presented as one: rung sizing being slightly off costs a few minutes,
- * whereas refusing to size rungs at all costs the whole benefit.
- */
-function xpForLevel(level: number): number {
-  let total = 0;
-  for (let i = 1; i < level; i += 1) {
-    total += Math.floor(i + 300 * 2 ** (i / 7));
-  }
-  return Math.floor(total / 4);
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { QualitySample } from '@melvor-agent/shared';
+import { type QualitySample, levelForXp } from '@melvor-agent/shared';
 
 /**
  * The project's one quality metric.
@@ -150,14 +150,4 @@ export function controlRate(
   const projectedLevel = levelForXp(currentXp + best.xpPerHour);
 
   return projectedLevel - currentLevel;
-}
-
-/** Melvor's XP curve, inverted. Matches `xpForLevel` in the goals module. */
-function levelForXp(xp: number): number {
-  let points = 0;
-  for (let level = 1; level < 120; level += 1) {
-    points += Math.floor(level + 300 * 2 ** (level / 7));
-    if (Math.floor(points / 4) > xp) return level;
-  }
-  return 120;
 }
