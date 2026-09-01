@@ -312,3 +312,25 @@ describe('gatherResource', () => {
     });
   });
 });
+
+describe('leaving combat for a skill', () => {
+  it('disengages instead of trying to stop combat as a skill', () => {
+    // Combat holds the same single action slot but is not a gathering skill.
+    // Sending stop_gathering for it refused with "no verified routine for skill
+    // melvorD:Combat" and stranded the agent in a fight it had been told to
+    // leave — the mirror of a fight objective waiting behind a running skill.
+    const fighting = snapshot({
+      activeAction: { id: 'melvorD:Combat', name: 'Combat', isActive: true, recipeIds: [] },
+    });
+
+    const decision = gatherResource({
+      snapshot: fighting,
+      objective: objective(),
+      now: fighting.capturedAt,
+      objectiveStartedAt: fighting.capturedAt,
+      deathsSinceStart: 0,
+    });
+
+    expect(decision).toMatchObject({ kind: 'act', actions: [{ type: 'disengage' }] });
+  });
+});
