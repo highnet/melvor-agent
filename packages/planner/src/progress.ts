@@ -41,6 +41,24 @@ export interface ProgressReport {
 const MIN_HOURS = 0.05;
 
 /**
+ * Below this many hours, report the rate but do not diagnose from it.
+ *
+ * The ratio is arithmetic and always honest. The *diagnosis* attached to a low
+ * one — "something is wrong: check for refused objectives, an idle action slot,
+ * or a plan that spends more time transitioning than acting" — is an inference,
+ * and over six minutes it is usually wrong.
+ *
+ * A short window is dominated by whatever happened to be in it: one objective
+ * transition, one reload, one fight that had not started yet. It said something
+ * is wrong while the agent was fighting Golbins exactly as planned, and it said
+ * it in the same words used for a genuinely stuck agent — which is how a real
+ * warning gets ignored.
+ *
+ * Half an hour is roughly the point where a transition stops dominating.
+ */
+const MIN_DIAGNOSIS_HOURS = 0.5;
+
+/**
  * Measures progress across the sample window.
  *
  * @param samples - Quality samples, oldest first.
@@ -96,6 +114,12 @@ function describe(
 
   if (timesBetterThanControl === null) {
     return `${window}. No control rate available to compare against.`;
+  }
+
+  // Too short to infer anything from. The number still stands; the story does
+  // not. See MIN_DIAGNOSIS_HOURS.
+  if (hours < MIN_DIAGNOSIS_HOURS) {
+    return `${window} — ${timesBetterThanControl.toFixed(2)}x the control, but this window is too short to read anything into: a single objective transition dominates it.`;
   }
 
   if (timesBetterThanControl < 1) {

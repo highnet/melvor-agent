@@ -113,3 +113,23 @@ describe('trading levels for GP', () => {
     expect(report?.detail).toMatch(/leaving one skill running would do better/);
   });
 });
+
+describe('short windows', () => {
+  it('reports the rate but refuses to diagnose from six minutes', () => {
+    // Live: "0.36x the control condition, which means leaving one skill running
+    // would do better. Something is wrong: check for refused objectives, an
+    // idle action slot..." — said over a 0.1h window while the agent was
+    // fighting Golbins exactly as planned. The ratio was arithmetic and honest;
+    // the diagnosis was an inference, and it was wrong.
+    const report = measureProgress([sample(0, 100, 0), sample(0.1, 100.5, 0)], 20);
+
+    expect(report?.detail).toMatch(/too short to read anything into/);
+    expect(report?.detail).not.toMatch(/Something is wrong/);
+  });
+
+  it('still diagnoses once the window is long enough to mean something', () => {
+    const report = measureProgress([sample(0, 100, 0), sample(10, 102, 0)], 1);
+
+    expect(report?.detail).toMatch(/leaving one skill running would do better/);
+  });
+});
