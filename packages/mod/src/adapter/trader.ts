@@ -174,8 +174,22 @@ export function convertTownshipToItem(
   );
 }
 
-/** Below this, the town is too poor to build anything and needs seeding. */
-const STARVED_RESOURCE_THRESHOLD = 100;
+/**
+ * How much of an item the bank must hold before any of it is offered to the town.
+ *
+ * The gate this replaces asked whether the *town* was below 100, which was
+ * written for seeding a brand-new town and stopped being the right question the
+ * moment the town started building. Observed live: the town held 798 Wood, was
+ * blocked from building Wooden Huts for want of more, and the character had
+ * 1,412 Normal Logs sitting in the bank — no candidate was offered, because 798
+ * is not "starved" by a threshold meant for a town that owns nothing.
+ *
+ * A town that cannot afford its next building is starved in the way that
+ * matters. So the question is now about the bank instead: is there a real
+ * surplus to give? The town's own storage cap still decides how much it can
+ * take, and the planner still decides whether to give it.
+ */
+const BANK_SURPLUS_THRESHOLD = 200;
 
 /**
  * Trades the town actually needs.
@@ -198,12 +212,11 @@ export function readTraderCandidates(): Candidate[] {
       // `TownshipResourceTypeID` is an ambient const enum, which cannot be
       // referenced under verbatimModuleSyntax.
       if (resource.id === 'melvorF:GP') continue;
-      if (resource.amount >= STARVED_RESOURCE_THRESHOLD) continue;
 
       for (const conversion of township.getResourceItemConversionsToTownship(resource)) {
         const item = conversion.item;
         const held = game.bank.getQty(item);
-        if (held < STARVED_RESOURCE_THRESHOLD) continue;
+        if (held < BANK_SURPLUS_THRESHOLD) continue;
         if (township.getMaxPossibleConvertToTownshipValue(conversion) <= 0) continue;
 
         candidates.push({
@@ -214,7 +227,7 @@ export function readTraderCandidates(): Candidate[] {
             resourceId: resource.id,
             quantity: held,
           },
-          label: `Trade ${held}x ${item.name} to the town for ${resource.name} (town has ${Math.round(resource.amount)}) — a town with no resources can build nothing`,
+          label: `Trade ${held}x ${item.name} to the town for ${resource.name} (town has ${Math.round(resource.amount)}) — the town builds with resources the character can simply hand it`,
           available: true,
         });
       }
