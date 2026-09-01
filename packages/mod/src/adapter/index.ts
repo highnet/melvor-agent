@@ -74,6 +74,7 @@ export {
   newSlayerTask,
   readMasteryCandidates,
   readCombatSetupCandidates,
+  readSlayerBlockedReason,
   readSlayerCandidates,
   setAttackStyle,
   spendMasteryPool,

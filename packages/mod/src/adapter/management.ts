@@ -436,3 +436,49 @@ export function readCombatSetupCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Why Slayer is offering nothing, or null when it is.
+ *
+ * {@link readSlayerCandidates} returns an empty array in three unrelated
+ * situations — a task is already running, no food is equipped, or every
+ * category is above the character's Slayer level — and an empty list looks
+ * identical in all three. Slayer sat at level 1 for a whole session without the
+ * agent or the operator ever being told which of those was true, and the answer
+ * turned out to matter: no food equipped is a thing a reflex fixes in seconds,
+ * while an active task means the work is to go and kill the assigned monster.
+ *
+ * The lesson is one this session kept relearning. An empty candidate list is
+ * not self-explanatory, and the difference between "cannot" and "already done"
+ * is invisible until something says which.
+ */
+export function readSlayerBlockedReason(): string | null {
+  try {
+    const task = game.combat.slayerTask;
+    if (task.active) {
+      const monster = task.monster?.name ?? 'the assigned monster';
+      return `Slayer task already active — XP comes from killing ${monster}, not from taking another task`;
+    }
+
+    if (game.combat.player.food.currentSlot.quantity <= 0) {
+      return 'Slayer needs food equipped, for the same reason Thieving does — an unattended fight without it is how a character dies';
+    }
+
+    const slayerLevel = game.skills.getObjectByID('melvorD:Slayer')?.level ?? 1;
+    const cheapest = [...task.categories.allObjects]
+      .filter((category) => !isRefusedRealm(category.realm.id))
+      .reduce<number | null>(
+        (lowest, category) =>
+          lowest === null || category.level < lowest ? category.level : lowest,
+        null,
+      );
+
+    if (cheapest !== null && cheapest > slayerLevel) {
+      return `every Slayer category needs level ${cheapest}, and Slayer is ${slayerLevel}`;
+    }
+
+    return null;
+  } catch (error) {
+    return `Slayer state could not be read: ${String(error)}`;
+  }
+}

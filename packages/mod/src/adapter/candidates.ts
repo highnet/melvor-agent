@@ -1,6 +1,7 @@
 import type { Candidate } from '@melvor-agent/shared';
 import { readAllSeedIds, readBarelyEnoughIngredientIds } from './farming.js';
 import { readSpellRuneIds } from './combat.js';
+import { readSlayerBlockedReason } from './management.js';
 import {
   FISHING_ID,
   MINING_ID,
@@ -596,6 +597,13 @@ export function readBlockedOpportunities(): {
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   const blocked: ReturnType<typeof readBlockedOpportunities> = [];
+
+  // Slayer explains itself, because its candidate list is empty for three
+  // unrelated reasons and they want three different responses.
+  const slayerReason = readSlayerBlockedReason();
+  if (slayerReason !== null) {
+    blocked.push({ label: `Slayer: ${slayerReason}`, xpPerHour: 0, missing: [] });
+  }
 
   for (const skillId of STARTABLE_SKILL_IDS) {
     const skill = game.skills.getObjectByID(skillId);
