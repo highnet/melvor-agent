@@ -455,6 +455,33 @@ export function readSellCandidates(): Candidate[] {
     .sort((a, b) => b.label.localeCompare(a.label));
 }
 
+/** How many of a repeatable consumable to buy at once. */
+const CONSUMABLE_BATCH = 25;
+
+/**
+ * How many to buy in one objective.
+ *
+ * An upgrade is bought once and owning two is meaningless, so those stay at
+ * one. Consumables are different: a summoning tablet needs dozens of shards,
+ * and buying them one objective at a time turns a single decision into dozens
+ * of planning cycles — the exact opposite of "optimise for good transitions".
+ *
+ * Capped by what the character can actually afford, so the objective is never
+ * offered in a quantity that will refuse on price.
+ */
+function batchSizeFor(purchase: { purchaseId: string; gpCost: number; owned: number }): number {
+  const shopPurchase = game.shop.purchases.getObjectByID(purchase.purchaseId);
+  if (shopPurchase === undefined) return 1;
+
+  // A purchase that grants items is a consumable; one that grants an upgrade is
+  // not. `contains.items` is the game's own distinction.
+  const grantsItems = shopPurchase.contains.items.length > 0;
+  if (!grantsItems) return 1;
+
+  const affordable = purchase.gpCost > 0 ? Math.floor(game.gp.amount / purchase.gpCost) : 1;
+  return Math.max(1, Math.min(CONSUMABLE_BATCH, affordable));
+}
+
 /**
  * Shop purchases the planner may choose, as objective candidates.
  *
@@ -470,13 +497,13 @@ export function readShopObjectiveCandidates(): Candidate[] {
     params: {
       kind: 'buy_shop_upgrade' as const,
       purchaseId: purchase.purchaseId,
-      quantity: 1,
+      quantity: batchSizeFor(purchase),
       // A floor of zero here means "the objective sets no reserve"; the planner
       // is expected to raise it. Defaulting higher would silently make cheap
       // early upgrades unbuyable.
       gpFloor: 0,
     },
-    label: `Buy ${purchase.name} (${purchase.gpCost.toLocaleString()} GP, owned ${purchase.owned})`,
+    label: `Buy ${batchSizeFor(purchase)}x ${purchase.name} (${purchase.gpCost.toLocaleString()} GP each, owned ${purchase.owned})`,
     available: true as const,
   }));
 }
