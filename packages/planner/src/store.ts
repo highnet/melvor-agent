@@ -21,6 +21,15 @@ export class Store {
   private lastReportAt: number | null = null;
   private pendingCommands: Command[] = [];
   private journal: JournalEntry[] = [];
+  /**
+   * The candidate labels as they were last *shown* to a planning session.
+   *
+   * Candidate indices are positions in a list that changes with game state, so
+   * an index read a minute ago can point at something else entirely by the time
+   * it is used. Remembering what was shown lets a choice be checked against it
+   * instead of trusting the number.
+   */
+  private lastShownCandidates: string[] = [];
 
   constructor(private readonly dataDir: string) {}
 
@@ -49,6 +58,24 @@ export class Store {
     const commands = this.pendingCommands;
     this.pendingCommands = [];
     return commands;
+  }
+
+  /** Records the candidate list handed to a planning session. */
+  rememberShownCandidates(labels: readonly string[]): void {
+    this.lastShownCandidates = [...labels];
+  }
+
+  /**
+   * Checks a chosen index still points at what the session was shown.
+   *
+   * @returns null when the choice is sound, or the mismatch to report.
+   */
+  checkChoice(index: number, currentLabel: string): string | null {
+    const shown = this.lastShownCandidates[index];
+    if (shown === undefined) return null;
+    if (shown === currentLabel) return null;
+
+    return `candidate ${index} was "${shown}" when you listed it and is now "${currentLabel}" — the list shifted, so this choice would act on something you did not pick`;
   }
 
   /** Queues a command for the next report. */

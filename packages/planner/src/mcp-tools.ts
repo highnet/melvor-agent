@@ -108,6 +108,10 @@ export const TOOLS: Record<string, ToolHandler> = {
       return `${i}. ${describe(c)}${serves.length === 0 ? '' : `  → ${serves.join(', ')}`}`;
     });
 
+    // Remember exactly what was shown, so a later choice can be checked
+    // against it rather than trusting an index into a list that moves.
+    store.rememberShownCandidates(candidates.map((c) => c.label));
+
     const blocked = store.report?.blockedOpportunities ?? [];
     if (blocked.length > 0) {
       lines.push('', `Blocked (${blocked.length}) — the best moves often produce one of these:`);
@@ -128,6 +132,14 @@ export const TOOLS: Record<string, ToolHandler> = {
 
     if (chosen === undefined) {
       return `Index ${index} is out of range — there are ${candidates.length} candidates (0..${candidates.length - 1}). Call list_candidates again; the list changes with game state.`;
+    }
+
+    // An index is a position in a list that moves with game state. Acting on a
+    // stale one is silent and wrong: a request to equip a dagger built a
+    // storehouse, because smithing finished between listing and choosing.
+    const drift = store.checkChoice(index, chosen.label);
+    if (drift !== null) {
+      return `Refused: ${drift}. Call list_candidates and choose again.`;
     }
 
     const targetLevel = Number(args.targetLevel);
@@ -162,9 +174,15 @@ export const TOOLS: Record<string, ToolHandler> = {
     const objectives = [];
     for (const [position, raw] of steps.entries()) {
       const step = raw as Record<string, unknown>;
-      const chosen = candidates[Number(step.candidateIndex)];
+      const stepIndex = Number(step.candidateIndex);
+      const chosen = candidates[stepIndex];
       if (chosen === undefined) {
         return `Step ${position + 1} names candidate ${String(step.candidateIndex)}, which is out of range — there are ${candidates.length}. Call list_candidates again; the list changes with game state.`;
+      }
+
+      const stepDrift = store.checkChoice(stepIndex, chosen.label);
+      if (stepDrift !== null) {
+        return `Refused: step ${position + 1} — ${stepDrift}. Call list_candidates and build the plan again.`;
       }
 
       const abortMinutes = Number(step.abortMinutes ?? 60);
