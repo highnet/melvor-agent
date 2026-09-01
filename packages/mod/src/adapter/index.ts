@@ -69,6 +69,7 @@ export {
   readFoodReserve,
   readEquippedFood,
   readEquippedFoodHealing,
+  readGearUpgrades,
   equipFood,
   equipItem,
   changeEquipmentSet,

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-181 exports.
+182 exports.
 
 ## `act`
 
@@ -1360,6 +1360,29 @@ recipes are not emitted at all, which is what makes `available` a literal
 
 ```ts
 readGatherCandidates: () => Candidate[]
+```
+
+## `readGearUpgrades`
+
+`function`
+
+Gear worth putting on, with the comparison already made.
+
+The candidate reader evaluates every item in the bank against what is worn
+and offers only improvements — that part has always worked. What was missing
+is anything acting on the answer: a Jeweled Necklace sat in the bank with an
+empty neck slot and the list saying "Neck is empty" for as long as nobody
+read that line.
+
+Empty slots and replacements are returned separately because they are
+different kinds of decision. Filling nothing has no downside and belongs to a
+reflex; displacing worn gear is a comparison that has already been wrong once
+— a Steel Platebody scored *higher* than what it replaced and left an archer
+unable to land a shot — so it carries the margin by which it claims to win
+and lets the caller decide how much to trust a stat sum.
+
+```ts
+readGearUpgrades: () => { emptySlot: { itemId: string; slotId: string; name: string; }[]; replacement: { itemId: string; slotId: string; name: string; gain: number; }[]; }
 ```
 
 ## `readHeldCompost`

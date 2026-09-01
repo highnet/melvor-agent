@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attackBonusFor, penalisesAttackStyle } from '../src/adapter/equipment.js';
-import { removePenalisingGear } from '../src/runtime/combat-reflex.js';
+import { fillEmptySlots, removePenalisingGear } from '../src/runtime/combat-reflex.js';
 
 // A (G) Steel Platebody: strong melee defence, negative ranged attack.
 const platebody = [
@@ -75,5 +75,59 @@ describe('taking penalising gear off', () => {
 
   it('does nothing when the gear is appropriate', () => {
     expect(removePenalisingGear({ inCombat: false, penalising: [] }, () => ok())).toBeNull();
+  });
+});
+
+describe('putting on gear the character is missing', () => {
+  const ok = () => ({ ok: true }) as never;
+  const necklace = { itemId: 'melvorD:Jeweled_Necklace', slotId: 'melvorD:Amulet' };
+
+  it('fills an empty slot without being asked', () => {
+    // A Jeweled Necklace sat in the bank with an empty neck slot and the
+    // candidate list saying "Neck is empty" for as long as nobody read that
+    // line. The reader was working; the choosing was not.
+    const equipped: string[] = [];
+    fillEmptySlots({ inCombat: false, emptySlotGear: [necklace], replacements: [] }, (itemId) => {
+      equipped.push(itemId);
+      return ok();
+    });
+
+    expect(equipped).toEqual(['melvorD:Jeweled_Necklace']);
+  });
+
+  it('prefers an empty slot over displacing worn gear', () => {
+    // Nothing to weigh against nothing; a replacement always has a loser.
+    const equipped: string[] = [];
+    fillEmptySlots(
+      {
+        inCombat: false,
+        emptySlotGear: [necklace],
+        replacements: [{ itemId: 'melvorD:Steel_Helmet', slotId: 'melvorD:Helmet', gain: 5 }],
+      },
+      (itemId) => {
+        equipped.push(itemId);
+        return ok();
+      },
+    );
+
+    expect(equipped).toEqual(['melvorD:Jeweled_Necklace']);
+  });
+
+  it('swaps worn gear only for a clear improvement', () => {
+    // The stat sum has been wrong once already — a platebody scored higher than
+    // what it replaced and left an archer unable to land a shot.
+    const marginal = [{ itemId: 'melvorD:X', slotId: 'melvorD:Helmet', gain: 1.05 }];
+
+    expect(
+      fillEmptySlots({ inCombat: false, emptySlotGear: [], replacements: marginal }, () => ok()),
+    ).toBeNull();
+  });
+
+  it('changes nothing mid-fight', () => {
+    // The survivability gate approved this fight with the gear the character
+    // had; changing it underneath that approval is how a safe fight turns.
+    expect(
+      fillEmptySlots({ inCombat: true, emptySlotGear: [necklace], replacements: [] }, () => ok()),
+    ).toBeNull();
   });
 });

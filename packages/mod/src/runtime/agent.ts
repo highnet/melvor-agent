@@ -65,6 +65,7 @@ import {
   readFarmPlots,
   readGameVersion,
   readGatherCandidates,
+  readGearUpgrades,
   readHeldCompost,
   readLevelCapCandidates,
   readLoadoutCandidates,
@@ -145,6 +146,7 @@ import {
   compostBeforePlanting,
   eatWhenLow,
   expandBankWhenFull,
+  fillEmptySlots,
   harvestReadyPlots,
   openPendingContainers,
   plantEmptyPlots,
@@ -494,6 +496,7 @@ export class Agent {
         : (snapshot.combat.food.find((entry) => entry.qty > 0) ?? selected);
 
     const liveFood = readEquippedFood();
+    const gearUpgrades = readGearUpgrades();
 
     // Read live rather than from the snapshot. The snapshot refreshes only on
     // report, so a reflex could not see the effect of its own previous tick and
@@ -544,6 +547,16 @@ export class Agent {
           })),
         },
         (itemId, quantity) => claimMasteryToken(itemId, quantity, isSuspended),
+      ),
+      // Gear the character is plainly missing. An empty slot has nothing on the
+      // other side of the trade; a replacement must clear a margin.
+      fillEmptySlots(
+        {
+          inCombat: snapshot.combat.inCombat,
+          emptySlotGear: gearUpgrades.emptySlot,
+          replacements: gearUpgrades.replacement,
+        },
+        (itemId, slotId) => equipItem(itemId, slotId, isSuspended),
       ),
       openPendingContainers({ hasContainer: readNextContainer() !== null }, () => {
         const container = readNextContainer();

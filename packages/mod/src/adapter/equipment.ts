@@ -706,3 +706,59 @@ export function readFoodReserve(minimumMeals = 40): {
     return [];
   }
 }
+
+/**
+ * Gear worth putting on, with the comparison already made.
+ *
+ * The candidate reader evaluates every item in the bank against what is worn
+ * and offers only improvements — that part has always worked. What was missing
+ * is anything acting on the answer: a Jeweled Necklace sat in the bank with an
+ * empty neck slot and the list saying "Neck is empty" for as long as nobody
+ * read that line.
+ *
+ * Empty slots and replacements are returned separately because they are
+ * different kinds of decision. Filling nothing has no downside and belongs to a
+ * reflex; displacing worn gear is a comparison that has already been wrong once
+ * — a Steel Platebody scored *higher* than what it replaced and left an archer
+ * unable to land a shot — so it carries the margin by which it claims to win
+ * and lets the caller decide how much to trust a stat sum.
+ */
+export function readGearUpgrades(): {
+  emptySlot: { itemId: string; slotId: string; name: string }[];
+  replacement: { itemId: string; slotId: string; name: string; gain: number }[];
+} {
+  const player = game.combat.player;
+  const emptySlot: { itemId: string; slotId: string; name: string }[] = [];
+  const replacement: { itemId: string; slotId: string; name: string; gain: number }[] = [];
+
+  for (const entry of game.bank.items.values()) {
+    const item = entry.item;
+    if (!(item instanceof EquipmentItem)) continue;
+
+    const slot = item.validSlots[0];
+    if (slot === undefined) continue;
+
+    const current = projectSlot(slot.id);
+    if (current.itemId === item.id) continue;
+    if (!game.checkRequirements(item.equipRequirements, false)) continue;
+    if (penalisesAttackStyle(item.equipmentStats, player.attackType)) continue;
+
+    if (current.itemId === null) {
+      emptySlot.push({ itemId: item.id, slotId: slot.id, name: item.name });
+      continue;
+    }
+
+    const worn = game.items.equipment.getObjectByID(current.itemId);
+    if (worn === undefined) continue;
+
+    const wornScore = statScore(worn);
+    const gain = wornScore === 0 ? Number.POSITIVE_INFINITY : statScore(item) / wornScore;
+    if (gain <= 1) continue;
+
+    replacement.push({ itemId: item.id, slotId: slot.id, name: item.name, gain });
+  }
+
+  // Best first, so a reflex taking only the head of the list takes the best.
+  replacement.sort((a, b) => b.gain - a.gain);
+  return { emptySlot, replacement };
+}

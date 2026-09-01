@@ -34,6 +34,17 @@ const FOOD_TOPUP_THRESHOLD = 15;
  */
 const FOOD_UPGRADE_MARGIN = 1.25;
 
+/**
+ * How much better worn gear must be beaten by before a reflex swaps it.
+ *
+ * A fifth, because the stat sum this compares is a blunt instrument: it added a
+ * platebody's melee defence to its negative ranged attack and called the result
+ * an upgrade for an archer. That specific failure is now filtered separately,
+ * but the lesson stands — a margin means the sum has to be confidently right
+ * rather than merely right, and anything closer stays a planner decision.
+ */
+const GEAR_UPGRADE_MARGIN = 1.2;
+
 /** What one reflex pass did, for the journal. */
 export interface ReflexOutcome {
   name: string;
@@ -593,4 +604,52 @@ export function claimMasteryTokens(
     name: 'reflex.claimMasteryToken',
     result: claim(token.itemId, token.quantity),
   };
+}
+
+/**
+ * Fills empty equipment slots with gear already in the bank.
+ *
+ * A Jeweled Necklace sat in the bank with an empty neck slot and the candidate
+ * list saying so plainly — "Equip Jeweled Necklace (Neck is empty)" — for as
+ * long as nobody read that line. The reader was working; the choosing was not.
+ *
+ * An empty slot is the one gear decision with nothing on the other side. There
+ * is no item being displaced, no stat trade to weigh, and the candidate reader
+ * has already excluded anything that penalises the attack style in use, so
+ * whatever it offers for an empty slot is strictly better than the nothing
+ * currently there.
+ *
+ * Replacements stay with the planner. Swapping worn gear is a real comparison —
+ * the platebody that made an archer unable to land a shot scored *higher* than
+ * what it replaced — and that judgement is not one to make on a tick loop.
+ */
+export function fillEmptySlots(
+  state: {
+    inCombat: boolean;
+    /** Candidates whose target slot is currently empty, best first. */
+    emptySlotGear: readonly { itemId: string; slotId: string }[];
+    /** Gear that beats what is worn, as a ratio of stat scores, best first. */
+    replacements: readonly { itemId: string; slotId: string; gain: number }[];
+  },
+  equip: (itemId: string, slotId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  // Not mid-fight: the survivability gate approved this fight with the gear the
+  // character had, and changing it underneath that approval is how a safe
+  // fight becomes an unsafe one.
+  if (state.inCombat) return null;
+
+  const next = state.emptySlotGear[0];
+  if (next !== undefined) {
+    return { name: 'reflex.fillEmptySlot', result: equip(next.itemId, next.slotId) };
+  }
+
+  // Replacements, but only clear ones. Evaluating every new item is right;
+  // acting on a hair's-breadth stat difference is not, because the stat sum has
+  // already been wrong once — a Steel Platebody scored higher than what it
+  // replaced and left an archer unable to land a shot. A margin means the sum
+  // has to be confidently right, not merely right.
+  const upgrade = state.replacements.find((entry) => entry.gain >= GEAR_UPGRADE_MARGIN);
+  if (upgrade === undefined) return null;
+
+  return { name: 'reflex.upgradeGear', result: equip(upgrade.itemId, upgrade.slotId) };
 }
