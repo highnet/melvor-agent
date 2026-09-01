@@ -47,6 +47,7 @@ describe('capability registry', () => {
       'gather_resource',
       'make_paper',
       'new_slayer_task',
+      'open_item',
       'passive_cook',
       'repair_township',
       'restore_town_health',

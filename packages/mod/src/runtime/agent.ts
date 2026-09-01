@@ -37,6 +37,7 @@ import {
   increaseTownHealth,
   newSlayerTask,
   onGameEvent,
+  openItem,
   plantFarmPlot,
   readAgilityCandidates,
   readAstrologyCandidates,
@@ -59,6 +60,7 @@ import {
   readLevelCapCandidates,
   readLoadoutCandidates,
   readMasteryCandidates,
+  readOpenableCandidates,
   readPaperCandidates,
   readPassiveCookingCandidates,
   readRaidCandidates,
@@ -974,6 +976,8 @@ export class Agent {
         );
       case 'bury_bones':
         return buryBones(action.itemId, action.quantity, isSuspended);
+      case 'open_item':
+        return openItem(action.itemId, action.quantity, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1233,6 +1237,7 @@ export class Agent {
       ['township trader', readTraderCandidates],
       ['combat event', readEventCandidates],
       ['bones', readBoneCandidates],
+      ['containers', readOpenableCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
       ['paper', readPaperCandidates],

@@ -64,6 +64,7 @@ const DESCRIPTIONS: Record<string, string> = {
   choose_event_passive: 'Answer the passive choice an event freezes on between stages',
   convert_to_township: 'Trade bank items to the town for resources it can build with',
   bury_bones: 'Bury bones for Prayer XP and the points prayers spend',
+  open_item: 'Open bird nests and chests, the only source of some items',
   claim_township_task: 'Claim a finished Township task',
   claim_casual_task: 'Claim a finished casual task, freeing one of its five slots',
 };

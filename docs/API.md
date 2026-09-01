@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-153 exports.
+155 exports.
 
 ## `act`
 
@@ -809,6 +809,25 @@ matters — the failure is quiet when it does.
 onGameLoop: (ctx: Modding.ModContext, handler: () => void) => Disposer
 ```
 
+## `openItem`
+
+`function`
+
+Opens a container item — bird nests, chests, loot bags.
+
+These sit in the bank looking like ordinary items and are the game's way of
+handing out things that have no other source. Bird nests hold Farming seeds,
+which is the only reachable seed supply for a character whose Thieving tier
+is too low to drop them — so an agent that cannot open a nest cannot start
+Farming, and therefore cannot start Herblore either.
+
+`openItemOnClick` returns void, and the contents are random, so the evidence
+is the container leaving the bank rather than any particular reward arriving.
+
+```ts
+openItem: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ held: number; bankSlots: number; }>
+```
+
 ## `PanelHandle`
 
 `interface`
@@ -1264,6 +1283,16 @@ Skills whose mastery pool has XP worth spending.
 
 ```ts
 readMasteryCandidates: () => Candidate[]
+```
+
+## `readOpenableCandidates`
+
+`function`
+
+Containers worth opening.
+
+```ts
+readOpenableCandidates: () => Candidate[]
 ```
 
 ## `readPaperCandidates`

@@ -56,6 +56,7 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   choose_event_passive: manage,
   convert_to_township: manage,
   bury_bones: manage,
+  open_item: manage,
   restore_town_health: manage,
   select_dig_map: manage,
   select_dig_tool: manage,

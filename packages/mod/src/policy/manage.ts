@@ -230,6 +230,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `burying ${params.quantity}x ${params.itemId}`,
       );
 
+    case 'open_item':
+      return act(
+        { type: 'open_item', itemId: params.itemId, quantity: params.quantity },
+        `opening ${params.quantity}x ${params.itemId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

@@ -221,3 +221,78 @@ export function readBoneCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Opens a container item — bird nests, chests, loot bags.
+ *
+ * These sit in the bank looking like ordinary items and are the game's way of
+ * handing out things that have no other source. Bird nests hold Farming seeds,
+ * which is the only reachable seed supply for a character whose Thieving tier
+ * is too low to drop them — so an agent that cannot open a nest cannot start
+ * Farming, and therefore cannot start Herblore either.
+ *
+ * `openItemOnClick` returns void, and the contents are random, so the evidence
+ * is the container leaving the bank rather than any particular reward arriving.
+ *
+ * @param itemId - Namespaced `OpenableItem` id, already in the bank.
+ * @param quantity - How many to open. Capped at what the bank holds.
+ */
+export function openItem(
+  itemId: string,
+  quantity: number,
+  isSuspended: () => boolean,
+): ActionResult<{ held: number; bankSlots: number }> {
+  const item = game.items.getObjectByID(itemId);
+  if (item === undefined || !(item instanceof OpenableItem)) {
+    return fail('bank.openItem', 'precondition', `${itemId} is not an openable item`);
+  }
+
+  const project = (): { held: number; bankSlots: number } => ({
+    held: game.bank.getQty(item),
+    bankSlots: game.bank.occupiedSlots,
+  });
+
+  return act(
+    {
+      name: 'bank.openItem',
+      observe: project,
+      precondition: () => {
+        const held = game.bank.getQty(item);
+        if (held <= 0) return `bank holds no ${itemId}`;
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+          return `quantity must be a positive integer, got ${quantity}`;
+        }
+        // Contents need somewhere to go; a full bank discards them silently,
+        // the same way it discards anything a skill produces.
+        if (game.bank.occupiedSlots >= game.bank.maximumSlots) {
+          return `bank is full (${game.bank.occupiedSlots}/${game.bank.maximumSlots}); the contents would be discarded`;
+        }
+        return null;
+      },
+      perform: () => game.bank.openItemOnClick(item, Math.min(quantity, game.bank.getQty(item))),
+      // The container leaving is the evidence: what comes out is random, and a
+      // reward that happened to stack with something already held would show no
+      // new slot at all.
+      changed: (before, after) => after.held < before.held,
+    },
+    isSuspended,
+  );
+}
+
+/** Containers worth opening. */
+export function readOpenableCandidates(): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  for (const entry of game.bank.items.values()) {
+    if (!(entry.item instanceof OpenableItem)) continue;
+
+    candidates.push({
+      kind: 'open_item',
+      params: { kind: 'open_item', itemId: entry.item.id, quantity: entry.quantity },
+      label: `Open ${entry.quantity}x ${entry.item.name} — containers hold things with no other source, and a nest is the only seed supply below Thieving's higher tiers`,
+      available: true,
+    });
+  }
+
+  return candidates;
+}
