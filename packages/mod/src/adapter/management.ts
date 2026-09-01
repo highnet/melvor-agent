@@ -403,15 +403,29 @@ export function readCombatSetupCandidates(): Candidate[] {
   // which is also the only time the game allows the change.
   if (!game.combat.isActive) {
     const current = player.attackStyle?.id;
+    // Only styles matching the equipped weapon: the game applies the style for
+    // the weapon's attack type, so offering a Ranged style to a character
+    // holding a dagger is offering something with no effect. Restricting this
+    // to melee, as it was, made Ranged and Magic untrainable even with the
+    // right weapon equipped.
+    // `attackType` lives on WeaponItem, not on every EquipmentItem — an empty
+    // slot holds the empty item, which has no attack type at all.
+    const weapon = player.equipment.equippedItems['melvorD:Weapon']?.item;
+    const weaponType = weapon instanceof WeaponItem ? weapon.attackType : undefined;
+
     for (const style of game.attackStyles.allObjects) {
       try {
         if (style.id === current) continue;
-        if (style.attackType !== 'melee') continue;
+        if (weaponType !== undefined && style.attackType !== weaponType) continue;
 
         candidates.push({
           kind: 'set_attack_style',
-          params: { kind: 'set_attack_style', attackTypeId: 'melee', styleId: style.id },
-          label: `Fight with ${style.name} — decides which combat skill the XP goes to`,
+          params: {
+            kind: 'set_attack_style',
+            attackTypeId: style.attackType,
+            styleId: style.id,
+          },
+          label: `Fight with ${style.name} (${style.attackType}) — decides which combat skill the XP goes to`,
           available: true,
         });
       } catch {

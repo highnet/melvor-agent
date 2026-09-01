@@ -68,6 +68,13 @@ export function equipItem(
       observe: () => projectSlot(slot),
       precondition: () => {
         if (game.bank.getQty(item) <= 0) return `bank holds no ${itemId}`;
+        // The game refuses to equip gear whose requirements are unmet, and
+        // `equipItem` signals that by returning false — which surfaced as five
+        // identical "no state change" failures for an Oak Shortbow needing
+        // Ranged 5. Asking first turns that into an answer.
+        if (!game.checkRequirements(item.equipRequirements, false)) {
+          return `${itemId} has unmet equip requirements`;
+        }
         if (!item.validSlots.some((valid) => valid.id === slot)) {
           return `${itemId} cannot go in slot ${slot}`;
         }
@@ -163,6 +170,11 @@ export function readEquipCandidates(): Candidate[] {
 
     const current = projectSlot(slot.id);
     if (current.itemId === item.id) continue;
+
+    // Offering gear the character cannot wear is worse than not offering it:
+    // the planner spends an objective discovering a level requirement the game
+    // already knows.
+    if (!game.checkRequirements(item.equipRequirements, false)) continue;
 
     const currentItem =
       current.itemId === null ? undefined : game.items.equipment.getObjectByID(current.itemId);
