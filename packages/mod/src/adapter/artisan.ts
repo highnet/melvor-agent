@@ -234,6 +234,7 @@ function selectAffordableInputs(
   skill: {
     setAltRecipes?: Map<object, number>;
     selectedNonShardCosts?: Map<object, AnyItem>;
+    getAltRecipeCosts?: (recipe: object, item: AnyItem) => { checkIfOwned(): boolean };
   },
   recipe: object,
 ): void {
@@ -242,7 +243,7 @@ function selectAffordableInputs(
     skill.setAltRecipes.set(recipe, alternative);
   }
 
-  const nonShard = affordableNonShardItem(recipe);
+  const nonShard = affordableNonShardItem(recipe, skill);
   if (nonShard !== null && typeof skill.selectedNonShardCosts?.set === 'function') {
     skill.selectedNonShardCosts.set(recipe, nonShard);
   }

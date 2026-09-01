@@ -259,10 +259,36 @@ export function affordableAlternative(recipe: object): number | null {
  *
  * @returns An affordable secondary item, or null if none is held.
  */
-export function affordableNonShardItem(recipe: object): AnyItem | null {
+export function affordableNonShardItem(
+  recipe: object,
+  skill?: { getAltRecipeCosts?: (recipe: object, item: AnyItem) => { checkIfOwned(): boolean } },
+): AnyItem | null {
   const options = (recipe as { nonShardItemCosts?: AnyItem[] }).nonShardItemCosts;
   if (!Array.isArray(options)) return null;
 
+  // Ask the game what each choice actually costs, rather than checking that one
+  // is held at all.
+  //
+  // "Held at all" was the original test and it is wrong in a way that only
+  // shows up with a mixed bank: Summoning prices a secondary by its value, so a
+  // cheap log is needed in far greater quantity than an expensive one. With one
+  // Normal Log and fifteen Mahogany, the first option matched on `> 0`, the
+  // recipe was pointed at a log there was nowhere near enough of, and the craft
+  // refused with "missing materials for melvorF:Ent" while holding 57 shards
+  // and plenty of usable wood.
+  if (typeof skill?.getAltRecipeCosts === 'function') {
+    for (const item of options) {
+      try {
+        if (skill.getAltRecipeCosts(recipe, item).checkIfOwned()) return item;
+      } catch {
+        // An unpriceable option is skipped, not treated as affordable.
+      }
+    }
+    return null;
+  }
+
+  // Without the skill there is nothing better to ask, so fall back to the old
+  // test rather than refusing outright.
   return options.find((item) => game.bank.getQty(item) > 0) ?? null;
 }
 
@@ -271,6 +297,7 @@ function selectAffordableRecipeInputs(
   skill: {
     setAltRecipes?: Map<object, number>;
     selectedNonShardCosts?: Map<object, AnyItem>;
+    getAltRecipeCosts?: (recipe: object, item: AnyItem) => { checkIfOwned(): boolean };
   },
   recipe: object,
 ): void {
@@ -279,7 +306,7 @@ function selectAffordableRecipeInputs(
     skill.setAltRecipes.set(recipe, alternative);
   }
 
-  const nonShard = affordableNonShardItem(recipe);
+  const nonShard = affordableNonShardItem(recipe, skill);
   if (nonShard !== null && typeof skill.selectedNonShardCosts?.set === 'function') {
     skill.selectedNonShardCosts.set(recipe, nonShard);
   }
