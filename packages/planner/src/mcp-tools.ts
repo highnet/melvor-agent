@@ -145,6 +145,17 @@ export const TOOLS: Record<string, ToolHandler> = {
     const targetLevel = Number(args.targetLevel);
     const abortMinutes = Number(args.abortMinutes);
 
+    // A target the character has already passed makes an objective that
+    // completes on its first tick without acting — it looks like success and
+    // does nothing. Live, "fletch bows to level 20" at Fletching 20 finished
+    // instantly and produced no bows.
+    const snapshot = store.report?.snapshot ?? null;
+    const alreadyThere =
+      snapshot === null ? null : levelAlreadyReached(chosen, targetLevel, snapshot);
+    if (alreadyThere !== null) {
+      return `Refused: ${alreadyThere}. Pick a level above it, or a different candidate.`;
+    }
+
     // Params are copied from the candidate verbatim. The caller picks *which*,
     // never *what*, so a mistyped or invented recipe id is impossible.
     store.enqueue({
@@ -309,6 +320,26 @@ function describe(candidate: {
 }
 
 /** Success criterion for a chosen candidate; skill kinds use the caller's target. */
+/**
+ * Whether a level target is already satisfied.
+ *
+ * @returns A reason to refuse, or null when the target is still ahead.
+ */
+function levelAlreadyReached(
+  candidate: { params: Record<string, unknown> },
+  targetLevel: number,
+  snapshot: { skills: { id: string; name: string; level: number }[] },
+): string | null {
+  const skillId = candidate.params.skillId;
+  if (typeof skillId !== 'string') return null;
+
+  const skill = snapshot.skills.find((entry) => entry.id === skillId);
+  if (skill === undefined) return null;
+  if (skill.level < targetLevel) return null;
+
+  return `${skill.name} is already level ${skill.level}, so a target of ${targetLevel} is met before the objective starts and it would finish without acting`;
+}
+
 function successFor(
   candidate: { kind: string; params: Record<string, unknown> },
   targetLevel: number,
