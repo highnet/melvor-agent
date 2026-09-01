@@ -18,10 +18,12 @@ export { readBankPressure, readBankQuantity, sellItem, type SaleProjection } fro
 export {
   disengageCombat,
   engageMonster,
+  collectLoot,
   readCombatGateInputs,
   readCombatTargets,
   readTargetCombatLevel,
   screenByCombatLevel,
+  shouldCollectLoot,
   readSpellCandidates,
   selectAttackSpell,
   startDungeon,

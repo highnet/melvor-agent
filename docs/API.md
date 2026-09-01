@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-144 exports.
+146 exports.
 
 ## `act`
 
@@ -314,6 +314,25 @@ unmet, which is cheating the game rather than playing it.
 
 ```ts
 claimTownshipTask: (taskId: string, isSuspended: () => boolean) => ActionResult<{ taskId: string; claimed: boolean; }>
+```
+
+## `collectLoot`
+
+`function`
+
+Collects everything in the combat loot container.
+
+Kills drop into a container that holds a fixed number of stacks and then
+starts *discarding* — the game tracks what was lost in `lostLoot`. Nothing
+announces this: the fight looks healthy, the XP keeps coming, and every drop
+silently evaporates. An agent fighting unattended for hours would collect
+nothing at all, which makes combat pure XP and no materials.
+
+That matters beyond the items: bones feed Prayer, hides feed Crafting, and
+the Township tasks ask for monster drops by name.
+
+```ts
+collectLoot: (isSuspended: () => boolean) => ActionResult<LootProjection>
 ```
 
 ## `CombatProjection`
@@ -1601,6 +1620,16 @@ deliberately; without this the agent cannot train Defence at all.
 
 ```ts
 setAttackStyle: (attackTypeId: string, styleId: string, isSuspended: () => boolean) => ActionResult<{ styleId: string | undefined; }>
+```
+
+## `shouldCollectLoot`
+
+`function`
+
+Whether loot is worth collecting now.
+
+```ts
+shouldCollectLoot: () => boolean
 ```
 
 ## `SkillState`

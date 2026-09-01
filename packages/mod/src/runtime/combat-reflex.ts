@@ -177,3 +177,20 @@ export function abandonIfOutmatched(
 
   return { name: 'reflex.abandonIfOutmatched', result: disengage() };
 }
+
+/**
+ * Empties the combat loot container before it starts discarding.
+ *
+ * A reflex rather than a decision: there is no judgement in it, the cost is a
+ * single call, and the alternative is losing everything the fighting produced.
+ * The container holds a fixed number of stacks and then silently drops the
+ * rest, which an unattended agent would never notice.
+ */
+export function collectPendingLoot(
+  state: { inCombat: boolean; hasLootWorthTaking: boolean },
+  loot: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.hasLootWorthTaking) return null;
+
+  return { name: 'reflex.collectLoot', result: loot() };
+}

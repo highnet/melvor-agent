@@ -21,6 +21,7 @@ import {
   chooseEventPassive,
   claimCasualTask,
   claimTownshipTask,
+  collectLoot,
   compostFarmPlot,
   convertItemToTownship,
   disengageCombat,
@@ -78,6 +79,7 @@ import {
   selectTownshipWorship,
   sellItem,
   setAttackStyle,
+  shouldCollectLoot,
   spendMasteryPool,
   startCombatEvent,
   startDungeon,
@@ -101,7 +103,12 @@ import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
 import type { PolicyAction } from '../policy/types.js';
-import { abandonIfOutmatched, eatWhenLow, refillFood } from './combat-reflex.js';
+import {
+  abandonIfOutmatched,
+  collectPendingLoot,
+  eatWhenLow,
+  refillFood,
+} from './combat-reflex.js';
 import type { Logger } from './logger.js';
 import type { Transport } from './transport.js';
 
@@ -383,6 +390,10 @@ export class Agent {
           autoEatThresholdFraction: normaliseFraction(snapshot.combat.autoEatThreshold),
         },
         () => eatFood(isSuspended),
+      ),
+      collectPendingLoot(
+        { inCombat: snapshot.combat.inCombat, hasLootWorthTaking: shouldCollectLoot() },
+        () => collectLoot(isSuspended),
       ),
       // The live check that makes the pre-fight screen safe: outside combat the
       // game cannot compute enemy stats, so the screen guesses from combat

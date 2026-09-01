@@ -558,3 +558,63 @@ export function readSpellCandidates(): Candidate[] {
 
   return candidates;
 }
+
+// --- loot ------------------------------------------------------------------
+
+/** What collecting loot claims to change. */
+export interface LootProjection {
+  pending: number;
+  bankSlotsUsed: number;
+}
+
+/**
+ * Collects everything in the combat loot container.
+ *
+ * Kills drop into a container that holds a fixed number of stacks and then
+ * starts *discarding* — the game tracks what was lost in `lostLoot`. Nothing
+ * announces this: the fight looks healthy, the XP keeps coming, and every drop
+ * silently evaporates. An agent fighting unattended for hours would collect
+ * nothing at all, which makes combat pure XP and no materials.
+ *
+ * That matters beyond the items: bones feed Prayer, hides feed Crafting, and
+ * the Township tasks ask for monster drops by name.
+ */
+export function collectLoot(isSuspended: () => boolean): ActionResult<LootProjection> {
+  const project = (): LootProjection => ({
+    pending: game.combat.loot.drops.length,
+    bankSlotsUsed: game.bank.occupiedSlots,
+  });
+
+  return act(
+    {
+      name: 'combat.loot',
+      observe: project,
+      precondition: () => {
+        if (game.combat.loot.drops.length === 0) return 'nothing to loot';
+        if (game.bank.occupiedSlots >= game.bank.maximumSlots) {
+          // Looting into a full bank drops the items instead of banking them,
+          // which is worse than leaving them in the container where they at
+          // least remain until it overflows.
+          return 'bank is full; looting now would discard the drops';
+        }
+        return null;
+      },
+      perform: () => game.combat.loot.lootAll(),
+      changed: (before, after) => after.pending < before.pending,
+    },
+    isSuspended,
+  );
+}
+
+/** How many stacks may sit in the container before drops start being lost. */
+const LOOT_COLLECT_THRESHOLD = 4;
+
+/** Whether loot is worth collecting now. */
+export function shouldCollectLoot(): boolean {
+  try {
+    const loot = game.combat.loot;
+    return loot.drops.length >= Math.min(LOOT_COLLECT_THRESHOLD, loot.maxLoot);
+  } catch {
+    return false;
+  }
+}

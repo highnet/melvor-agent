@@ -2,6 +2,7 @@ import type { ActionResult } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   abandonIfOutmatched,
+  collectPendingLoot,
   dropUnpayablePrayers,
   eatWhenLow,
   refillFood,
@@ -157,5 +158,30 @@ describe('abandonIfOutmatched', () => {
 
   it('does nothing outside combat', () => {
     expect(abandonIfOutmatched(fight({ inCombat: false, enemyMaxHit: 999 }), () => ok)).toBeNull();
+  });
+});
+
+describe('collectPendingLoot', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  it('collects when the container is filling', () => {
+    // A reflex rather than a decision: there is no judgement in it, the cost is
+    // one call, and the alternative is silently losing everything the fighting
+    // produced once the container overflows.
+    const outcome = collectPendingLoot({ inCombat: true, hasLootWorthTaking: true }, () => ok);
+
+    expect(outcome?.name).toBe('reflex.collectLoot');
+  });
+
+  it('does nothing when there is nothing worth taking', () => {
+    expect(collectPendingLoot({ inCombat: true, hasLootWorthTaking: false }, () => ok)).toBeNull();
+  });
+
+  it('still collects after combat ends', () => {
+    // Loot outlives the fight, and a container left full is the same loss
+    // whether or not the character is still swinging.
+    expect(
+      collectPendingLoot({ inCombat: false, hasLootWorthTaking: true }, () => ok),
+    ).not.toBeNull();
   });
 });
