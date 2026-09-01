@@ -302,6 +302,8 @@ export class Agent {
   private readonly reflexBackoff = new Map<string, number>();
   private lastProgressAt = Date.now();
   private lastProgressMarker = -1;
+  /** Whether the current stuck episode has already been reported; see detectStuck. */
+  private stuckReported = false;
   private replanPending: string | null = null;
   /** Guards against overlapping planner calls while one is in flight. */
   private replanning = false;
@@ -1467,16 +1469,36 @@ export class Agent {
     if (snapshot === null) return;
 
     const gp = snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
-    const marker = snapshot.totalLevel * 1e9 + gp + snapshot.completionPercent;
+    // Deliberately *not* completionPercent, which was in this marker and is why
+    // the detector never fired on a dead objective. Township ticks in the
+    // background and nudges completion on its own, so a fight producing
+    // absolutely nothing still looked like progress: GP frozen at exactly
+    // 30,816 and total level at 391 for seventeen minutes, while completion
+    // drifted 2.98 to 2.99 and reset the clock.
+    //
+    // Total level and GP are what the *current objective* is supposed to move.
+    // Completion is what the character accumulates by existing, and mixing the
+    // two makes the check unable to tell working from merely running.
+    const marker = snapshot.totalLevel * 1e9 + gp;
 
     if (marker !== this.lastProgressMarker) {
       this.lastProgressMarker = marker;
       this.lastProgressAt = now;
+      this.stuckReported = false;
       return;
     }
 
     if (now - this.lastProgressAt > STUCK_AFTER_MS && this.replanPending === null) {
-      this.log.warn('reflex', 'no XP, GP or completion movement for 15min; escalating');
+      // Once per episode. This warning fired 1,237 times today at three-second
+      // intervals — the same drown-the-signal failure the reflex backoff was
+      // written for, in the one place whose entire job is to be noticed.
+      if (!this.stuckReported) {
+        this.stuckReported = true;
+        this.log.warn(
+          'reflex',
+          `no total level or GP movement for 15min while running "${this.settings.objective?.rationale ?? 'no objective'}"; escalating`,
+        );
+      }
       this.requestReplan('stuck_detected');
     }
   }
