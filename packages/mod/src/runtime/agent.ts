@@ -65,6 +65,7 @@ import {
   readOpenableCandidates,
   readPaperCandidates,
   readPassiveCookingCandidates,
+  readPlantableSeeds,
   readRaidCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
@@ -121,6 +122,7 @@ import {
   eatWhenLow,
   harvestReadyPlots,
   openPendingContainers,
+  plantEmptyPlots,
   refillFood,
 } from './combat-reflex.js';
 import type { Logger } from './logger.js';
@@ -449,6 +451,19 @@ export class Agent {
             .map((plot) => plot.id),
         },
         (plotId) => harvestFarmPlot(plotId, isSuspended),
+      ),
+      // Runs after the harvest, so a plot cleared this tick is available to be
+      // replanted on the next rather than being read as still occupied.
+      plantEmptyPlots(
+        {
+          emptyPlotIds: snapshot.farm
+            .filter((plot) => plot.state === 'empty')
+            .map((plot) => plot.id),
+          plentifulSeeds: readPlantableSeeds()
+            .map((seed) => ({ recipeId: seed.recipeId, held: seed.seedsHeld }))
+            .sort((a, b) => b.held - a.held),
+        },
+        (plotId, recipeId) => plantFarmPlot(plotId, recipeId, isSuspended),
       ),
       // The live check that makes the pre-fight screen safe: outside combat the
       // game cannot compute enemy stats, so the screen guesses from combat

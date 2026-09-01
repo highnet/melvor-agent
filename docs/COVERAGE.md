@@ -43,7 +43,7 @@ than a return value it was told to trust.
 | `spend_mastery` | Convert a skill's mastery pool into mastery levels |
 | `start_combat_event` | Enter a combat event — the end-game gauntlet ending in a final boss |
 | `survey_hex` | Survey the best available Cartography hex |
-| `tend_farm` | Plant and harvest farm plots |
+| `tend_farm` | Buy, plant and harvest farm plots |
 | `toggle_aurora` | Turn an aurora on or off |
 | `toggle_bank_lock` | Lock a bank item so selling cannot destroy it |
 | `toggle_curse` | Turn a curse on or off |

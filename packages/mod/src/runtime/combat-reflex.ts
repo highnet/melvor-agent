@@ -268,3 +268,32 @@ export function harvestReadyPlots(
 
   return { name: 'reflex.harvestPlot', result: harvest(plotId) };
 }
+
+/**
+ * Plants an empty plot with a seed there is plenty of.
+ *
+ * The companion to harvesting, and free: an empty plot earns nothing, a
+ * planted one grows in the background without touching the action slot. Two
+ * plots sat empty through a whole Cartography objective because the agent had
+ * moved on and nothing looked back at the farm.
+ *
+ * Only seeds held in quantity are used. A seed held singly may be the only one
+ * of its kind — the herb seed the whole Herblore chain waits on — and spending
+ * that on an allotment is a decision the planner should make, not a reflex.
+ */
+export function plantEmptyPlots(
+  state: {
+    emptyPlotIds: readonly string[];
+    /** Seeds held, richest first. Callers filter to what is plantable. */
+    plentifulSeeds: readonly { recipeId: string; held: number }[];
+  },
+  plant: (plotId: string, recipeId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const plotId = state.emptyPlotIds[0];
+  if (plotId === undefined) return null;
+
+  const seed = state.plentifulSeeds.find((entry) => entry.held > 1);
+  if (seed === undefined) return null;
+
+  return { name: 'reflex.plantPlot', result: plant(plotId, seed.recipeId) };
+}

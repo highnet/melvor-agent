@@ -30,7 +30,7 @@ const DESCRIPTIONS: Record<string, string> = {
   buy_shop_upgrade: 'Buy from the shop above a GP floor',
   fight_monster: 'Fight a monster, behind the survivability gate',
   run_dungeon: 'Run a dungeon, gated on its hardest monster',
-  tend_farm: 'Plant and harvest farm plots',
+  tend_farm: 'Buy, plant and harvest farm plots',
   compost_plot: 'Compost a growing plot so the crop cannot die',
   equip_item: 'Equip gear, including mid-fight',
   equip_food: 'Equip food from the bank',

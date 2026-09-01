@@ -7,6 +7,7 @@ import {
   eatWhenLow,
   harvestReadyPlots,
   openPendingContainers,
+  plantEmptyPlots,
   refillFood,
 } from '../src/runtime/combat-reflex.js';
 
@@ -347,5 +348,60 @@ describe('harvestReadyPlots', () => {
     });
 
     expect(harvested).toEqual(['p1']);
+  });
+});
+
+describe('plantEmptyPlots', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  it('plants an empty plot with a seed held in quantity', () => {
+    const planted: string[] = [];
+    plantEmptyPlots(
+      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Potato', held: 6 }] },
+      (plotId, recipeId) => {
+        planted.push(`${plotId}:${recipeId}`);
+        return ok();
+      },
+    );
+
+    expect(planted).toEqual(['p1:Potato']);
+  });
+
+  it('leaves a seed held singly for the planner', () => {
+    // The one herb seed the whole Herblore chain waits on must not be spent on
+    // an allotment by a reflex nobody asked.
+    const outcome = plantEmptyPlots(
+      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Herb', held: 1 }] },
+      () => ok(),
+    );
+
+    expect(outcome).toBeNull();
+  });
+
+  it('skips the singleton and uses the plentiful seed behind it', () => {
+    const planted: string[] = [];
+    plantEmptyPlots(
+      {
+        emptyPlotIds: ['p1'],
+        plentifulSeeds: [
+          { recipeId: 'Herb', held: 1 },
+          { recipeId: 'Cabbage', held: 6 },
+        ],
+      },
+      (_plotId, recipeId) => {
+        planted.push(recipeId);
+        return ok();
+      },
+    );
+
+    expect(planted).toEqual(['Cabbage']);
+  });
+
+  it('does nothing when no plot is empty', () => {
+    expect(
+      plantEmptyPlots({ emptyPlotIds: [], plentifulSeeds: [{ recipeId: 'Potato', held: 9 }] }, () =>
+        ok(),
+      ),
+    ).toBeNull();
   });
 });
