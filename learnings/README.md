@@ -38,3 +38,37 @@ tomorrow, and tomorrow nobody is watching.
 Corollary: prefer the guard that makes the mistake unavailable over the fix that
 makes it undone. A sell list that cannot offer seeds is stronger than a planner
 that remembers not to pick them.
+
+## If the fix is free, it is never a plan
+
+The protocol above says encode efficiencies in code. This is its sharp edge, and
+it was learned by killing the character.
+
+The food reserve ran out during Thieving. An hour earlier I had looked at
+exactly that shortfall, added a warning, and argued in the commit message for
+*reporting* it rather than acting: restocking is a real plan — fish, then cook,
+then come back — and a reflex would send the agent off fishing mid-objective.
+
+Both halves were wrong.
+
+**The asymmetry was backwards.** A detour costs minutes. Running out costs the
+character. When one branch is recoverable and the other is not, "let the planner
+decide" is not caution; it is a bet that someone is watching.
+
+**The premise was false, and checkable.** Passive cooking does not take the
+action slot. Its own candidate label says so: *"runs in the background of
+whatever else is happening."* I had read that line a dozen times that day. There
+was never a trade-off to delegate — cooking while Thieving is free.
+
+Every ingredient was present when it died: sixteen Raw Beef, nineteen Raw
+Shrimp, Cooking 22, two idle cookers, and a warning I had written myself. It
+starved surrounded by food it could have cooked.
+
+The test before deciding something belongs to the planner:
+
+1. Does acting cost anything the agent cannot get back? If no, reflex.
+2. Does *not* acting cost something it cannot get back? If yes, reflex.
+3. Is the "cost" I am protecting actually real — or did I infer it? Check.
+
+Step 3 is the one that failed. The others were reasoning; this was a fact
+sitting in a string literal.
