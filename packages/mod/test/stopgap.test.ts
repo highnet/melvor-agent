@@ -104,3 +104,67 @@ describe('stopgap', () => {
     expect(chooseStopgap([], NOW)).toBeNull();
   });
 });
+
+describe('free actions', () => {
+  it('claims a finished task before falling back to grinding', () => {
+    // The rule "a stopgap makes no decisions" bends only where there is no
+    // decision: claiming spends nothing and forfeits nothing.
+    const objective = chooseStopgap(
+      [
+        gather('melvorD:Woodcutting', 'melvorD:Willow', 15_840),
+        {
+          kind: 'claim_township_task',
+          params: { kind: 'claim_township_task', taskId: 'melvorF:Task_1' },
+          label: 'Claim the Township task Task',
+          available: true,
+        },
+      ],
+      NOW,
+    );
+
+    expect(objective?.kind).toBe('claim_township_task');
+  });
+
+  it('opens a container before falling back to grinding', () => {
+    // Left alone, an unattended agent sat on sixteen bird nests while the seeds
+    // inside were the one thing blocking Farming.
+    const objective = chooseStopgap(
+      [
+        gather('melvorD:Woodcutting', 'melvorD:Willow', 15_840),
+        {
+          kind: 'open_item',
+          params: { kind: 'open_item', itemId: 'melvorD:Bird_Nest', quantity: 16 },
+          label: 'Open 16x Bird Nest',
+          available: true,
+        },
+      ],
+      NOW,
+    );
+
+    expect(objective?.kind).toBe('open_item');
+  });
+
+  it('still refuses anything that spends', () => {
+    // Buying, selling and equipping are judgements about what to give up, and a
+    // scoring function making them unattended is the greedy behaviour this
+    // design exists to refuse.
+    const objective = chooseStopgap(
+      [
+        {
+          kind: 'buy_shop_upgrade',
+          params: {
+            kind: 'buy_shop_upgrade',
+            purchaseId: 'melvorD:Black_Axe',
+            quantity: 1,
+            gpFloor: 0,
+          },
+          label: 'Buy Black Axe',
+          available: true,
+        },
+      ],
+      NOW,
+    );
+
+    expect(objective).toBeNull();
+  });
+});

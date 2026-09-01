@@ -38,6 +38,36 @@ const STOPGAP_MINUTES = 30;
  * @returns An objective to run, or null when nothing sustained is available.
  */
 export function chooseStopgap(candidates: readonly Candidate[], now: number): Objective | null {
+  // Before falling back to grinding, take anything that is free.
+  //
+  // The rule this bends is "a stopgap makes no decisions", and it bends it only
+  // where there is no decision to make: claiming a finished task and opening a
+  // container spend nothing, forfeit nothing, and are strictly better done than
+  // left. Leaving them is how an unattended agent sat on sixteen bird nests for
+  // a whole session while the seeds inside were the one thing blocking Farming.
+  //
+  // Anything that spends — buying, selling, equipping, burying — stays out.
+  // Those are judgements about what to give up, and a scoring function making
+  // them unattended is the greedy behaviour this whole design refuses.
+  const free = candidates.find(
+    (candidate) =>
+      candidate.kind === 'claim_township_task' ||
+      candidate.kind === 'claim_casual_task' ||
+      candidate.kind === 'open_item',
+  );
+
+  if (free !== undefined) {
+    return {
+      id: `stopgap-free-${now}`,
+      kind: free.kind,
+      params: free.params,
+      successWhen: [],
+      abortWhen: { minutesExceed: 5 },
+      expectedDurationMin: 1,
+      rationale: `stopgap: taking a free action that costs nothing and is strictly better done than left (${free.label}). A real plan should still replace this.`,
+    };
+  }
+
   const sustained = candidates.filter((candidate) => candidate.kind === 'gather_resource');
   if (sustained.length === 0) return null;
 
