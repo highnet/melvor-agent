@@ -282,6 +282,36 @@ export function readCombatGateInputs(
   };
 }
 
+/** The slot ranged ammunition occupies; see `EquipmentSlotIDs` in the typings. */
+const QUIVER_SLOT_ID = 'melvorD:Quiver';
+
+/**
+ * Why this fight cannot be fought, or null if it can.
+ *
+ * Ranged with an empty quiver is not a fight, it is a stalemate: the character
+ * cannot attack, so the enemy never dies and nothing is learned. That produced
+ * one of the least legible failures of the session — the agent engaged, the
+ * adapter reported `combat.engage ok`, and the state read "Doing: nothing" with
+ * full health across two different monsters in two different areas while the
+ * objective sat there for twenty minutes.
+ *
+ * Nothing lied. Engaging genuinely succeeded, because the evidence for engaging
+ * is deliberately "the game committed to this fight" rather than "punches have
+ * been thrown" — the enemy spawns a tick later. A fight that can never start
+ * looks exactly like one that is about to, which is precisely the gap a
+ * precondition is for.
+ */
+function ammunitionRefusal(): string | null {
+  const player = game.combat.player;
+  if (player.attackType !== 'ranged') return null;
+
+  const quiver = player.equipment.equippedItems[QUIVER_SLOT_ID];
+  const held = quiver === undefined || quiver.item === quiver.emptyItem ? 0 : quiver.quantity;
+  if (held > 0) return null;
+
+  return 'the quiver is empty and the equipped weapon is ranged, so no attack can land';
+}
+
 /**
  * Engages a monster in an area.
  *
@@ -326,6 +356,8 @@ export function engageMonster(
           return `entry requirements not met for ${areaId}`;
         }
         if (game.combat.isActive) return 'already in combat';
+        const ammunition = ammunitionRefusal();
+        if (ammunition !== null) return ammunition;
         const active = game.activeAction;
         if (active !== undefined) return `another action is running: ${active.id}`;
         return null;
@@ -406,6 +438,8 @@ export function startDungeon(
           return `entry requirements not met for ${dungeonId}`;
         }
         if (game.combat.isActive) return 'already in combat';
+        const ammunition = ammunitionRefusal();
+        if (ammunition !== null) return ammunition;
         const active = game.activeAction;
         if (active !== undefined) return `another action is running: ${active.id}`;
         return null;
