@@ -114,12 +114,22 @@ export function buyShopPurchase(
         }
         return null;
       },
-      // `confirmed` skips the modal, which nothing would answer.
-      perform: () => game.shop.buyItemOnClick(purchase, true),
+      perform: () => {
+        // `buyItemOnClick` buys `shop.buyQuantity`, not a quantity passed in.
+        // The parameter was validated and then ignored, so "buy 25 shards"
+        // bought one — an objective that reported success having done a
+        // twenty-fifth of its job.
+        game.shop.buyQuantity = quantity;
+        // `confirmed` skips the modal, which nothing would answer.
+        game.shop.buyItemOnClick(purchase, true);
+      },
       // Either signal counts: an upgrade raises the purchase count, a
       // consumable raises the bank. Both spend the currency, but GP alone is
       // not proof — a failed purchase that refunds would look identical.
       changed: (before, after) => after.owned > before.owned || after.granted > before.granted,
+      // Buying fewer than asked is not a failure worth abandoning the objective
+      // over — the shop caps some purchases — but it is worth recording, which
+      // the before/after evidence does on its own.
     },
     isSuspended,
   );
