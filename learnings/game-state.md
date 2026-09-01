@@ -306,3 +306,34 @@ of them said which:
 
 When a reader can return nothing for unrelated reasons, publish the reason.
 Check timestamps before "fixing" anything a log complains about.
+
+## `skill.rareDrops` is the global rare table, not the skill's drops
+
+Dumping `rareDrops` to answer "which skill drops Bird Nests" produced sixty
+rows and not one nest. The field holds the *universal* rares that every skill
+rolls — Gold Topaz Ring, Jewel/Circlet of Rhaelyx, Mysterious Stone, the
+skill's Lesser Relic — plus the odd one-off. It is not "what this skill
+produces".
+
+Bird Nests are not in game data as a drop at all. The only trace in the
+typings is a modifier:
+
+```
+enums.d.ts  increasedBirdNestDropRate
+enums.d.ts  increasedMinimumBirdNestsWhenPotionActive
+```
+
+A modifier named for a thing implies a base rate, and the base rate lives in
+game logic rather than in any registry. So the question is not answerable from
+a dump, and adding a section to try was the wrong instrument — a modifier's
+existence plus an observed drop while woodcutting is the whole of the available
+evidence.
+
+Worth knowing before repeating the attempt. Two sections were added today for
+questions like this: `summoningRecipes` answered its question completely
+(nonShardItemCosts is real data), `skillRareDrops` did not answer its one at
+all.
+
+Note also `Bird_Nest_Potion_I..IV` — Herblore boosts nest drops, which closes a
+loop worth remembering: Farming needs seeds, seeds come from nests, nests are
+boosted by a Herblore potion, and Herblore is gated on Farming.
