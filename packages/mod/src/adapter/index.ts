@@ -57,11 +57,13 @@ export {
 } from './farming.js';
 export {
   eatFood,
+  unequipItem,
   readBankedFood,
   equipFood,
   equipItem,
   changeEquipmentSet,
   readEquipCandidates,
+  readPenalisingGear,
   readEquipmentSetCandidates,
   readSynergyCandidates,
   type EquipProjection,

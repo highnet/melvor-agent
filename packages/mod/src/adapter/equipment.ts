@@ -124,6 +124,66 @@ export function equipItem(
 }
 
 /**
+ * Takes something off.
+ *
+ * The counterpart that did not exist. The agent could put gear on and never
+ * remove it, which is not a small omission: a human unequips constantly — to
+ * swap damage types, to clear a slot, to undo a mistake — and without it every
+ * equip was one-way and permanent.
+ *
+ * It became urgent rather than theoretical when a Steel Platebody was equipped
+ * for its defence and turned out to carry a negative ranged attack bonus. The
+ * candidate reader now refuses to offer such gear, but refusing to offer it
+ * does nothing about the piece already worn, and there was no way to take it
+ * off short of a human doing it by hand.
+ *
+ * The bank check is a real precondition, not defensiveness: unequipping moves
+ * the item back to the bank, and a full bank is the one state where that can
+ * fail.
+ *
+ * @param slotId - The equipment slot to clear.
+ * @param isSuspended - Guard against acting during offline catch-up.
+ */
+export function unequipItem(
+  slotId: string,
+  isSuspended: () => boolean,
+): ActionResult<EquipProjection> {
+  const slot = game.equipmentSlots.getObjectByID(slotId);
+  if (slot === undefined) {
+    return fail('equipment.unequip', 'precondition', `no equipment slot registered as ${slotId}`);
+  }
+
+  const player = game.combat.player;
+
+  return act(
+    {
+      name: 'equipment.unequip',
+      observe: () => projectSlot(slotId),
+      precondition: () => {
+        const worn = projectSlot(slotId);
+        if (worn.itemId === null) return `${slotId} is already empty`;
+
+        // Unequipping moves the item back to the bank, and a full bank is the
+        // one state where that can lose it. But "full" is not the whole
+        // question: an item the bank already holds stacks into the slot it
+        // occupies and needs no new one, and refusing those would strand gear
+        // on a character precisely when the bank is under pressure — which is
+        // when swapping gear matters most.
+        const item = game.items.equipment.getObjectByID(worn.itemId);
+        const stacksWithExisting = item !== undefined && game.bank.getQty(item) > 0;
+        if (!stacksWithExisting && game.bank.occupiedSlots >= game.bank.maximumSlots) {
+          return 'the bank is full and holds none of this item, so it has nowhere to go';
+        }
+        return null;
+      },
+      perform: () => player.unequipItem(player.selectedEquipmentSet, slot),
+      changed: (before, after) => before.itemId !== null && after.itemId === null,
+    },
+    isSuspended,
+  );
+}
+
+/**
  * Equips food.
  *
  * Separate from {@link equipItem} because food has its own slots and its own
@@ -519,4 +579,27 @@ export function readBankedFood(): { itemId: string; quantity: number }[] {
   return food
     .sort((a, b) => b.heals - a.heals)
     .map((entry) => ({ itemId: entry.itemId, quantity: entry.quantity }));
+}
+
+/**
+ * Worn gear that is working against the current attack style.
+ *
+ * Reads only; the decision to remove it is {@link removePenalisingGear} in the
+ * reflex tier. The weapon slot is excluded deliberately — a weapon *defines*
+ * the style rather than fighting it, and stripping it would leave the character
+ * unarmed, which is a worse position than a bad bonus.
+ */
+export function readPenalisingGear(): { slotId: string; itemName: string }[] {
+  const player = game.combat.player;
+  const worn: { slotId: string; itemName: string }[] = [];
+
+  for (const [slotId, equipped] of Object.entries(player.equipment.equippedItems)) {
+    if (slotId === 'melvorD:Weapon' || slotId === 'melvorD:Quiver') continue;
+    if (equipped.item === equipped.emptyItem) continue;
+    if (!penalisesAttackStyle(equipped.item.equipmentStats, player.attackType)) continue;
+
+    worn.push({ slotId, itemName: equipped.item.name });
+  }
+
+  return worn;
 }

@@ -16,6 +16,7 @@ import {
   buildTownshipBuilding,
   buryBones,
   buyShopPurchase,
+  unequipItem,
   changeEquipmentSet,
   checkCharacterAllowed,
   checkRealmAllowed,
@@ -43,6 +44,7 @@ import {
   readAgilityCandidates,
   readAstrologyCandidates,
   readBankExpansion,
+  readPenalisingGear,
   readCheapPermanentUpgrades,
   readBankPressure,
   readBankedFood,
@@ -133,6 +135,7 @@ import {
   compostBeforePlanting,
   eatWhenLow,
   buyTrivialUpgrades,
+  removePenalisingGear,
   expandBankWhenFull,
   harvestReadyPlots,
   openPendingContainers,
@@ -511,6 +514,15 @@ export class Agent {
           upgrades: readCheapPermanentUpgrades(),
         },
         (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
+      ),
+      // After the bank reflexes above, deliberately: unequipping puts the item
+      // back in the bank, so a slot must exist before the gear can come off.
+      removePenalisingGear(
+        {
+          inCombat: snapshot.combat.inCombat,
+          penalising: readPenalisingGear(),
+        },
+        (slotId) => unequipItem(slotId, isSuspended),
       ),
       // Farming does not occupy the action slot, so a ready plot can be
       // cleared without interrupting anything. Left to the objective tier it

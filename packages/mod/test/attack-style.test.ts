@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attackBonusFor, penalisesAttackStyle } from '../src/adapter/equipment.js';
+import { removePenalisingGear } from '../src/runtime/combat-reflex.js';
 
 // A (G) Steel Platebody: strong melee defence, negative ranged attack.
 const platebody = [
@@ -49,5 +50,30 @@ describe('gear against the style in use', () => {
 
   it('ignores stats belonging to other styles', () => {
     expect(attackBonusFor(platebody, 'ranged')).toBe(-12);
+  });
+});
+
+describe('taking penalising gear off', () => {
+  const ok = () => ({ ok: true }) as never;
+  const worn = [{ slotId: 'melvorD:Platebody', itemName: '(G) Steel Platebody' }];
+
+  it('removes gear that is working against the current style', () => {
+    const removed: string[] = [];
+    removePenalisingGear({ inCombat: false, penalising: worn }, (slotId) => {
+      removed.push(slotId);
+      return ok();
+    });
+
+    expect(removed).toEqual(['melvorD:Platebody']);
+  });
+
+  it('waits until the fight is over', () => {
+    // Stripping armour mid-fight is how a character with no Auto Eat dies, and
+    // the penalty has already cost whatever this fight was going to cost.
+    expect(removePenalisingGear({ inCombat: true, penalising: worn }, () => ok())).toBeNull();
+  });
+
+  it('does nothing when the gear is appropriate', () => {
+    expect(removePenalisingGear({ inCombat: false, penalising: [] }, () => ok())).toBeNull();
   });
 });

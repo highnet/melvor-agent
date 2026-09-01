@@ -491,3 +491,37 @@ export function buyTrivialUpgrades(
 
   return { name: 'reflex.buyUpgrade', result: buy(affordable.purchaseId) };
 }
+
+/**
+ * Takes off gear that penalises the attack style in use.
+ *
+ * A reflex rather than an objective, because this is not a judgement. Wearing
+ * something that makes your own attacks unable to land is a mistake to undo,
+ * not a trade-off to weigh — the same shape as a full bank, where the only
+ * question is how long the loss runs before someone notices.
+ *
+ * Here it ran twenty minutes. A Steel Platebody was equipped into an empty
+ * torso slot for its defence, carrying a negative ranged attack bonus, and the
+ * archer wearing it could not land a shot: full health, no kills, two monsters,
+ * two areas, every engage reporting success. The candidate reader now refuses
+ * to offer such gear, but that does nothing about a piece already worn.
+ *
+ * Only while not in combat. Stripping armour mid-fight is how a character with
+ * no Auto Eat dies, and the penalty has already cost whatever this fight was
+ * going to cost.
+ */
+export function removePenalisingGear(
+  state: {
+    inCombat: boolean;
+    /** Worn items whose attack bonus is negative for the current style. */
+    penalising: readonly { slotId: string; itemName: string }[];
+  },
+  unequip: (slotId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.inCombat) return null;
+
+  const worst = state.penalising[0];
+  if (worst === undefined) return null;
+
+  return { name: 'reflex.removePenalisingGear', result: unequip(worst.slotId) };
+}
