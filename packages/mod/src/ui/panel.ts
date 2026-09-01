@@ -1,7 +1,7 @@
 import type { Objective, RunState, StateSnapshot } from '@melvor-agent/shared';
 import type { Agent } from '../runtime/agent.js';
-import type { Logger } from '../runtime/logger.js';
 import { describeBuild, readBuildStamp } from '../runtime/build-stamp.js';
+import type { Logger } from '../runtime/logger.js';
 
 const PANEL_ID = 'melvor-agent-panel';
 /** Where the operator last dragged the panel, and whether it was collapsed. */

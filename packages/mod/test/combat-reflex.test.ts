@@ -2,12 +2,12 @@ import type { ActionResult } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   abandonIfOutmatched,
+  buyTrivialUpgrades,
   claimFinishedTasks,
   collectPendingLoot,
   compostBeforePlanting,
   dropUnpayablePrayers,
   eatWhenLow,
-  buyTrivialUpgrades,
   expandBankWhenFull,
   harvestReadyPlots,
   openPendingContainers,

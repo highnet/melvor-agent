@@ -1,8 +1,7 @@
 import type { Candidate } from '@melvor-agent/shared';
-import { readAllSeedIds, readBarelyEnoughIngredientIds, readSeedShortfalls } from './farming.js';
 import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
-import { readSlayerBlockedReason } from './management.js';
+import { readAllSeedIds, readBarelyEnoughIngredientIds, readSeedShortfalls } from './farming.js';
 import {
   FISHING_ID,
   MINING_ID,
@@ -10,6 +9,7 @@ import {
   THIEVING_ID,
   WOODCUTTING_ID,
 } from './gathering.js';
+import { readSlayerBlockedReason } from './management.js';
 import { readShopCandidates } from './shop.js';
 import { readTaskWantedItemIds } from './township.js';
 
@@ -417,43 +417,92 @@ function thievingCandidates(): Candidate[] {
   );
   if (foodQuantity <= 0) return [];
 
-  return skill.actions.allObjects
-    .filter((npc) => npc.level <= skill.level)
-    .map((npc) => {
-      const intervalMs = safeNumber(() => skill.actionInterval, 3000);
-      const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
-      const successRate = Math.max(0, Math.min(1, skill.getNPCSuccessRate(npc) / 100));
+  return (
+    skill.actions.allObjects
+      .filter((npc) => npc.level <= skill.level)
+      .map((npc) => {
+        const intervalMs = safeNumber(() => skill.actionInterval, 3000);
+        const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
+        const successRate = Math.max(0, Math.min(1, skill.getNPCSuccessRate(npc) / 100));
 
-      const gpPerAction = npc.currencyDrops
-        .filter((drop) => drop.currency === game.gp)
-        // `quantity` is the maximum roll, so the mean is about half of it.
-        .reduce((sum, drop) => sum + drop.quantity / 2, 0);
+        const gpPerAction = npc.currencyDrops
+          .filter((drop) => drop.currency === game.gp)
+          // `quantity` is the maximum roll, so the mean is about half of it.
+          .reduce((sum, drop) => sum + drop.quantity / 2, 0);
 
-      return {
-        kind: 'gather_resource' as const,
-        params: {
+        return {
           kind: 'gather_resource' as const,
-          skillId: THIEVING_ID,
-          recipeId: npc.id,
-        },
-        // Damage is named, because Thieving hurts and the number is not
-        // proportional to level. Golbin Chief hits 10.1 at level 16 while
-        // Marauder hits 6.8 at 21 and Assistant Cook 8.6 at 26 — so choosing by
-        // XP alone picks the hardest-hitting NPC of its tier without ever
-        // seeing the figure. It was chosen exactly that way, and the operator
-        // had to point out that it hits hard for the character's health.
-        //
-        // Shown as a share of *current* health rather than maximum: a hit worth
-        // a fifteenth of a full bar is a different proposition at half health,
-        // and Thieving damage accrues over many failures rather than resolving
-        // in one fight.
-        label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)`,
-        xpPerHour: actionsPerHour * npc.baseExperience * successRate,
-        gpPerHour: actionsPerHour * gpPerAction * successRate,
-        requiresLevel: npc.level,
-        available: true as const,
-      };
-    });
+          params: {
+            kind: 'gather_resource' as const,
+            skillId: THIEVING_ID,
+            recipeId: npc.id,
+          },
+          // Damage is named, because Thieving hurts and the number is not
+          // proportional to level. Golbin Chief hits 10.1 at level 16 while
+          // Marauder hits 6.8 at 21 and Assistant Cook 8.6 at 26 — so choosing by
+          // XP alone picks the hardest-hitting NPC of its tier without ever
+          // seeing the figure. It was chosen exactly that way, and the operator
+          // had to point out that it hits hard for the character's health.
+          //
+          // Shown as a share of *current* health rather than maximum: a hit worth
+          // a fifteenth of a full bar is a different proposition at half health,
+          // and Thieving damage accrues over many failures rather than resolving
+          // in one fight.
+          label: hitsTooHardForNow(npc.maxHit)
+            ? `${TOO_DANGEROUS_MARKER}${npc.name}`
+            : `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)`,
+          xpPerHour: actionsPerHour * npc.baseExperience * successRate,
+          gpPerHour: actionsPerHour * gpPerAction * successRate,
+          requiresLevel: npc.level,
+          available: true as const,
+        };
+      })
+      // Dropped while the NPC hits too hard for the health on hand; see
+      // THIEVING_MAX_HIT_FRACTION. The shortfall is reported separately as a
+      // blocked opportunity, because an NPC that silently vanishes from the list
+      // is the failure this whole session kept running into.
+      .filter((candidate) => !candidate.label.includes(TOO_DANGEROUS_MARKER))
+  );
+}
+
+/**
+ * The share of current health a Thieving hit may take before the NPC is refused.
+ *
+ * Thieving is the only thing in the game that damages the character without
+ * being combat, and it had no survivability gate at all — combat screens every
+ * monster by combat level and then re-checks the real max hit once the fight
+ * starts, while Thieving checked only that food was equipped.
+ *
+ * A quarter of *current* health, not maximum, so the gate tightens as the
+ * character gets hurt rather than staying nominally satisfied while the bar
+ * empties. At full health almost everything passes, which is correct: a 10.1
+ * hit against 150 is survivable and the eat reflex covers it. At 40 health the
+ * same NPC is refused, which is the case that actually matters and the one a
+ * max-health check would have waved through.
+ *
+ * Deliberately not stricter. Refusing safe pickpockets costs the income that
+ * funds Auto Eat, and Auto Eat is what would remove this whole problem.
+ */
+const THIEVING_MAX_HIT_FRACTION = 0.25;
+
+/** Internal marker so a refused NPC is filtered without a second lookup. */
+const TOO_DANGEROUS_MARKER = ' too-dangerous:';
+
+/**
+ * Whether an NPC hits too hard for the health currently available.
+ *
+ * Fails open on an unreadable state: refusing every NPC because the player
+ * object could not be read would silently delete Thieving, and this is a gate
+ * on one skill rather than a guard against irreversible harm.
+ */
+function hitsTooHardForNow(maxHit: number): boolean {
+  try {
+    const current = game.combat.player.hitpoints;
+    if (current <= 0) return false;
+    return maxHit > current * THIEVING_MAX_HIT_FRACTION;
+  } catch {
+    return false;
+  }
 }
 
 /**

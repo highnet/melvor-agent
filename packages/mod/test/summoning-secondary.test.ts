@@ -7,10 +7,7 @@ import { describe, expect, it } from 'vitest';
  * game for pricing. What is being pinned is the decision: ask what each option
  * costs, never whether one is merely present.
  */
-function pick(
-  options: readonly string[],
-  affordable: (item: string) => boolean,
-): string | null {
+function pick(options: readonly string[], affordable: (item: string) => boolean): string | null {
   return options.find(affordable) ?? null;
 }
 
