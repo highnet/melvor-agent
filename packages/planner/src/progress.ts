@@ -81,25 +81,35 @@ export function measureProgress(
     gpPerHour,
     controlLevelsPerHour,
     timesBetterThanControl,
-    detail: describe(hours, levelsPerHour, timesBetterThanControl),
+    detail: describe(hours, levelsPerHour, gpPerHour, timesBetterThanControl),
   };
 }
 
 function describe(
   hours: number,
   levelsPerHour: number,
+  gpPerHour: number,
   timesBetterThanControl: number | null,
 ): string {
-  const window = `${hours.toFixed(1)}h window, ${levelsPerHour.toFixed(2)} total levels/hour`;
+  const window =
+    `${hours.toFixed(1)}h window, ${levelsPerHour.toFixed(2)} total levels/hour` +
+    (gpPerHour > 0 ? ` and ${Math.round(gpPerHour).toLocaleString()} GP/hour` : '');
 
   if (timesBetterThanControl === null) {
     return `${window}. No control rate available to compare against.`;
   }
 
   if (timesBetterThanControl < 1) {
-    // Said plainly rather than softened. An agent that loses to a control
-    // condition it can measure should be reported as losing.
-    return `${window} — ${timesBetterThanControl.toFixed(2)}x the control condition, which means leaving one skill running would do better. Something is wrong: check for refused objectives, an idle action slot, or a plan that spends more time transitioning than acting.`;
+    // Said plainly rather than softened: an agent that loses to a control it
+    // can measure should be reported as losing. But losing on *levels* while
+    // earning heavily is a trade, not a fault — Thieving at 55,000 GP an hour
+    // scores 0.43x here and is still the right call when a 1,000,000 GP
+    // purchase is the goal. The number stays honest; the diagnosis no longer
+    // assumes a defect.
+    const earning = gpPerHour > levelsPerHour * 1000;
+    return earning
+      ? `${window} — ${timesBetterThanControl.toFixed(2)}x the control on levels, but earning heavily. If the GP is for a specific purchase this is a deliberate trade; if not, something on the list pays better.`
+      : `${window} — ${timesBetterThanControl.toFixed(2)}x the control condition, which means leaving one skill running would do better. Something is wrong: check for refused objectives, an idle action slot, or a plan that spends more time transitioning than acting.`;
   }
 
   return `${window} — ${timesBetterThanControl.toFixed(2)}x what leaving one skill running would achieve.`;

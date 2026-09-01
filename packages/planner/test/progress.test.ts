@@ -91,3 +91,25 @@ describe('the control rate', () => {
     expect(controlRate([], skillXp)).toBeNull();
   });
 });
+
+describe('trading levels for GP', () => {
+  it('names an income trade instead of calling it a defect', () => {
+    // Thieving earns 55,000 GP an hour and few levels. Against a control
+    // measured in levels it scores 0.43x, and the old wording called that
+    // "something is wrong" — but it is the right call when a 1,000,000 GP
+    // purchase is the goal. The ratio stays honest; the diagnosis does not
+    // assume a fault that is not there.
+    const report = measureProgress([sample(0, 100, 0), sample(1, 101, 55_000)], 5);
+
+    expect(report?.timesBetterThanControl).toBeLessThan(1);
+    expect(report?.detail).toMatch(/deliberate trade/);
+    expect(report?.detail).toMatch(/GP\/hour/);
+  });
+
+  it('still calls a genuine underperformance what it is', () => {
+    // Losing on levels *without* earning is the case the warning exists for.
+    const report = measureProgress([sample(0, 100, 0), sample(10, 102, 0)], 1);
+
+    expect(report?.detail).toMatch(/leaving one skill running would do better/);
+  });
+});
