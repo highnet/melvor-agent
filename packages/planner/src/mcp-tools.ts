@@ -1,5 +1,6 @@
 import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
+import { controlRate, measureProgress } from './progress.js';
 import type { Store } from './store.js';
 
 /**
@@ -60,9 +61,20 @@ export const TOOLS: Record<string, ToolHandler> = {
 
     const age = store.reportAgeMs;
 
+    // The project's one quality metric: is this better than leaving a single
+    // skill running? Reported wherever state is read, so it cannot quietly rot.
+    const progress = measureProgress(
+      report.quality,
+      controlRate(
+        report.candidates,
+        new Map(s.skills.map((skill) => [skill.id, skill.xp] as const)),
+      ),
+    );
+
     return [
       `Run state: ${report.runState}${report.blockedReason === null ? '' : ` — BLOCKED: ${report.blockedReason}`}`,
       `Connected: ${age !== null && age < 15_000} (last report ${age}ms ago)`,
+      progress === null ? 'Progress: not enough samples yet.' : `Progress: ${progress.detail}`,
       `Objective: ${report.objective === null ? 'none' : report.objective.rationale}`,
       '',
       `Character ${s.characterName} (${s.gameVersion}) — total level ${s.totalLevel}, completion ${s.completionPercent.toFixed(2)}%, GP ${gp.toLocaleString()}`,
