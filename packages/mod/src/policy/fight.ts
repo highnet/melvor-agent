@@ -87,10 +87,18 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
 
   const active = snapshot.activeAction;
   if (active !== null) {
+    // Melvor runs one action at a time, so a skill still running is not a
+    // reason to wait — it is the thing to clear. Idling here meant an objective
+    // to fight, set while the character was fishing, did nothing at all and
+    // said nothing about why.
+    //
+    // Stop and engage are separate ticks, as in the gathering executor: `stop`
+    // has to be observed before the engage is attempted, and batching them
+    // would engage against a state the stop has not produced yet.
     return {
-      kind: 'idle',
-      reason: 'nothing_to_do',
-      detail: `${active.name} holds the active action slot`,
+      kind: 'act',
+      actions: [{ type: 'stop_gathering', skillId: active.id }],
+      reason: `${active.name} holds the action slot; stopping it to fight`,
     };
   }
 

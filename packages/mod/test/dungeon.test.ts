@@ -55,3 +55,24 @@ describe('dungeon objectives', () => {
     expect(fightMonster(context(offline))).toMatchObject({ kind: 'idle' });
   });
 });
+
+describe('switching into combat', () => {
+  it('stops a running skill instead of waiting behind it', () => {
+    // Melvor runs one action at a time, so a skill still running is not a
+    // reason to wait — it is the thing to clear. Waiting meant a fight
+    // objective set while the character was fishing did nothing, silently.
+    const fishing = snapshot({
+      activeAction: {
+        id: 'melvorD:Fishing',
+        name: 'Fishing',
+        isActive: true,
+        recipeIds: ['melvorD:Raw_Shrimp'],
+      },
+    });
+
+    expect(fightMonster(context(fishing))).toMatchObject({
+      kind: 'act',
+      actions: [{ type: 'stop_gathering', skillId: 'melvorD:Fishing' }],
+    });
+  });
+});
