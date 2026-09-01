@@ -335,8 +335,13 @@ export function selectTownshipWorship(
         if (!game.checkRequirements(worship.unlockRequirements, false)) {
           return `${worshipId} is not unlocked`;
         }
-        // Only a *change* costs anything; the first choice is free.
-        const isChange = township.townData.worship !== township.noWorship;
+        // Only a *change* costs anything; the first choice is free. It is a
+        // change only once the town exists — a worship staged on the founding
+        // screen is still the first choice, and treating it as a change made
+        // founding refuse itself for 50,000,000 GP the character does not need
+        // to spend.
+        const isChange =
+          township.townData.townCreated && township.townData.worship !== township.noWorship;
         if (isChange && !township.canAffordWorshipChange) {
           return `changing worship costs ${township.WORSHIP_CHANGE_COST.toLocaleString()} GP and destroys every worship building`;
         }
@@ -545,19 +550,38 @@ export function readTaskCandidates(): Candidate[] {
  * label where the decision is made.
  */
 function describeWorship(worship: TownshipWorship): string {
-  try {
-    // `print()` returns a StatDescription, not a string: the text is what the
-    // game shows, and `isDisabled` marks a modifier that is not in effect.
-    const described = worship.modifiers
-      .map((modifier) => modifier.print())
-      .filter((description) => !description.isDisabled && description.text.length > 0)
-      .map((description) => description.text);
+  // `modifiers` holds only what is always active, which for every deity is its
+  // *penalties*. The bonuses live in `checkpoints`, unlocked as worship
+  // accumulates. Describing only `modifiers` therefore listed nothing but
+  // downsides and made the deity with no bonuses at all look like the safest
+  // pick — the exact opposite of the truth.
+  const always = describeModifiers(worship.modifiers);
+  const unlocked = worship.checkpoints.flat();
+  const later = describeModifiers(unlocked);
 
-    if (described.length === 0) return 'no modifiers of its own';
-    return described.join(', ');
-  } catch {
-    // A modifier that cannot describe itself must not remove the option; the
-    // name is still better than nothing.
-    return 'bonuses could not be read';
+  const parts: string[] = [];
+  if (always.length > 0) parts.push(`always: ${always.join(', ')}`);
+  if (later.length > 0) parts.push(`as worship accumulates: ${later.join(', ')}`);
+
+  return parts.length === 0 ? 'no modifiers of its own' : parts.join('; ');
+}
+
+/** Renders modifiers as text, skipping any that cannot describe themselves. */
+function describeModifiers(modifiers: readonly ModifierValue[]): string[] {
+  const described: string[] = [];
+
+  for (const modifier of modifiers) {
+    try {
+      // `print()` returns a StatDescription, not a string: the text is what the
+      // game shows, and `isDisabled` marks one that is not in effect.
+      const description = modifier.print();
+      if (!description.isDisabled && description.text.length > 0) {
+        described.push(description.text);
+      }
+    } catch {
+      // One unreadable modifier must not remove the option from the list.
+    }
   }
+
+  return described;
 }
