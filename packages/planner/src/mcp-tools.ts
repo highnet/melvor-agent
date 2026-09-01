@@ -81,8 +81,20 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Doing: ${s.activeAction === null ? 'nothing' : s.activeAction.name}`,
       `Skills above 1: ${levelled || '(none)'}`,
       `Bank: ${s.bank.slotsUsed}/${s.bank.slotsMax} slots — ${topStacks(s.bank.items)}`,
+      // "combat will be refused" was simply false, and it was in front of the
+      // planner on every single turn. The combat gate models the no-Auto-Eat
+      // case explicitly — a reflex eats, the way a human clicks food — and
+      // penalises it for the two ways it is worse: a fixed HP threshold and a
+      // once-a-second look. Fights are offered and taken without Auto Eat.
+      //
+      // The cost of the wrong line was not theoretical: combat objectives were
+      // avoided all session on its say-so, including three Township tasks that
+      // want monsters killed and pay the Township XP the last untrained skill
+      // in scope is gated behind.
       `Combat: HP ${s.combat.hitpoints}/${s.combat.maxHitpoints}, auto-eat ${
-        s.combat.autoEatThreshold > 0 ? 'owned' : 'NOT owned (combat will be refused)'
+        s.combat.autoEatThreshold > 0
+          ? 'owned'
+          : 'not owned — fights still allowed, but the gate is stricter and eating is manual'
       }`,
       '',
       'Goals (GOALS.md):',
