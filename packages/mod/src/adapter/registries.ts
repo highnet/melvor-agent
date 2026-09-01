@@ -66,6 +66,38 @@ export function dumpRegistries(): KnowledgeDump {
         return [];
       }
     })(),
+    // Summoning tablet recipes.
+    //
+    // Added because the planner was reasoning about Summoning by guesswork: the
+    // skill sits at level 1, never appears as a candidate, and nothing in the
+    // dump said why. Buying 69 shards on an assumption did not unblock it, and
+    // without the recipes there was no way to tell whether the missing piece
+    // was the shard colour, the quantity, or the secondary.
+    //
+    // `nonShardItemCosts` is the part worth carrying: a familiar accepts one of
+    // *several* secondaries, and that "one of" is exactly the shape a planner
+    // cannot infer from a flat cost list.
+    summoningRecipes: (() => {
+      try {
+        return game.summoning.actions.allObjects.slice(0, 20).map((recipe) => ({
+          id: recipe.id,
+          name: recipe.name,
+          level: recipe.level,
+          productId: recipe.product.id,
+          shardCosts: recipe.itemCosts.map((cost) => ({
+            itemId: cost.item.id,
+            itemName: cost.item.name,
+            quantity: cost.quantity,
+          })),
+          nonShardOptions: recipe.nonShardItemCosts.map((item) => ({
+            itemId: item.id,
+            itemName: item.name,
+          })),
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     // Live plot state, as the raw enum the game holds.
     //
     // The harvest reflex has never once fired. Two plots have read "Growing:

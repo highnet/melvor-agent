@@ -61,6 +61,26 @@ export const knowledgeDumpSchema = z.object({
     }),
   ),
 
+  /**
+   * Summoning tablet recipes.
+   *
+   * `nonShardOptions` carries the "one of several secondaries" rule, which is
+   * the part a planner cannot infer from a flat cost list and the reason
+   * Summoning was previously reasoned about by guesswork.
+   */
+  summoningRecipes: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      level: z.number().int().nonnegative(),
+      productId: z.string(),
+      shardCosts: z.array(
+        z.object({ itemId: z.string(), itemName: z.string(), quantity: z.number().int() }),
+      ),
+      nonShardOptions: z.array(z.object({ itemId: z.string(), itemName: z.string() })),
+    }),
+  ),
+
   /** Live farming plot state, including whether a growth timer actually exists. */
   farmingPlotStates: z.array(
     z.object({
