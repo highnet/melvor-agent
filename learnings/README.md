@@ -72,3 +72,32 @@ The test before deciding something belongs to the planner:
 
 Step 3 is the one that failed. The others were reasoning; this was a fact
 sitting in a string literal.
+
+## Verify the outcome, not just the data
+
+The dump said Golbin drops Garum Seeds. That was true, and it was not the
+question. The question was whether *this character* could kill a Golbin, and
+the answer was no: Magic 2 does too little damage to finish one.
+
+The failure was silent in every way that matters. `combat.engage` returned ok.
+The panel said "Doing: Combat". Air Runes drained, so spells were being cast.
+Food was eaten every minute, so damage was being taken. Everything looked like
+a fight. Nothing died.
+
+What actually exposed it was a number that did not move: GP frozen at exactly
+30,816 across three state reads fifteen minutes apart, with no Bones
+accumulating from a monster that drops them. Switching to Thieving moved GP
+within one report.
+
+The general rule, which cost a plan to learn twice in one day:
+
+- **A capability check is not an outcome check.** "The game accepted the
+  action" and "the action achieved something" are different claims, and the
+  adapter can only ever prove the first.
+- **Pick the counter before starting.** Decide in advance which number must
+  move — GP, a drop, a level — and check it early. A fight that produces
+  nothing looks identical to a fight that is about to produce something, and
+  the only difference is a counter.
+- **Excitement about a finding is when to be most careful.** The Golbin drop
+  was a genuine discovery from real data, and it went straight into a
+  twelve-hour plan without a single kill being confirmed first.
