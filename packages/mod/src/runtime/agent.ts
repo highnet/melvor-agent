@@ -303,6 +303,33 @@ export class Agent {
    * objective that never arrives — and the real cause is invisible from inside
    * the game without this.
    */
+  /**
+   * Levels and GP per hour across the sample window.
+   *
+   * The project's one metric, which until now lived only in the planner's
+   * replies — visible when a session asked, invisible while the agent actually
+   * ran. An operator watching the panel could see everything about the current
+   * action and nothing about whether the last four hours were worth it.
+   *
+   * Deliberately not compared against the control here: the control rate needs
+   * the candidate list, which the panel has no business recomputing on every
+   * render. The raw rate is the honest half that is cheap.
+   */
+  get progressRate(): { hours: number; levelsPerHour: number; gpPerHour: number } | null {
+    const first = this.quality[0];
+    const last = this.quality[this.quality.length - 1];
+    if (first === undefined || last === undefined || first === last) return null;
+
+    const hours = (last.at - first.at) / 3_600_000;
+    if (hours < 0.05) return null;
+
+    return {
+      hours,
+      levelsPerHour: (last.totalLevel - first.totalLevel) / hours,
+      gpPerHour: (last.gp - first.gp) / hours,
+    };
+  }
+
   get serviceError(): string | null {
     return this.transport.error;
   }
