@@ -68,6 +68,8 @@ const DESCRIPTIONS: Record<string, string> = {
   convert_to_township: 'Trade bank items to the town for resources it can build with',
   bury_bones: 'Bury bones for Prayer XP and the points prayers spend',
   open_item: 'Open bird nests and chests, the only source of some items',
+  claim_mastery_token:
+    'Claim a Mastery Token into its skill mastery pool, which the sell list was otherwise offering to liquidate',
   claim_township_task: 'Claim a finished Township task',
   claim_casual_task: 'Claim a finished casual task, freeing one of its five slots',
 };
