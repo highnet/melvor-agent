@@ -572,7 +572,39 @@ export function readBlockedOpportunities(): {
     }
   }
 
-  return blocked.sort((a, b) => b.xpPerHour - a.xpPerHour).slice(0, 12);
+  return rankBlocked(blocked);
+}
+
+/** How many blocked opportunities to report. */
+const BLOCKED_LIMIT = 12;
+
+/**
+ * Ranks blocked opportunities so no skill is silenced by another's variants.
+ *
+ * Sorting purely by rate filled all twelve slots with Smithing and Fletching
+ * variants — five ways to make a bronze weapon — and pushed Summoning out
+ * entirely. The skill then appeared in neither list, which reads as "this skill
+ * does not exist" rather than "this skill needs one more material".
+ *
+ * So each skill contributes its best entry first, and only then are the
+ * remaining slots filled by rate. Breadth before depth, because the purpose of
+ * this list is to tell the planner what the *game* is offering, not to rank
+ * within one skill.
+ */
+function rankBlocked<T extends { label: string; xpPerHour: number }>(blocked: T[]): T[] {
+  const byRate = [...blocked].sort((a, b) => b.xpPerHour - a.xpPerHour);
+
+  const bestPerSkill: T[] = [];
+  const seenSkills = new Set<string>();
+  for (const entry of byRate) {
+    const skill = entry.label.split(':')[0] ?? entry.label;
+    if (seenSkills.has(skill)) continue;
+    seenSkills.add(skill);
+    bestPerSkill.push(entry);
+  }
+
+  const remainder = byRate.filter((entry) => !bestPerSkill.includes(entry));
+  return [...bestPerSkill, ...remainder].slice(0, BLOCKED_LIMIT);
 }
 
 /** The items a recipe consumes that the bank does not currently hold enough of. */
