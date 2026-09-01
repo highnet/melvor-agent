@@ -48,6 +48,8 @@ export type CombatGateInputs = z.infer<typeof combatGateInputsSchema>;
 
 export const gateRefusalSchema = z.enum([
   'no_auto_eat',
+  /** The enemy's stats could not be read; zero must never read as harmless. */
+  'unmeasurable',
   'can_be_one_shot',
   'insufficient_healing_throughput',
   'insufficient_food_stock',

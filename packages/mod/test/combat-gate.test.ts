@@ -223,3 +223,32 @@ describe('the gate and the reflex agree', () => {
     expect(MANUAL_EAT_THRESHOLD).toBe(0.6);
   });
 });
+
+describe('assessSurvivability — unmeasurable enemies', () => {
+  it('refuses an enemy whose max hit reads as zero', () => {
+    // The failure this catches: a probe that computes nothing returns zeroes,
+    // and zero passes every check below it — nothing to survive, no damage to
+    // out-heal. Live, that listed Red Dragon as safe for a level 3 character.
+    const verdict = assessSurvivability(inputs({ enemyMaxHit: 0 }));
+
+    expect(verdict.safe).toBe(false);
+    expect(verdict.refusals.map((r) => r.reason)).toContain('unmeasurable');
+  });
+
+  it('cannot even be handed an enemy that never attacks', () => {
+    // Defence in depth, and a note on where each guard lives: a zero attack
+    // interval is rejected by the schema before the gate sees it, while a zero
+    // max hit parses fine and needed the check above.
+    expect(() => inputs({ enemyAttackIntervalMs: 0 })).toThrow();
+  });
+
+  it('still permits a real, weak enemy', () => {
+    // The guard must not refuse everything: a genuinely weak monster measures
+    // small, not zero, and remains fightable.
+    const verdict = assessSurvivability(
+      inputs({ enemyMaxHit: 4, enemyAttackIntervalMs: 3000, autoEatThresholdFraction: 0 }),
+    );
+
+    expect(verdict.safe).toBe(true);
+  });
+});

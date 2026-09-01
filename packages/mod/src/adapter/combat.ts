@@ -56,6 +56,9 @@ function probeMonsterStats(monster: Monster): ProbedStats | null {
     probe.setStatsFromMonster(monster);
     probe.computeCombatStats();
 
+    // A probe that computes nothing is a failed probe, not a harmless monster.
+    if (!(probe.stats.maxHit > 0) || !(probe.stats.attackInterval > 0)) return null;
+
     return {
       maxHit: probe.stats.maxHit,
       attackIntervalMs: probe.stats.attackInterval,

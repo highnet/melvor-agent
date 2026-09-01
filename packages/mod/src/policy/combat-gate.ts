@@ -117,6 +117,20 @@ export function assessSurvivability(inputs: CombatGateInputs): CombatGateVerdict
 
   const sessionSecondsRequired = inputs.intendedSessionMinutes * 60 * FOOD_MARGIN;
 
+  // An enemy that appears to hit for nothing, or never to attack, has not been
+  // measured — it has failed to be measured. Zero reads as harmless through
+  // every check below (nothing to survive, no damage to out-heal), so without
+  // this the gate approves the hardest content in the game for a level 3
+  // character. Unmeasurable must mean refused, never safe.
+  if (inputs.enemyMaxHit <= 0 || inputs.enemyAttackIntervalMs <= 0) {
+    refusals.push({
+      reason: 'unmeasurable',
+      detail:
+        `enemy stats did not measure (max hit ${inputs.enemyMaxHit}, ` +
+        `attack interval ${inputs.enemyAttackIntervalMs}ms); refusing rather than assuming it is harmless`,
+    });
+  }
+
   if (inputs.foodQuantity <= 0 || inputs.foodHealPerItem <= 0) {
     refusals.push({
       reason: 'no_food_equipped',
