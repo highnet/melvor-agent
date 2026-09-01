@@ -44,6 +44,28 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // Herblore recipes and their exact inputs.
+    //
+    // The only level-1 recipe, Bird Nest Potion I, was read off a screenshot as
+    // "1 Herb + 2 seeds" from two small icons. Reading pictures is how five
+    // conclusions went wrong today, and this one decides what the whole
+    // Herblore chain actually needs, so it belongs in data.
+    herbloreRecipes: (() => {
+      try {
+        return game.herblore.actions.allObjects.slice(0, 12).map((recipe) => ({
+          id: recipe.id,
+          name: recipe.name,
+          level: recipe.level,
+          costs: recipe.itemCosts.map((cost) => ({
+            itemId: cost.item.id,
+            itemName: cost.item.name,
+            quantity: cost.quantity,
+          })),
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     // Live plot state, as the raw enum the game holds.
     //
     // The harvest reflex has never once fired. Two plots have read "Growing:

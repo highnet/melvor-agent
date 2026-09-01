@@ -49,6 +49,18 @@ export const knowledgeDumpSchema = z.object({
    * NPC. With only the *nearest* locked action reported anywhere, how far away
    * that NPC sat could not be seen without grinding toward it and watching.
    */
+  /** The lowest Herblore recipes and exactly what each consumes. */
+  herbloreRecipes: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      level: z.number().int().nonnegative(),
+      costs: z.array(
+        z.object({ itemId: z.string(), itemName: z.string(), quantity: z.number().int() }),
+      ),
+    }),
+  ),
+
   /** Live farming plot state, including whether a growth timer actually exists. */
   farmingPlotStates: z.array(
     z.object({
