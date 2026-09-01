@@ -90,7 +90,16 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
       );
 
     case 'build_township':
-      return act(
+      // Deliberately not a one-shot. Setting an attack style is a decision
+      // taken once; putting up a hut is repeatable work toward a level, and a
+      // town grows by doing it many times. Completing after a single building
+      // meant Township could only advance while a planner sat queueing each
+      // one — which is precisely what an unattended agent does not have.
+      //
+      // The objective's own success criterion (a Township level) and its abort
+      // budget end this; the adapter refuses when the town cannot afford the
+      // next one, and the failure limit catches that.
+      return repeat(
         { type: 'build_township', buildingId: params.buildingId, biomeId: params.biomeId },
         `building ${params.buildingId} in ${params.biomeId}`,
       );
@@ -298,4 +307,15 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
  */
 function act(action: PolicyAction, reason: string): PolicyDecision {
   return { kind: 'act', actions: [action], reason, completeAfter: true };
+}
+
+/**
+ * The same, for work that is worth doing more than once.
+ *
+ * Without `completeAfter` the objective survives its own success and is
+ * re-issued each tick, so it runs until the success criterion is met or the
+ * budget expires — the difference between a decision and a task.
+ */
+function repeat(action: PolicyAction, reason: string): PolicyDecision {
+  return { kind: 'act', actions: [action], reason };
 }

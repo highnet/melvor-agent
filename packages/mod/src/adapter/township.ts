@@ -58,6 +58,14 @@ function projectBuilding(building: TownshipBuilding, biome: TownshipBiome): Town
  * @param biomeId - Namespaced `TownshipBiome` id it goes in.
  * @param isSuspended - Guard against acting during offline catch-up.
  */
+/**
+ * How many of a building the town must be able to afford before one is built.
+ *
+ * Four means a quarter of the cost is left untouched. Cheap to state, and it
+ * turns "build until broke" into "build while comfortable".
+ */
+const BUILD_RESERVE_MULTIPLE = 4;
+
 export function buildTownshipBuilding(
   buildingId: string,
   biomeId: string,
@@ -95,6 +103,16 @@ export function buildTownshipBuilding(
         }
         if (!township.canAffordBuilding(building, biome, 1)) {
           return `cannot afford ${buildingId} in ${biomeId}`;
+        }
+        // A reserve, so repeated building stops before the town is stripped.
+        // Building is repeatable work rather than a one-shot decision, which is
+        // the only way a town grows unattended — but "build until broke" is the
+        // failure the one-shot was guarding against. Keeping a quarter of each
+        // required resource preserves both: a batch goes up each time the town
+        // is comfortable, and it stops while there is still something to build
+        // the next thing with.
+        if (!township.canAffordBuilding(building, biome, BUILD_RESERVE_MULTIPLE)) {
+          return `building ${buildingId} would leave the town without a reserve`;
         }
         return null;
       },
@@ -218,7 +236,9 @@ export function readTownshipCandidates(): Candidate[] {
         if (!township.isBuildingAvailable(building, biome)) continue;
         // Availability and tier are different questions; see the precondition.
         if (!township.canBuildTierOfBuilding(building, false)) continue;
-        if (!township.canAffordBuilding(building, biome, 1)) continue;
+        // Matches the precondition's reserve, so nothing is offered that the
+        // action will immediately refuse.
+        if (!township.canAffordBuilding(building, biome, BUILD_RESERVE_MULTIPLE)) continue;
 
         const provides = township.getProvidesForBiome(building, biome);
         const effect =

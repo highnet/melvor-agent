@@ -22,14 +22,20 @@ function context(params: { kind: 'build_township' | 'repair_township' }) {
 }
 
 describe('township objectives', () => {
-  it('builds once and completes, rather than building every tick', () => {
-    // Without completeAfter the policy would re-issue the intent on each tick
-    // and drain the town's resources into a wall of huts.
+  it('keeps building rather than stopping after one', () => {
+    // This asserted the opposite until Township level turned out to gate the
+    // biome Herblore needs. Completing after a single building meant a town
+    // could only grow while a planner sat queueing each one, which an
+    // unattended agent has no way to do.
+    //
+    // The original fear — re-issuing every tick and draining the town into a
+    // wall of huts — is real, and is now answered where it belongs: the
+    // adapter refuses to build unless the town can afford four, so a batch
+    // goes up while it is comfortable and stops with a reserve intact.
     expect(manage(context({ kind: 'build_township' }))).toEqual({
       kind: 'act',
       actions: [{ type: 'build_township', buildingId: HUT, biomeId: GRASSLANDS }],
       reason: `building ${HUT} in ${GRASSLANDS}`,
-      completeAfter: true,
     });
   });
 
@@ -71,5 +77,54 @@ describe('township snapshot', () => {
       },
     });
     expect(stateSnapshotSchema.safeParse(withTown).success).toBe(true);
+  });
+});
+
+describe('building repeats rather than completing after one', () => {
+  it('does not mark itself complete after a single building', () => {
+    // A town grows by building many times. Completing after one meant Township
+    // could only advance while a planner sat queueing each building, which is
+    // exactly what an unattended agent does not have — and Township level is
+    // what gates the biome that Herblore needs.
+    const decision = manage({
+      snapshot: snapshot({}),
+      objective: objective({
+        kind: 'build_township',
+        params: {
+          kind: 'build_township',
+          buildingId: 'melvorF:Basic_Shelter',
+          biomeId: 'melvorF:Grasslands',
+        },
+        successWhen: [{ type: 'skill_level_at_least', skillId: 'melvorD:Township', level: 5 }],
+      }),
+      now: 0,
+      objectiveStartedAt: 0,
+      deathsSinceStart: 0,
+    });
+
+    expect(decision).toMatchObject({ kind: 'act' });
+    expect(decision).not.toHaveProperty('completeAfter', true);
+  });
+
+  it('leaves genuine one-shots completing after one action', () => {
+    // Setting an attack style is a decision taken once; the distinction is the
+    // whole point of the change.
+    const decision = manage({
+      snapshot: snapshot({}),
+      objective: objective({
+        kind: 'set_attack_style',
+        params: {
+          kind: 'set_attack_style',
+          attackTypeId: 'melee',
+          styleId: 'melvorD:Stab',
+        },
+        successWhen: [],
+      }),
+      now: 0,
+      objectiveStartedAt: 0,
+      deathsSinceStart: 0,
+    });
+
+    expect(decision).toMatchObject({ kind: 'act', completeAfter: true });
   });
 });
