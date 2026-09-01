@@ -44,6 +44,62 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // Biomes and whether they are open yet.
+    //
+    // The Herb-producing building is tier 1, so nothing about it is far away —
+    // it is simply confined to biomes the town has not unlocked. That makes the
+    // biome, not the building, the thing standing between the town and
+    // Herblore, and it was invisible until now.
+    townshipBiomes: (() => {
+      try {
+        return game.township.biomes.allObjects.map((biome) => ({
+          id: biome.id,
+          name: biome.name,
+          tier: biome.tier,
+          unlocked: game.township.isBiomeUnlocked(biome),
+          // A SkillLevel requirement is the interesting one and the only shape
+          // worth spelling out; anything else is named by its type so an
+          // unexpected gate is still visible rather than silently dropped.
+          requirements: biome.requirements.map((requirement) =>
+            requirement.type === 'SkillLevel'
+              ? `${requirement.skill.name} ${requirement.level}`
+              : requirement.type,
+          ),
+        }));
+      } catch {
+        return [];
+      }
+    })(),
+    // Every Township building, with the tier that gates it and what it makes.
+    //
+    // The town produces no Herbs, which is what pins its health at 0% and what
+    // Herblore is behind — and nothing in the agent's view said which building
+    // would produce them or how far away it was. Tier decides the Township
+    // level and population needed, so this answers "what has to happen for
+    // Herblore" in one read.
+    townshipBuildings: (() => {
+      try {
+        return game.township.buildings.allObjects.map((building) => ({
+          id: building.id,
+          name: building.name,
+          tier: building.tier,
+          biomes: building.biomes.map((biome) => biome.name),
+          // Summed across biomes: the same building yields differently by
+          // biome, and what matters here is only whether it makes the resource.
+          produces: [
+            ...new Set(
+              [...building.provides.values()].flatMap((provides) =>
+                [...provides.resources.entries()]
+                  .filter(([, amount]) => amount > 0)
+                  .map(([resource]) => resource.name),
+              ),
+            ),
+          ],
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     // What the town will trade back for its resources.
     //
     // `readTraderCandidates` deliberately offers only the bank-to-town

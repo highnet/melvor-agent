@@ -49,6 +49,28 @@ export const knowledgeDumpSchema = z.object({
    * NPC. With only the *nearest* locked action reported anywhere, how far away
    * that NPC sat could not be seen without grinding toward it and watching.
    */
+  /** Township biomes and whether the town has opened them. */
+  townshipBiomes: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      tier: z.number().int(),
+      unlocked: z.boolean(),
+      requirements: z.array(z.string()),
+    }),
+  ),
+
+  /** Township buildings, the tier gating each, and the resources they produce. */
+  townshipBuildings: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      tier: z.number().int(),
+      biomes: z.array(z.string()),
+      produces: z.array(z.string()),
+    }),
+  ),
+
   /** Items the Township will trade back for its resources. */
   townshipTradesFromTown: z.array(
     z.object({
