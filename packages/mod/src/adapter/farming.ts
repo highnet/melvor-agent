@@ -550,3 +550,18 @@ export function readSeedShortfalls(): {
     return [];
   }
 }
+
+/** Seed ids the character holds too few of to plant; see readSeedShortfalls. */
+export function readShortSeedIds(): Set<string> {
+  const ids = new Set<string>();
+  try {
+    for (const recipe of game.farming.actions.allObjects) {
+      if (game.farming.level < recipe.level) continue;
+      const held = game.bank.getQty(recipe.seedCost.item);
+      if (held < recipe.seedCost.quantity) ids.add(recipe.seedCost.item.id);
+    }
+  } catch {
+    // An unreadable recipe is skipped rather than guessed at.
+  }
+  return ids;
+}

@@ -730,3 +730,46 @@ export function readSpellRuneIds(): Set<string> {
 
   return runes;
 }
+
+/**
+ * What a monster drops that the agent is currently short of.
+ *
+ * Dumping monster loot made it knowable; this makes it *reachable*. Knowing
+ * that Bob the Farmer drops Potato Seeds is only useful if something connects
+ * "Farming is blocked on this item" to "here is a fight that produces it" —
+ * otherwise every fight candidate reads identically and the planner picks by
+ * combat level, which is a proxy for danger, not for value.
+ *
+ * The comparison is against items the agent already knows it wants: what an
+ * open Township task is asking for, and seeds it holds too few of to plant.
+ * Deliberately not "everything in the bank is low" — a note attached to every
+ * monster is the same as no note at all.
+ *
+ * @param wanted - Item ids the agent is short of.
+ * @returns Names of wanted items this monster drops, empty when none.
+ */
+export function readMonsterDropsOfInterest(
+  monsterId: string,
+  wanted: ReadonlySet<string>,
+): string[] {
+  if (wanted.size === 0) return [];
+
+  try {
+    const monster = game.monsters.getObjectByID(monsterId);
+    if (monster === undefined) return [];
+
+    const names: string[] = [];
+    for (const drop of monster.lootTable.drops) {
+      if (wanted.has(drop.item.id)) names.push(drop.item.name);
+    }
+
+    const bones = monster.bones?.item;
+    if (bones !== undefined && wanted.has(bones.id)) names.push(bones.name);
+
+    return names;
+  } catch {
+    // A monster whose table cannot be read is not annotated, rather than
+    // annotated wrongly.
+    return [];
+  }
+}

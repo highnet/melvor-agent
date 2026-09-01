@@ -39,6 +39,7 @@ export {
   screenByCombatLevel,
   shouldCollectLoot,
   readSpellCandidates,
+  readMonsterDropsOfInterest,
   readSpellRuneIds,
   selectAttackSpell,
   startDungeon,
@@ -58,6 +59,7 @@ export {
   readFarmPlots,
   readPlantableSeeds,
   readSeedShortfalls,
+  readShortSeedIds,
   type FarmPlotState,
 } from './farming.js';
 export {
@@ -134,6 +136,7 @@ export {
   readClaimableTasks,
   readTaskCandidates,
   readTaskOpportunities,
+  readTaskWantedItemIds,
   readTownshipCandidates,
   readWorshipCandidates,
   selectTownshipWorship,

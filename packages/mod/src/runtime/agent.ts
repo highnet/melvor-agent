@@ -77,6 +77,7 @@ import {
   readPaperCandidates,
   readPassiveCookingCandidates,
   readPlantableSeeds,
+  readShortSeedIds,
   readPlayerHitpoints,
   readRaidCandidates,
   readSellCandidates,
@@ -84,11 +85,13 @@ import {
   readSkillTreeCandidates,
   readSlayerCandidates,
   readSnapshot,
+  readMonsterDropsOfInterest,
   readSpellCandidates,
   readSynergyCandidates,
   readTargetCombatLevel,
   readTaskCandidates,
   readTaskOpportunities,
+  readTaskWantedItemIds,
   readTownHealthCandidates,
   readTownshipCandidates,
   readTownshipGoodsCandidates,
@@ -1561,6 +1564,11 @@ export class Agent {
       return this.combatCache;
     }
 
+    // Items the agent already knows it wants: what an open Township task asks
+    // for, plus seeds it holds too few of to plant. Computed once rather than
+    // per monster.
+    const wantedItemIds = new Set<string>([...readTaskWantedItemIds(), ...readShortSeedIds()]);
+
     const candidates: Candidate[] = [];
     const blocked: ReturnType<typeof readBlockedOpportunities> = [];
 
@@ -1579,7 +1587,15 @@ export class Agent {
         target.kind === 'run_dungeon'
           ? `dungeon, hardest monster combat level ${target.combatLevel}`
           : `${target.areaName}, combat level ${target.combatLevel}`;
-      const label = `Fight ${target.name} (${where})`;
+      // Say what a fight is *for*, when it is for something. Without this every
+      // fight candidate reads the same and the planner picks by combat level,
+      // which measures danger rather than value.
+      const drops =
+        target.kind === 'run_dungeon' ? [] : readMonsterDropsOfInterest(target.id, wantedItemIds);
+      const label =
+        drops.length === 0
+          ? `Fight ${target.name} (${where})`
+          : `Fight ${target.name} (${where}) — drops ${drops.join(', ')}, which you are short of`;
 
       if (target.kind === 'run_dungeon') {
         candidates.push({
