@@ -230,6 +230,16 @@ export const knowledgeDumpSchema = z.object({
        */
       lootChance: z.number().nonnegative(),
       lootTable: z.array(z.string()),
+      /**
+       * Sum of the table's weights, and each drop as `name:weight`.
+       *
+       * Without these `lootChance` is not a rate — it is the chance the table
+       * rolls at all, and which item emerges is weight/totalWeight. Reading the
+       * two as one produced "drops Garum Seeds at 100% loot chance", which
+       * welded two true facts into a false one.
+       */
+      lootTotalWeight: z.number().nonnegative(),
+      lootWeights: z.array(z.string()),
       bones: z.string(),
     }),
   ),

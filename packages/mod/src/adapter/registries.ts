@@ -362,6 +362,19 @@ export function dumpRegistries(): KnowledgeDump {
       // to a Bird Nest, and comparing them was the entire point of asking.
       lootChance: safeNumber(() => monster.lootChance, 0),
       lootTable: safeList(() => monster.lootTable.drops.map((drop) => drop.item.name)),
+      // Weights, because `lootChance` alone is not a rate and reading it as one
+      // produced a wrong claim within minutes of the table being dumped:
+      // "Golbin drops Garum Seeds at 100% loot chance" is two facts welded into
+      // a falsehood. `lootChance` is the chance the table rolls *at all*; which
+      // item comes out is then weight/totalWeight. A seed on a 1-in-40 slot of
+      // a table that always rolls is not a seed every kill.
+      //
+      // With these, seeds-per-kill is arithmetic instead of a guess, which is
+      // the whole difference between choosing a fight and hoping about one.
+      lootTotalWeight: safeNumber(() => monster.lootTable.totalWeight, 0),
+      lootWeights: safeList(() =>
+        monster.lootTable.drops.map((drop) => `${drop.item.name}:${drop.weight}`),
+      ),
       bones: safeText(() => monster.bones?.item.name ?? ''),
     })),
     dungeons: game.dungeons.allObjects.map((dungeon) => ({
