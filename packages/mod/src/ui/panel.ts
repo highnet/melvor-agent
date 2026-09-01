@@ -42,7 +42,12 @@ export function createPanel(agent: Agent, log: Logger): PanelHandles {
     width: '380px',
     maxHeight: '75vh',
     overflowY: 'auto',
-    zIndex: '1050',
+    // Below Bootstrap's dropdown layer (1000), not above it. At 1050 this
+    // panel sat on top of the game's own menus — including the Creator
+    // Toolkit's reload button, which is how mods are reloaded during
+    // development. An accessory overlay that covers the game's controls is
+    // worse than one that yields to them.
+    zIndex: '900',
     display: 'none',
     boxShadow: '0 0.5rem 1rem rgba(0,0,0,.4)',
   } satisfies Partial<CSSStyleDeclaration>);
