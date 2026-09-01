@@ -231,8 +231,8 @@ export function readBoneCandidates(): Candidate[] {
  * is too low to drop them — so an agent that cannot open a nest cannot start
  * Farming, and therefore cannot start Herblore either.
  *
- * `openItemOnClick` returns void, and the contents are random, so the evidence
- * is the container leaving the bank rather than any particular reward arriving.
+ * The open call returns void and the contents are random, so the evidence is
+ * the container leaving the bank rather than any particular reward arriving.
  *
  * @param itemId - Namespaced `OpenableItem` id, already in the bank.
  * @param quantity - How many to open. Capped at what the bank holds.
@@ -269,7 +269,12 @@ export function openItem(
         }
         return null;
       },
-      perform: () => game.bank.openItemOnClick(item, Math.min(quantity, game.bank.getQty(item))),
+      // `openItemOnClick` is the click *callback* and can raise a confirmation
+      // nothing here will answer — observed live as a nest that stayed in the
+      // bank while the reflex reported no state change. `processItemOpen` is
+      // documented as performing the actual opening, the same distinction as
+      // the shop's `confirmed` flag and confirmTownCreation.
+      perform: () => game.bank.processItemOpen(item, Math.min(quantity, game.bank.getQty(item))),
       // The container leaving is the evidence: what comes out is random, and a
       // reward that happened to stack with something already held would show no
       // new slot at all.
