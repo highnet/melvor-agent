@@ -3,7 +3,12 @@ import { readActiveRecipeIds } from './active.js';
 import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
 import { readFoodReserve } from './equipment.js';
-import { readAllSeedIds, readBarelyEnoughIngredientIds, readSeedShortfalls } from './farming.js';
+import {
+  readAllSeedIds,
+  readBarelyEnoughIngredientIds,
+  readSeedShortfalls,
+  readShortSeedIds,
+} from './farming.js';
 import {
   FISHING_ID,
   MINING_ID,
@@ -419,6 +424,12 @@ function thievingCandidates(): Candidate[] {
   );
   if (foodQuantity <= 0) return [];
 
+  // Same "what is this for" annotation the fight candidates carry. Monsters got
+  // it and Thieving did not, which is backwards: the reason this character is
+  // grinding Thieving at all is Bob the Farmer, the only NPC in the game's data
+  // that drops Potato Seeds, and his entry said nothing about that.
+  const wantedByNeed = new Set<string>([...readTaskWantedItemIds(), ...readShortSeedIds()]);
+
   return (
     skill.actions.allObjects
       .filter((npc) => npc.level <= skill.level)
@@ -469,7 +480,7 @@ function thievingCandidates(): Candidate[] {
           // a fifteenth of a full bar is a different proposition at half health,
           // and Thieving damage accrues over many failures rather than resolving
           // in one fight.
-          label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)`,
+          label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)${describeNpcDrops(npc, wantedByNeed)}`,
           xpPerHour: actionsPerHour * npc.baseExperience * successRate,
           gpPerHour: actionsPerHour * gpPerAction * successRate,
           requiresLevel: npc.level,
@@ -992,5 +1003,41 @@ function readThievingRateNotice(): {
     ];
   } catch {
     return [];
+  }
+}
+
+/**
+ * Names what a Thieving NPC drops that the agent is short of.
+ *
+ * The mirror of {@link readMonsterDropsOfInterest} for the other half of the
+ * game that has loot tables. Without it, every NPC entry reads as a rate and a
+ * damage figure, and the reason to prefer one over another — that it carries
+ * the seed a blocked skill is waiting on — is invisible.
+ *
+ * `uniqueDrop` is included because it is guaranteed rather than rolled, and it
+ * is not part of the loot table: an NPC whose unique drop is the wanted item
+ * gives it every single time, which is the strongest possible reason to pick it
+ * and was previously nowhere on screen.
+ */
+function describeNpcDrops(
+  npc: {
+    lootTable: { drops: { item: { id: string; name: string } }[] };
+    uniqueDrop?: { item: { id: string; name: string } };
+  },
+  wanted: ReadonlySet<string>,
+): string {
+  if (wanted.size === 0) return '';
+
+  try {
+    const names = new Set<string>();
+    for (const drop of npc.lootTable.drops) {
+      if (wanted.has(drop.item.id)) names.add(drop.item.name);
+    }
+    const unique = npc.uniqueDrop?.item;
+    if (unique !== undefined && wanted.has(unique.id)) names.add(`${unique.name} (guaranteed)`);
+
+    return names.size === 0 ? '' : ` — drops ${[...names].join(', ')}, which you are short of`;
+  } catch {
+    return '';
   }
 }

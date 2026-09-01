@@ -56,3 +56,35 @@ describe('a better recipe in the skill already running', () => {
     expect(notice(8585, 8585)).toBe(false);
   });
 });
+
+describe('Thieving NPCs carry the same annotation as fights', () => {
+  // Monsters got "drops X, which you are short of" and Thieving did not, which
+  // is backwards: the reason this character grinds Thieving at all is Bob the
+  // Farmer, the only NPC in the game's data dropping Potato Seeds, and his
+  // entry said nothing about it.
+  const describe_ = (
+    loot: readonly string[],
+    unique: string | null,
+    wanted: ReadonlySet<string>,
+  ) => {
+    const names = new Set(loot.filter((item) => wanted.has(item)));
+    if (unique !== null && wanted.has(unique)) names.add(`${unique} (guaranteed)`);
+    return names.size === 0 ? '' : ` — drops ${[...names].join(', ')}, which you are short of`;
+  };
+  const wanted = new Set(['Potato Seeds', 'Garum Seeds']);
+
+  it('names the wanted seed a farmer drops', () => {
+    expect(describe_(['Potato Seeds', 'Onion Seeds'], null, wanted)).toContain('Potato Seeds');
+  });
+
+  it('marks a guaranteed unique drop as guaranteed', () => {
+    // uniqueDrop is not part of the loot table and is not rolled — an NPC whose
+    // unique drop is the wanted item gives it every time, which is the
+    // strongest reason to pick it and was previously nowhere on screen.
+    expect(describe_([], 'Garum Seeds', wanted)).toContain('Garum Seeds (guaranteed)');
+  });
+
+  it('stays silent for an NPC dropping nothing wanted', () => {
+    expect(describe_(['Coins', 'Bones'], null, wanted)).toBe('');
+  });
+});
