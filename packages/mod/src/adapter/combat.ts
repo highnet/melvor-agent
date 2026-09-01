@@ -313,7 +313,14 @@ export function engageMonster(
         return null;
       },
       perform: () => game.combat.selectMonster(monster, area),
-      changed: (_before, after) => after.inCombat && after.monsterId === monsterId,
+      // Combat does not become active within the same instant the call
+      // returns: the enemy spawns on a later tick. So the evidence taken is
+      // that the game has committed to this fight — the area is selected and
+      // this monster is the enemy — rather than that punches have been thrown.
+      // Requiring `isActive` here reported every successful engage as a
+      // no-op, and five of those abandoned the objective.
+      changed: (_before, after) =>
+        after.areaId === areaId && (after.inCombat || after.monsterId === monsterId),
     },
     isSuspended,
   );
