@@ -12,9 +12,16 @@ import { z } from 'zod';
  * - `threw` — the game call raised.
  * - `suspended` — the game was inside its offline-progress loop, so we declined
  *   to act. Acting mid-catch-up produces nonsense. See docs/api-notes.md §3.
+ * - `not_yet` — a precondition that the passage of time will satisfy on its
+ *   own. A town regenerates resources hourly and a crop finishes growing, so
+ *   "cannot afford this building" is not the same claim as "no such building".
+ *   Treating the two alike abandoned any objective that had to wait, which is
+ *   most of the Township work: five refusals inside a minute and the town
+ *   stopped growing for the rest of the run.
  */
 export const failureReasonSchema = z.enum([
   'precondition',
+  'not_yet',
   'no_state_change',
   'threw',
   'suspended',

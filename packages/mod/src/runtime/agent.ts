@@ -915,6 +915,18 @@ export class Agent {
         // paused, and counting it would abandon a fine objective mid catch-up.
         if (result.reason === 'suspended') return false;
 
+        // A refusal the passage of time will lift is not a failure at all. The
+        // town regenerates resources every hour and crops finish growing, so
+        // "cannot afford this building yet" must not be counted the way "no
+        // such building" is — counting them alike abandoned every objective
+        // that had to wait, and the town stopped growing for the rest of a run
+        // within a minute of dipping below its reserve.
+        if (result.reason === 'not_yet') {
+          this.consecutiveActionFailures = 0;
+          this.log.info('adapter', `${result.action} waiting: ${result.detail}`);
+          return false;
+        }
+
         // A precondition refusal is a *judgement about current state*, not a
         // mishap: the same call against the same state will refuse identically.
         // Retrying it four more times only delays the replan by fifteen seconds

@@ -112,7 +112,11 @@ export function buildTownshipBuilding(
         // is comfortable, and it stops while there is still something to build
         // the next thing with.
         if (!township.canAffordBuilding(building, biome, BUILD_RESERVE_MULTIPLE)) {
-          return `building ${buildingId} would leave the town without a reserve`;
+          // `not_yet`, not a refusal: the town regenerates every hour, so this
+          // resolves itself without anyone intervening.
+          return {
+            wait: `building ${buildingId} would leave the town without a reserve; the town regenerates hourly`,
+          };
         }
         return null;
       },

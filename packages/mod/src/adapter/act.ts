@@ -10,8 +10,15 @@ export interface ActSpec<T> {
   name: string;
   /** Cheap, pure projection of the state this action intends to change. */
   observe: () => T;
-  /** Return a human-readable reason to refuse, or null to proceed. */
-  precondition?: () => string | null;
+  /**
+   * Return a reason to refuse, or null to proceed.
+   *
+   * A bare string is a refusal about the current state, which the runtime
+   * treats as final. `{ wait }` is a refusal the passage of time will lift on
+   * its own — a town regenerating resources, a crop still growing — and the
+   * runtime waits instead of abandoning the objective.
+   */
+  precondition?: () => string | { wait: string } | null;
   /** The raw game call. Its return value, if any, is captured as evidence. */
   perform: () => unknown;
   /** True when `after` reflects the intended change. */
@@ -39,6 +46,9 @@ export function act<T>(spec: ActSpec<T>, isSuspended: () => boolean): ActionResu
   }
 
   const refusal = spec.precondition?.() ?? null;
+  if (refusal !== null && typeof refusal === 'object') {
+    return fail<T>(spec.name, 'not_yet', refusal.wait);
+  }
   if (refusal !== null) {
     return fail<T>(spec.name, 'precondition', refusal);
   }
