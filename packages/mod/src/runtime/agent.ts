@@ -105,6 +105,7 @@ import {
   toggleBankLock,
   toggleCurse,
   togglePrayer,
+  unlockFarmPlot,
   unlockSkillTreeNode,
   upgradeBankItem,
   upgradeConstellation,
@@ -1009,6 +1010,8 @@ export class Agent {
         return toggleBankLock(action.itemId, isSuspended);
       case 'select_level_cap':
         return selectLevelCapIncrease(action.capIncreaseId, action.skillId, isSuspended);
+      case 'unlock_plot':
+        return unlockFarmPlot(action.plotId, isSuspended);
       case 'harvest_plot':
         return harvestFarmPlot(action.plotId, isSuspended);
       case 'plant_plot':

@@ -7,13 +7,19 @@ import { objective, snapshot } from './fixtures.js';
 const START = 1_700_000_000_000;
 const SEED = 'melvorD:Potato';
 
-function plot(id: string, state: FarmPlot['state'], planted: string | null = null): FarmPlot {
+function plot(
+  id: string,
+  state: FarmPlot['state'],
+  planted: string | null = null,
+  canUnlock = false,
+): FarmPlot {
   return {
     id,
     state,
     plantedRecipeId: planted,
     plantedName: planted === null ? null : 'Potato',
     categoryId: 'melvorD:Allotment',
+    canUnlock,
   };
 }
 
@@ -119,5 +125,38 @@ describe('tendFarm', () => {
     const ctx = context([plot('p1', 'grown', SEED)]);
     const decision = tendFarm({ ...ctx, now: START + 999 * 60_000 });
     expect(decision).toMatchObject({ kind: 'abort', outcome: 'aborted_budget' });
+  });
+});
+
+describe('locked plots', () => {
+  it('buys a plot that can be unlocked before anything else', () => {
+    // Every plot in a fresh save is locked, including the first. This is the
+    // step whose absence made Farming unreachable: sixteen allotment seeds sat
+    // in the bank at Farming level 1 while the farm reported nothing to do.
+    const decision = tendFarm(context([plot('p1', 'locked', null, true)]));
+
+    expect(decision).toMatchObject({
+      kind: 'act',
+      actions: [{ type: 'unlock_plot', plotId: 'p1' }],
+    });
+  });
+
+  it('unlocks before harvesting, since an extra plot is worth more than one cycle', () => {
+    const decision = tendFarm(
+      context([plot('p1', 'locked', null, true), plot('p2', 'grown', SEED)]),
+    );
+
+    expect(decision).toMatchObject({
+      kind: 'act',
+      actions: [{ type: 'unlock_plot', plotId: 'p1' }],
+    });
+  });
+
+  it('leaves a plot alone when the game says it cannot be unlocked yet', () => {
+    // The level or the cost is not met. Offering it anyway would produce an
+    // objective that fails its precondition every tick.
+    const decision = tendFarm(context([plot('p1', 'locked', null, false)]));
+
+    expect(decision).not.toMatchObject({ kind: 'act' });
   });
 });

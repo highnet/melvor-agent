@@ -127,6 +127,14 @@ export const farmPlotStateSchema = z.object({
   plantedRecipeId: gameIdSchema.nullable(),
   plantedName: z.string().nullable(),
   categoryId: gameIdSchema,
+  /**
+   * Whether a locked plot's requirements and costs are met right now.
+   *
+   * A plot must be bought before it can ever hold a crop, and every plot in a
+   * fresh save is locked. Without this the farm reads as "no empty plots" and
+   * Farming is unreachable for the life of the character.
+   */
+  canUnlock: z.boolean(),
 });
 export type FarmPlot = z.infer<typeof farmPlotStateSchema>;
 

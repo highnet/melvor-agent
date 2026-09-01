@@ -23,6 +23,7 @@ export type PolicyAction =
    */
   | { type: 'engage'; monsterId: string; areaId: string }
   | { type: 'disengage' }
+  | { type: 'unlock_plot'; plotId: string }
   | { type: 'harvest_plot'; plotId: string }
   | { type: 'plant_plot'; plotId: string; recipeId: string }
   | { type: 'equip'; itemId: string; slotId?: string }

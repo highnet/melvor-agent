@@ -59,6 +59,18 @@ export const tendFarm: PolicyExecutor = (context: PolicyContext): PolicyDecision
     };
   }
 
+  // Unlocking comes before everything. Every plot starts locked, so a farm that
+  // has never been opened reports no empty plots and no ready plots, and the
+  // executor would idle forever on a skill it is perfectly able to train.
+  const unlockable = plots.filter((plot) => plot.canUnlock);
+  if (unlockable.length > 0) {
+    return {
+      kind: 'act',
+      actions: unlockable.map((plot): PolicyAction => ({ type: 'unlock_plot', plotId: plot.id })),
+      reason: `unlocking ${unlockable.length} farm plot(s)`,
+    };
+  }
+
   // Harvest first. Every ready plot goes in one batch: they are independent, and
   // batching means a full farm is cleared in one tick rather than one per tick.
   const ready = plots.filter((plot) => plot.state === 'grown' || plot.state === 'dead');

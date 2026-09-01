@@ -23,6 +23,8 @@ export interface FarmPlotState {
   plantedRecipeId: string | null;
   plantedName: string | null;
   categoryId: string;
+  /** Whether a locked plot can be bought right now. */
+  canUnlock: boolean;
 }
 
 function describeState(state: number): FarmPlotState['state'] {
@@ -61,7 +63,53 @@ export function readFarmPlots(): FarmPlotState[] {
     plantedRecipeId: plot.plantedRecipe?.id ?? null,
     plantedName: plot.plantedRecipe?.name ?? null,
     categoryId: plot.category.id,
+    // Only meaningful while locked, and cheap enough to always ask.
+    canUnlock: plot.state === PLOT_LOCKED && game.farming.canUnlockPlot(plot),
   }));
+}
+
+/**
+ * Buys a locked plot.
+ *
+ * Every farming plot starts locked, including the first, and a locked plot can
+ * never be planted. The agent held sixteen allotment seeds and Farming level 1
+ * for a full day while the farm reported "no empty plots" — the capability to
+ * open a plot simply did not exist, so Farming was unreachable no matter what
+ * else was fixed.
+ *
+ * `unlockPlotOnClick` returns void, so the state leaving `locked` is the
+ * evidence rather than any return value.
+ *
+ * @param plotId - Namespaced `FarmingPlot` id.
+ */
+export function unlockFarmPlot(
+  plotId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ state: string; recipeId: string | null }> {
+  const plot = game.farming.plots.getObjectByID(plotId);
+  if (plot === undefined) {
+    return fail('farming.unlock', 'precondition', `no farming plot registered as ${plotId}`);
+  }
+
+  return act(
+    {
+      name: 'farming.unlock',
+      observe: () => projectPlot(plotId),
+      precondition: () => {
+        if (plot.state !== PLOT_LOCKED) return `plot ${plotId} is already unlocked`;
+        // Asking the game rather than pricing it here: the costs are a `Costs`
+        // object covering currencies and items, and re-deriving affordability
+        // would be inventing a second source of truth.
+        if (!game.farming.canUnlockPlot(plot)) {
+          return `plot ${plotId} cannot be unlocked yet (level or cost not met)`;
+        }
+        return null;
+      },
+      perform: () => game.farming.unlockPlotOnClick(plot),
+      changed: (before, after) => before.state === 'locked' && after.state !== 'locked',
+    },
+    isSuspended,
+  );
 }
 
 /** Projection for a single plot: what harvesting or planting should change. */
@@ -311,6 +359,18 @@ export function readFarmCandidates(): Candidate[] {
     plots = readFarmPlots();
   } catch {
     return [];
+  }
+
+  // An unlockable plot comes first: it is a one-off that makes every later
+  // harvest and planting possible, and it is cheap at the low levels.
+  const unlockable = plots.filter((plot) => plot.canUnlock);
+  if (unlockable.length > 0) {
+    candidates.push({
+      kind: 'tend_farm',
+      params: { kind: 'tend_farm' },
+      label: `Unlock ${unlockable.length} farm plot(s) — every plot starts locked, and a locked plot can never be planted`,
+      available: true,
+    });
   }
 
   const ready = plots.filter((plot) => plot.state === 'grown' || plot.state === 'dead');
