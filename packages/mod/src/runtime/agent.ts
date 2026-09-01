@@ -127,6 +127,7 @@ import {
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
+import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import type { PolicyAction } from '../policy/types.js';
 import {
   abandonIfOutmatched,
@@ -192,6 +193,13 @@ export interface AgentSettings extends Record<string, unknown> {
   enabled: boolean;
   characterAllowlist: string[];
   serviceUrl: string;
+  /**
+   * Absolute path to the repository, so the panel can start the planner.
+   *
+   * Empty by default and never guessed: a wrong path spawns a process that
+   * fails somewhere the operator cannot see it.
+   */
+  repoPath: string;
   objective: Objective | null;
   /**
    * Objectives to take up, in order, as the current one ends.
@@ -207,6 +215,7 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   enabled: false,
   characterAllowlist: [],
   serviceUrl: 'http://localhost:8787',
+  repoPath: '',
   objective: null,
   plan: [],
 };
@@ -331,6 +340,26 @@ export class Agent {
       levelsPerHour: (last.totalLevel - first.totalLevel) / hours,
       gpPerHour: (last.gp - first.gp) / hours,
     };
+  }
+
+  /** Whether this build could start the planner; see the service launcher. */
+  get canLaunchService(): boolean {
+    return canLaunchService();
+  }
+
+  /**
+   * Starts the planner service from the game.
+   *
+   * Only ever called from the panel, and only offered while the service is
+   * actually unreachable — see the launcher for why this is a button and not a
+   * supervisor.
+   */
+  startPlannerService(): LaunchOutcome {
+    const outcome = launchPlannerService(this.settings.repoPath);
+    if (outcome.ok) this.log.info('operator', `planner service: ${outcome.detail}`);
+    else this.log.error('operator', `planner service: ${outcome.detail}`);
+    this.notify();
+    return outcome;
   }
 
   get serviceError(): string | null {

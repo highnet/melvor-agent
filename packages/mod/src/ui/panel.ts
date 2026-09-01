@@ -244,13 +244,17 @@ function renderContent(
   // A connection failure masquerades as a missing dump, a missing objective, or
   // silence. Say so plainly and first.
   if (agent.serviceError !== null) {
-    content.appendChild(
-      el(
-        'div',
-        'alert alert-danger',
-        describeServiceError(agent.serviceError, agent.currentSettings.serviceUrl),
-      ),
+    const alert = el(
+      'div',
+      'alert alert-danger',
+      describeServiceError(agent.serviceError, agent.currentSettings.serviceUrl),
     );
+    content.appendChild(alert);
+    // Offered only while the service is actually unreachable. Telling someone
+    // to run a command in a terminal they may not have open is where this
+    // failure usually ends; a crash left the agent blind for exactly that
+    // reason, with the game running and the service not.
+    if (agent.canLaunchService) content.appendChild(renderServiceLauncher(agent, render));
   }
 
   if (agent.blocked !== null) {
@@ -296,6 +300,39 @@ function renderContent(
   );
 
   return [header, content];
+}
+
+/**
+ * The control that starts the planner from inside the game.
+ *
+ * The path field is here rather than buried in settings because it is needed
+ * exactly once, at the moment it is missing, by someone who is already looking
+ * at an error. Asking for it anywhere else means asking someone who has no
+ * reason yet to care.
+ */
+function renderServiceLauncher(agent: Agent, render: () => void): HTMLElement {
+  const wrapper = el('div', 'mb-3');
+
+  const path = document.createElement('input');
+  path.type = 'text';
+  path.className = 'form-control form-control-sm mb-2';
+  path.placeholder = 'Path to the melvor-agent repository';
+  path.value = agent.currentSettings.repoPath;
+
+  const start = button('Start planner service', 'btn-info', () => {
+    agent.updateSettings({ ...agent.currentSettings, repoPath: path.value.trim() });
+    const outcome = agent.startPlannerService();
+    // The outcome says a process started, never that the service is up — the
+    // panel learns that the same way it always does, when a report succeeds.
+    wrapper.appendChild(
+      el('div', `font-size-sm mt-2 ${outcome.ok ? 'text-success' : 'text-danger'}`, outcome.detail),
+    );
+    render();
+  });
+
+  wrapper.appendChild(path);
+  wrapper.appendChild(start);
+  return wrapper;
 }
 
 /**
