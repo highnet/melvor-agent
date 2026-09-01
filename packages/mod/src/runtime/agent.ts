@@ -59,6 +59,7 @@ import {
   readGatherCandidates,
   readLevelCapCandidates,
   readLoadoutCandidates,
+  readLockedActions,
   readMasteryCandidates,
   readOpenableCandidates,
   readPaperCandidates,
@@ -1210,6 +1211,7 @@ export class Agent {
             ]
           : []),
         ...readBankPressure(),
+        ...readLockedActions(),
         ...readTaskOpportunities(),
         ...readBlockedOpportunities(),
         ...this.blockedCombat(),

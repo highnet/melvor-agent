@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-155 exports.
+156 exports.
 
 ## `act`
 
@@ -1273,6 +1273,25 @@ which is the worst failure mode in combat: invisible until the fight is lost.
 
 ```ts
 readLoadoutCandidates: () => Candidate[]
+```
+
+## `readLockedActions`
+
+`function`
+
+Skill actions the character has not yet unlocked, nearest first.
+
+A locked action is invisible in every other list: candidates hold only what
+can be done now, and the blocked list holds only what is missing *materials*.
+So "Farmer unlocks at Thieving 15" — the thing that decides whether Herblore
+is reachable this hour or next — could not be seen at all, and the only way
+to find out was to grind and watch.
+
+Reported as opportunities because a level requirement is not an action; it is
+a reason to keep going with one.
+
+```ts
+readLockedActions: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readMasteryCandidates`

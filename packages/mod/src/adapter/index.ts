@@ -74,6 +74,7 @@ export {
 export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
 export {
   readBlockedOpportunities,
+  readLockedActions,
   readGatherCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,

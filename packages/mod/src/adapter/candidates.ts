@@ -608,6 +608,53 @@ function rankBlocked<T extends { label: string; xpPerHour: number }>(blocked: T[
   return [...bestPerSkill, ...remainder].slice(0, BLOCKED_LIMIT);
 }
 
+/**
+ * Skill actions the character has not yet unlocked, nearest first.
+ *
+ * A locked action is invisible in every other list: candidates hold only what
+ * can be done now, and the blocked list holds only what is missing *materials*.
+ * So "Farmer unlocks at Thieving 15" — the thing that decides whether Herblore
+ * is reachable this hour or next — could not be seen at all, and the only way
+ * to find out was to grind and watch.
+ *
+ * Reported as opportunities because a level requirement is not an action; it is
+ * a reason to keep going with one.
+ */
+export function readLockedActions(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  const locked: ReturnType<typeof readLockedActions> = [];
+
+  for (const skillId of STARTABLE_SKILL_IDS) {
+    const skill = game.skills.getObjectByID(skillId);
+    if (skill === undefined) continue;
+
+    const withActions = skill as AnySkill & { actions?: { allObjects: RecipeLike[] } };
+    const recipes = safeRecipes(withActions);
+    if (recipes === null) continue;
+
+    // The next one up only: a list of everything still locked would bury the
+    // one that is actually close.
+    let nearest: RecipeLike | null = null;
+    for (const recipe of recipes) {
+      if (recipe.level <= skill.level) continue;
+      if (nearest === null || recipe.level < nearest.level) nearest = recipe;
+    }
+
+    if (nearest === null) continue;
+
+    locked.push({
+      label: `${skill.name}: ${nearest.name} unlocks at level ${nearest.level} (currently ${skill.level})`,
+      xpPerHour: 0,
+      missing: [],
+    });
+  }
+
+  return locked;
+}
+
 /** The items a recipe consumes that the bank does not currently hold enough of. */
 function missingInputs(
   recipe: object,
