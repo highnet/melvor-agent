@@ -110,7 +110,7 @@ export const TOOLS: Record<string, ToolHandler> = {
 
     // Remember exactly what was shown, so a later choice can be checked
     // against it rather than trusting an index into a list that moves.
-    store.rememberShownCandidates(candidates.map((c) => c.label));
+    store.rememberShownCandidates(candidates);
 
     const blocked = store.report?.blockedOpportunities ?? [];
     if (blocked.length > 0) {
@@ -137,7 +137,7 @@ export const TOOLS: Record<string, ToolHandler> = {
     // An index is a position in a list that moves with game state. Acting on a
     // stale one is silent and wrong: a request to equip a dagger built a
     // storehouse, because smithing finished between listing and choosing.
-    const drift = store.checkChoice(index, chosen.label);
+    const drift = store.checkChoice(index, chosen);
     if (drift !== null) {
       return `Refused: ${drift}. Call list_candidates and choose again.`;
     }
@@ -180,7 +180,7 @@ export const TOOLS: Record<string, ToolHandler> = {
         return `Step ${position + 1} names candidate ${String(step.candidateIndex)}, which is out of range — there are ${candidates.length}. Call list_candidates again; the list changes with game state.`;
       }
 
-      const stepDrift = store.checkChoice(stepIndex, chosen.label);
+      const stepDrift = store.checkChoice(stepIndex, chosen);
       if (stepDrift !== null) {
         return `Refused: step ${position + 1} — ${stepDrift}. Call list_candidates and build the plan again.`;
       }

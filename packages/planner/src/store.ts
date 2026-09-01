@@ -29,7 +29,7 @@ export class Store {
    * it is used. Remembering what was shown lets a choice be checked against it
    * instead of trusting the number.
    */
-  private lastShownCandidates: string[] = [];
+  private lastShownCandidates: { key: string; label: string }[] = [];
 
   constructor(private readonly dataDir: string) {}
 
@@ -60,9 +60,21 @@ export class Store {
     return commands;
   }
 
-  /** Records the candidate list handed to a planning session. */
-  rememberShownCandidates(labels: readonly string[]): void {
-    this.lastShownCandidates = [...labels];
+  /**
+   * Records the candidate list handed to a planning session.
+   *
+   * Identity is the kind and params, not the label. Labels carry live numbers —
+   * a mastery pool ticks up every second — so comparing text would reject a
+   * choice that had not actually changed, which is worse than not checking:
+   * a guard that cries wolf gets worked around.
+   */
+  rememberShownCandidates(
+    candidates: readonly { kind: string; params: unknown; label: string }[],
+  ): void {
+    this.lastShownCandidates = candidates.map((candidate) => ({
+      key: identityOf(candidate),
+      label: candidate.label,
+    }));
   }
 
   /**
@@ -70,12 +82,15 @@ export class Store {
    *
    * @returns null when the choice is sound, or the mismatch to report.
    */
-  checkChoice(index: number, currentLabel: string): string | null {
+  checkChoice(
+    index: number,
+    current: { kind: string; params: unknown; label: string },
+  ): string | null {
     const shown = this.lastShownCandidates[index];
     if (shown === undefined) return null;
-    if (shown === currentLabel) return null;
+    if (shown.key === identityOf(current)) return null;
 
-    return `candidate ${index} was "${shown}" when you listed it and is now "${currentLabel}" — the list shifted, so this choice would act on something you did not pick`;
+    return `candidate ${index} was "${shown.label}" when you listed it and is now "${current.label}" — the list shifted, so this choice would act on something you did not pick`;
   }
 
   /** Queues a command for the next report. */
@@ -182,4 +197,14 @@ export class Store {
 
     return { recent, aggregates };
   }
+}
+
+/**
+ * What makes two candidates the same choice.
+ *
+ * The kind and the params, which are what the agent will actually execute.
+ * Everything else in a candidate is presentation.
+ */
+function identityOf(candidate: { kind: string; params: unknown }): string {
+  return `${candidate.kind}:${JSON.stringify(candidate.params)}`;
 }
