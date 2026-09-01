@@ -11,6 +11,7 @@ import type {
 import { fail, stateSnapshotSchema } from '@melvor-agent/shared';
 import {
   Subscriptions,
+  THIEVING_ID,
   advanceGolbinRaid,
   buildAgilityObstacle,
   buildTownshipBuilding,
@@ -36,6 +37,7 @@ import {
   excavateDigSite,
   exportSave,
   harvestFarmPlot,
+  hasAutoEat,
   increaseTownHealth,
   newSlayerTask,
   onGameEvent,
@@ -72,6 +74,7 @@ import {
   readLockedActions,
   readMasteryCandidates,
   readMasteryTokenCandidates,
+  readMealCount,
   readMonsterDropsOfInterest,
   readNextContainer,
   readOpenableCandidates,
@@ -144,6 +147,7 @@ import {
   claimMasteryTokens,
   collectPendingLoot,
   compostBeforePlanting,
+  cookWhenFoodLow,
   eatWhenLow,
   expandBankWhenFull,
   fillEmptySlots,
@@ -152,6 +156,7 @@ import {
   plantEmptyPlots,
   refillFood,
   removePenalisingGear,
+  stopWhenStarving,
   unlockAffordablePlots,
 } from './combat-reflex.js';
 import type { Logger } from './logger.js';
@@ -557,6 +562,32 @@ export class Agent {
           replacements: gearUpgrades.replacement,
         },
         (itemId, slotId) => equipItem(itemId, slotId, isSuspended),
+      ),
+      // Food, before anything that spends it. Passive cooking does not take the
+      // action slot, so this is free alongside whatever is running.
+      cookWhenFoodLow(
+        {
+          meals: readMealCount(),
+          hasAutoEat: hasAutoEat(),
+          idleCategoryIds: readPassiveCookingCandidates().map((candidate) =>
+            String((candidate.params as { categoryId?: unknown }).categoryId ?? ''),
+          ),
+        },
+        (categoryId) => startPassiveCooking(categoryId, isSuspended),
+      ),
+      // And the last line: stop paying health for XP when the health cannot be
+      // bought back. This character starved to death without it.
+      stopWhenStarving(
+        {
+          meals: readMealCount(),
+          hasAutoEat: hasAutoEat(),
+          ...readPlayerHitpoints(),
+          damagingSkillId:
+            snapshot.activeAction?.id === THIEVING_ID || snapshot.combat.inCombat
+              ? (snapshot.activeAction?.id ?? null)
+              : null,
+        },
+        (skillId) => stopGathering(skillId, isSuspended),
       ),
       openPendingContainers({ hasContainer: readNextContainer() !== null }, () => {
         const container = readNextContainer();

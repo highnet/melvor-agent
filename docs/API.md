@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-182 exports.
+185 exports.
 
 ## `act`
 
@@ -668,6 +668,16 @@ harvested too — that is how the plot is cleared for replanting.
 
 ```ts
 harvestFarmPlot: (plotId: string, isSuspended: () => boolean) => ActionResult<{ state: string; recipeId: string | null; }>
+```
+
+## `hasAutoEat`
+
+`function`
+
+Whether Auto Eat is owned, which feeds from the bank and needs no reflex.
+
+```ts
+hasAutoEat: () => boolean
 ```
 
 ## `increaseTownHealth`
@@ -1485,6 +1495,16 @@ Ids of every Mastery Token held, so the sell reader can refuse them.
 
 ```ts
 readMasteryTokenIds: () => Set<string>
+```
+
+## `readMealCount`
+
+`function`
+
+Meals across the bank and the equipped slot; see readFoodReserve.
+
+```ts
+readMealCount: () => number
 ```
 
 ## `readMonsterDropsOfInterest`
@@ -2381,6 +2401,14 @@ being active on the hex we chose.
 
 ```ts
 surveyBestHex: (isSuspended: () => boolean) => ActionResult<{ surveying: boolean; hex: string | null; }>
+```
+
+## `THIEVING_ID`
+
+`const`
+
+```ts
+THIEVING_ID: "melvorD:Thieving"
 ```
 
 ## `toggleAurora`

@@ -762,3 +762,22 @@ export function readGearUpgrades(): {
   replacement.sort((a, b) => b.gain - a.gain);
   return { emptySlot, replacement };
 }
+
+/** Meals across the bank and the equipped slot; see readFoodReserve. */
+export function readMealCount(): number {
+  try {
+    const banked = readBankedFood().reduce((sum, entry) => sum + entry.quantity, 0);
+    return banked + game.combat.player.food.currentSlot.quantity;
+  } catch {
+    return 0;
+  }
+}
+
+/** Whether Auto Eat is owned, which feeds from the bank and needs no reflex. */
+export function hasAutoEat(): boolean {
+  try {
+    return game.combat.player.autoEatThreshold > 0;
+  } catch {
+    return false;
+  }
+}

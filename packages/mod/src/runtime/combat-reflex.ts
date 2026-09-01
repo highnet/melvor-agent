@@ -653,3 +653,92 @@ export function fillEmptySlots(
 
   return { name: 'reflex.upgradeGear', result: equip(upgrade.itemId, upgrade.slotId) };
 }
+
+/**
+ * How few meals may remain before cooking is started automatically.
+ *
+ * Higher than the point of danger, because cooking takes time and a reserve
+ * that is already empty is a reserve that arrives too late.
+ */
+const COOK_WHEN_MEALS_BELOW = 40;
+
+/**
+ * Starts passive cooking when the food reserve is running down.
+ *
+ * The character starved to death with sixteen Raw Beef and nineteen Raw Shrimp
+ * in the bank and Cooking at 22. Every ingredient was present; nothing turned
+ * them into food.
+ *
+ * An hour before that I looked at exactly this and decided the shortfall should
+ * be *reported* rather than acted on, reasoning that restocking is a real plan
+ * — fish, then cook, then come back — and that a reflex would have the agent
+ * abandoning objectives to go fishing. That reasoning had two holes. The
+ * asymmetry is wrong: a detour costs minutes and running out costs the
+ * character. And the premise is wrong, which is the part I should have checked
+ * — passive cooking does not take the action slot at all. Its own candidate
+ * label says so: "runs in the background of whatever else is happening".
+ *
+ * So there was never a trade-off to delegate. Cooking while Thieving is free,
+ * and free things belong in reflexes.
+ */
+export function cookWhenFoodLow(
+  state: {
+    /** Meals across the bank and the equipped slot. */
+    meals: number;
+    /** True when Auto Eat is owned, which feeds from the bank directly. */
+    hasAutoEat: boolean;
+    /** Cooking categories idle and with a recipe selected, best first. */
+    idleCategoryIds: readonly string[];
+  },
+  cook: (categoryId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.hasAutoEat) return null;
+  if (state.meals >= COOK_WHEN_MEALS_BELOW) return null;
+
+  const category = state.idleCategoryIds[0];
+  if (category === undefined) return null;
+
+  return { name: 'reflex.cookFood', result: cook(category) };
+}
+
+/**
+ * Stops a damaging activity when there is nothing left to eat.
+ *
+ * The last line, and the one whose absence killed this character. Thieving
+ * damages on every failed pickpocket and combat damages continuously; with no
+ * food and no Auto Eat, the eat reflex has nothing to spend and health only
+ * goes one way. Nothing was watching for that, so the agent kept pickpocketing
+ * at 37 health and then at none.
+ *
+ * Stopping is not a strategy and is not meant to be — it is refusing to keep
+ * paying health for XP when the health cannot be bought back. The planner can
+ * choose what to do next; this only ensures there is a character left to choose
+ * for.
+ */
+export function stopWhenStarving(
+  state: {
+    /** Meals across the bank and the equipped slot. */
+    meals: number;
+    hasAutoEat: boolean;
+    hitpoints: number;
+    maxHitpoints: number;
+    /** The skill currently holding the action slot, if it damages. */
+    damagingSkillId: string | null;
+  },
+  stop: (skillId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.hasAutoEat) return null;
+  if (state.meals > 0) return null;
+  if (state.damagingSkillId === null) return null;
+  if (state.maxHitpoints <= 0) return null;
+
+  // Only once health has actually started falling. A full-health character with
+  // no food is not in danger yet, and stopping it would cost the run for
+  // nothing.
+  if (state.hitpoints > state.maxHitpoints * STARVING_HP_FRACTION) return null;
+
+  return { name: 'reflex.stopStarving', result: stop(state.damagingSkillId) };
+}
+
+/** Health below which, with no food at all, a damaging activity is stopped. */
+const STARVING_HP_FRACTION = 0.5;
