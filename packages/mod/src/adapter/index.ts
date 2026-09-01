@@ -76,7 +76,12 @@ export {
   usePotion,
   type MasteryProjection,
 } from './management.js';
-export { buyShopPurchase, readShopCandidates, type PurchaseProjection } from './shop.js';
+export {
+  buyShopPurchase,
+  readCheapPermanentUpgrades,
+  readShopCandidates,
+  type PurchaseProjection,
+} from './shop.js';
 export {
   readBlockedOpportunities,
   readLockedActions,

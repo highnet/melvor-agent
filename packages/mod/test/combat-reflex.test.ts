@@ -7,6 +7,7 @@ import {
   compostBeforePlanting,
   dropUnpayablePrayers,
   eatWhenLow,
+  buyTrivialUpgrades,
   expandBankWhenFull,
   harvestReadyPlots,
   openPendingContainers,
@@ -573,5 +574,44 @@ describe('claimFinishedTasks', () => {
     );
 
     expect(claimed).toEqual(['a']);
+  });
+});
+
+describe('buyTrivialUpgrades', () => {
+  const ok = () => ({ ok: true }) as never;
+  // The live shop, at the moment the oversight was pointed out.
+  const shop = [
+    { purchaseId: 'melvorD:Iron_Axe', name: 'Iron Axe', gpCost: 50 },
+    { purchaseId: 'melvorD:Iron_Fishing_Rod', name: 'Iron Fishing Rod', gpCost: 100 },
+    { purchaseId: 'melvorD:Iron_Pickaxe', name: 'Iron Pickaxe', gpCost: 250 },
+    { purchaseId: 'melvorD:Mithril_Axe', name: 'Mithril Axe', gpCost: 10_000 },
+  ];
+
+  it('buys the cheapest upgrade the character can trivially afford', () => {
+    const bought: string[] = [];
+    buyTrivialUpgrades({ gp: 43_860, upgrades: shop }, (id) => {
+      bought.push(id);
+      return ok();
+    });
+
+    expect(bought).toEqual(['melvorD:Iron_Axe']);
+  });
+
+  it('leaves anything that is a real trade-off to the planner', () => {
+    // The Mithril Axe at 10,000 GP against 43,860 held is 23% of the balance.
+    // That is a decision, not an oversight, and the planner keeps it.
+    expect(
+      buyTrivialUpgrades({ gp: 43_860, upgrades: [shop[3] as (typeof shop)[number]] }, () => ok()),
+    ).toBeNull();
+  });
+
+  it('buys nothing when the character is poor', () => {
+    // A 50 GP axe against 400 GP held is 12.5% — genuinely a trade-off for a
+    // character this broke, and it stays on the candidate list either way.
+    expect(buyTrivialUpgrades({ gp: 400, upgrades: shop }, () => ok())).toBeNull();
+  });
+
+  it('does nothing when everything worth having is already owned', () => {
+    expect(buyTrivialUpgrades({ gp: 43_860, upgrades: [] }, () => ok())).toBeNull();
   });
 });

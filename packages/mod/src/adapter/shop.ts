@@ -171,3 +171,48 @@ function gpCostOf(purchase: ShopPurchase): number {
     costs.getCurrencyQuantityArray().find((entry) => entry.currency === game.gp)?.quantity ?? 0
   );
 }
+
+/**
+ * Permanent upgrades cheap enough that not owning them is simply an oversight.
+ *
+ * These were sitting unbought for a whole session: an Iron Axe at 50 GP, an
+ * Iron Fishing Rod at 100, an Iron Pickaxe at 250, against 43,860 GP held.
+ * Each is a permanent -5% interval on a skill the agent actually trains, and
+ * every one of them was on the candidate list the entire time — at index 120 of
+ * 227, where a planner reading top-down never reached it. Surfacing a thing is
+ * not the same as doing it.
+ *
+ * Restricted to purchases that grant *no items*: a pure modifier upgrade. That
+ * is not a stylistic filter but the safety property that makes this reflex-safe
+ * on two counts. It cannot consume a bank slot, so it can never make the
+ * full-bank problem worse; and it cannot buy consumables — compost, dragonhide,
+ * summoning shards — where "how many" is a judgement the planner should keep.
+ * A one-off upgrade has no such judgement: the only wrong quantity is zero.
+ */
+export function readCheapPermanentUpgrades(): {
+  purchaseId: string;
+  name: string;
+  gpCost: number;
+}[] {
+  return (
+    game.shop.purchases.allObjects
+      .filter((purchase) => categoricalRefusal(purchase) === null)
+      .filter((purchase) => !purchase.allowQuantityPurchase)
+      .filter((purchase) => game.shop.getPurchaseCount(purchase) === 0)
+      .filter((purchase) => !game.shop.isPurchaseAtBuyLimit(purchase))
+      // Grants modifiers only — no items, no pet, no loot box, no bank tab.
+      .filter((purchase) => purchase.contains.items.length === 0)
+      .filter((purchase) => purchase.contains.pet === undefined)
+      .filter((purchase) => purchase.contains.lootBox !== true)
+      .filter((purchase) => purchase.contains.bankTab !== true)
+      .filter((purchase) => game.checkRequirements(purchase.purchaseRequirements, false))
+      .filter((purchase) => game.shop.getPurchaseCosts(purchase, 1).checkIfOwned())
+      .map((purchase) => ({
+        purchaseId: purchase.id,
+        name: purchase.name,
+        gpCost: gpCostOf(purchase),
+      }))
+      .filter((entry) => entry.gpCost > 0)
+      .sort((a, b) => a.gpCost - b.gpCost)
+  );
+}

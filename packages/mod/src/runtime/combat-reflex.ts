@@ -422,3 +422,45 @@ export function claimFinishedTasks(
 
   return { name: 'reflex.claimTask', result: claim(task.kind, task.taskId) };
 }
+
+/**
+ * Fraction of held GP a single automatic upgrade may cost.
+ *
+ * Two percent is deliberately timid. The point is not to spend well — that is
+ * the planner's job, with the whole shop in front of it — but to make "you
+ * have 43,860 GP and no 50 GP axe" impossible. Anything this reflex buys is
+ * rounding error against the balance; anything genuinely expensive stays a
+ * decision.
+ *
+ * A consequence worth stating: a poor character buys nothing here, which is
+ * correct. The upgrades stay on the candidate list and become affordable to the
+ * reflex exactly when they stop being a real trade-off.
+ */
+const TRIVIAL_UPGRADE_GP_FRACTION = 0.02;
+
+/**
+ * Buys permanent upgrades that cost a rounding error against held GP.
+ *
+ * Cheapest first, one per tick. Buying an Iron Axe shortly before a Steel Axe
+ * becomes affordable wastes 50 GP, and that is the right trade: the alternative
+ * — reasoning about which tier to wait for — is how these went unbought for a
+ * session in the first place.
+ *
+ * Restricted by its reader to upgrades granting no items, so this can neither
+ * fill a bank slot nor guess a quantity. See {@link readCheapPermanentUpgrades}.
+ */
+export function buyTrivialUpgrades(
+  state: {
+    gp: number;
+    upgrades: readonly { purchaseId: string; name: string; gpCost: number }[];
+  },
+  buy: (purchaseId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const affordable = state.upgrades.find(
+    (upgrade) =>
+      upgrade.gpCost <= state.gp && upgrade.gpCost <= state.gp * TRIVIAL_UPGRADE_GP_FRACTION,
+  );
+  if (affordable === undefined) return null;
+
+  return { name: 'reflex.buyUpgrade', result: buy(affordable.purchaseId) };
+}

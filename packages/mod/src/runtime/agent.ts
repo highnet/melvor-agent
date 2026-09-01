@@ -43,6 +43,7 @@ import {
   readAgilityCandidates,
   readAstrologyCandidates,
   readBankExpansion,
+  readCheapPermanentUpgrades,
   readBankPressure,
   readBankedFood,
   readBlockedOpportunities,
@@ -131,6 +132,7 @@ import {
   collectPendingLoot,
   compostBeforePlanting,
   eatWhenLow,
+  buyTrivialUpgrades,
   expandBankWhenFull,
   harvestReadyPlots,
   openPendingContainers,
@@ -470,6 +472,16 @@ export class Agent {
         {
           freeSlots: snapshot.bank.slotsMax - snapshot.bank.slotsUsed,
           expansion: readBankExpansion(),
+        },
+        (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
+      ),
+      // After the bank slot, which is the one purchase that pays for itself
+      // immediately, and before anything that spends time: a permanent -5%
+      // interval is worth more the earlier it is bought.
+      buyTrivialUpgrades(
+        {
+          gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+          upgrades: readCheapPermanentUpgrades(),
         },
         (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
       ),
