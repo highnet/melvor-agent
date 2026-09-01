@@ -269,3 +269,37 @@ describe('reading the right food slot', () => {
     expect(outcome?.name).toBe('reflex.eatWhenLow');
   });
 });
+
+describe('an empty selected food slot', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  it('is not mistaken for having no food', () => {
+    // The second bug in this area, and subtler than the first. Indexing the
+    // right slot is not enough: the *selected* slot can be empty while another
+    // is stocked, because equipping food does not select it. A `??` fallback
+    // does not fire for an empty slot — the entry exists with a quantity of
+    // zero — so the character read as having nothing to eat with 33 chickens
+    // one slot over, and died.
+    const slots = [
+      { itemId: null, itemName: null, qty: 0, healsFor: 0 },
+      { itemId: 'melvorD:Chicken', itemName: 'Chicken', qty: 33, healsFor: 90 },
+    ];
+
+    const selected = slots[0];
+    const usable =
+      selected !== undefined && selected.qty > 0 ? selected : slots.find((s) => s.qty > 0);
+
+    expect(usable?.itemName).toBe('Chicken');
+    expect(
+      eatWhenLow(
+        {
+          hitpoints: 14,
+          maxHitpoints: 120,
+          equippedFoodQty: usable?.qty ?? 0,
+          autoEatThresholdFraction: 0,
+        },
+        () => ok,
+      ),
+    ).not.toBeNull();
+  });
+});

@@ -386,10 +386,18 @@ export class Agent {
     // `selectedEquipmentSet` read an empty slot while food sat in the next one,
     // so every reflex concluded there was nothing to eat and the character
     // died with 33 chickens equipped.
+    // The slot the game will eat from, or any slot that actually holds food.
+    //
+    // Two mistakes lived here. The first indexed by `selectedEquipmentSet`,
+    // which is a different number entirely. The second used `??`, which does
+    // not fire for an *empty* slot — the entry exists, it just has a quantity
+    // of zero — so a character with 33 chickens in slot 1 and a selected slot
+    // of 0 still read as having nothing to eat, and died.
+    const selected = snapshot.combat.food[snapshot.combat.selectedFoodSlot];
     const slot =
-      snapshot.combat.food[snapshot.combat.selectedFoodSlot] ??
-      snapshot.combat.food.find((entry) => entry.qty > 0) ??
-      snapshot.combat.food[0];
+      selected !== undefined && selected.qty > 0
+        ? selected
+        : (snapshot.combat.food.find((entry) => entry.qty > 0) ?? selected);
 
     const outcomes = [
       refillFood(
