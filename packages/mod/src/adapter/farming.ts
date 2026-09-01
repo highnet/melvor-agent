@@ -551,12 +551,30 @@ export function readSeedShortfalls(): {
   }
 }
 
+/**
+ * How far above the current Farming level a crop still counts as wanted.
+ *
+ * Seeds for crops that cannot be planted yet are the ones that matter most,
+ * which is the opposite of what this reader first assumed. It required
+ * `farming.level >= recipe.level`, so Garum Seeds — the herb the entire
+ * Herblore chain is blocked on, needing Farming 5 against a level of 1 — were
+ * not "wanted", and the Golbin that drops them at 100% chance was annotated
+ * with Water Runes and Bones instead.
+ *
+ * Ten levels rather than all of them, because a note on every monster is the
+ * same as no note: it is the difference between a seed being *soon* and a seed
+ * being decorative. The sell guard is deliberately stricter and protects seeds
+ * at every level, since not selling something costs nothing.
+ */
+const SEED_LOOKAHEAD_LEVELS = 10;
+
 /** Seed ids the character holds too few of to plant; see readSeedShortfalls. */
 export function readShortSeedIds(): Set<string> {
   const ids = new Set<string>();
   try {
+    const reach = game.farming.level + SEED_LOOKAHEAD_LEVELS;
     for (const recipe of game.farming.actions.allObjects) {
-      if (game.farming.level < recipe.level) continue;
+      if (recipe.level > reach) continue;
       const held = game.bank.getQty(recipe.seedCost.item);
       if (held < recipe.seedCost.quantity) ids.add(recipe.seedCost.item.id);
     }
