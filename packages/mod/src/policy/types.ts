@@ -93,7 +93,12 @@ export type PolicyDecision =
   | { kind: 'complete'; detail: string }
   | {
       kind: 'abort';
-      outcome: 'aborted_budget' | 'aborted_gp_floor' | 'aborted_deaths' | 'failed_precondition';
+      outcome:
+        | 'aborted_budget'
+        | 'aborted_gp_floor'
+        | 'aborted_deaths'
+        | 'aborted_stuck'
+        | 'failed_precondition';
       detail: string;
     };
 

@@ -350,13 +350,13 @@ export class Agent {
     if (now - this.lastReflexAt < REFLEX_THROTTLE_MS) return;
     this.lastReflexAt = now;
     this.detectStuck(now);
-    this.runCombatReflexes();
+    this.runReflexes();
   }
 
   /**
-   * Mid-fight reactions, run from the tick loop.
+   * Reactions that cannot wait for the policy tier, run from the tick loop.
    *
-   * These cannot wait for the policy tier: auto-eat can empty a food slot in
+   * Not restricted to fights: auto-eat can empty a food slot in
    * seconds, and the survivability gate's argument — "this fight is winnable
    * because there is food" — stops being true the moment it does. Topping the
    * slot back up keeps that argument true instead of abandoning the fight.
@@ -365,9 +365,13 @@ export class Agent {
    * take the tick loop down with it; the policy tier's HP and food floors are
    * still there, and they end the fight safely on their own.
    */
-  private runCombatReflexes(): void {
+  private runReflexes(): void {
     const snapshot = this.lastSnapshot;
-    if (snapshot === null || !snapshot.combat.inCombat) return;
+    // Deliberately not gated on combat. Damage is not exclusive to it — a
+    // failed pickpocket hurts — and loot outlives the fight that produced it.
+    // This gate is what silently disabled eating during Thieving: fixing the
+    // reflex alone changed nothing, because it was never called.
+    if (snapshot === null) return;
 
     const isSuspended = (): boolean => this.state === 'suspended';
     const slot =

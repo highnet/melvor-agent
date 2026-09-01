@@ -53,7 +53,7 @@ export type AbortVerdict =
   | { abort: false }
   | {
       abort: true;
-      outcome: 'aborted_budget' | 'aborted_gp_floor' | 'aborted_deaths';
+      outcome: 'aborted_budget' | 'aborted_gp_floor' | 'aborted_deaths' | 'aborted_stuck';
       detail: string;
     };
 
