@@ -1,4 +1,5 @@
 import type { Candidate } from '@melvor-agent/shared';
+import { readBarelyEnoughIngredientIds } from './farming.js';
 import {
   FISHING_ID,
   MINING_ID,
@@ -446,10 +447,15 @@ export function readSellCandidates(): Candidate[] {
   // Township XP available — 500 Potatoes went for a few hundred GP an hour
   // before a task appeared wanting 100 of them.
   const wantedByTasks = readTaskWantedItemIds();
+  // And never the last of an ingredient. Two Garum Seeds — the only herb seeds
+  // of the session and exactly one planting's worth — came within a drift
+  // check of being sold in a batch aimed at Oak Logs.
+  const scarceIngredients = readBarelyEnoughIngredientIds();
 
   return (
     [...game.bank.items.values()]
       .filter((entry) => !wantedByTasks.has(entry.item.id))
+      .filter((entry) => !scarceIngredients.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({

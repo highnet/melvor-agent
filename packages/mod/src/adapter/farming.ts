@@ -249,6 +249,51 @@ export function readPlantableSeeds(): {
     .sort((a, b) => b.xp - a.xp);
 }
 
+/**
+ * Ingredients the character holds barely enough of to use once.
+ *
+ * Scarcity is the signal. Two Garum Seeds were nearly sold as part of a batch
+ * meant for Oak Logs — the list had reordered between the listing and the plan
+ * — and they are the only herb seeds obtained in a full session, the entire
+ * basis of the Herblore chain, and a Garum Herb planting costs exactly two.
+ *
+ * The drift guard caught that one, and it catches several an hour; it only
+ * takes a single gap for something irreplaceable to go. This is the cheaper
+ * belt: an item that is a recipe input and is held at or below a single
+ * craft's worth is not offered for sale at all.
+ *
+ * Deliberately narrow. Hold three of something that costs two and it is
+ * sellable again, because then it is stock rather than the last of a kind.
+ */
+export function readBarelyEnoughIngredientIds(): Set<string> {
+  const scarce = new Set<string>();
+
+  const consider = (itemId: string, cost: number, held: number): void => {
+    if (cost > 0 && held > 0 && held <= cost) scarce.add(itemId);
+  };
+
+  try {
+    for (const recipe of game.farming.actions.allObjects) {
+      const seed = recipe.seedCost;
+      consider(seed.item.id, seed.quantity, game.bank.getQty(seed.item));
+    }
+  } catch {
+    // A skill that cannot report its recipes protects nothing.
+  }
+
+  try {
+    for (const recipe of game.herblore.actions.allObjects) {
+      for (const cost of recipe.itemCosts) {
+        consider(cost.item.id, cost.quantity, game.bank.getQty(cost.item));
+      }
+    }
+  } catch {
+    // Same.
+  }
+
+  return scarce;
+}
+
 /** The cheapest compost actually held, or null when there is none. */
 export function readHeldCompost(): { itemId: string; held: number } | null {
   const compost = game.farming.composts.allObjects.find((item) => game.bank.getQty(item) > 0);

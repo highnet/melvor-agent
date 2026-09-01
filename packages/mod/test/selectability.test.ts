@@ -27,10 +27,20 @@ const NOT_SELECTABLE: Record<string, string> = {
   // Answered only when an event stops and asks; offering it otherwise would be
   // choosing an answer to a question nobody posed.
   choose_event_passive: 'only offered while an event is waiting on a passive',
-  // Locking an item guards against *accidental* selling. Every sale this agent
-  // makes is a deliberate objective, so a lock would only ever block a decision
-  // that was already taken on purpose. It stays available to an operator who
-  // wants to protect something by hand.
+  // Locking an item guards against *accidental* selling, and the reasoning here
+  // used to be that every sale is a deliberate objective, so a lock could only
+  // block a decision already taken on purpose.
+  //
+  // That premise was falsified in play. A sell plan built seconds after a
+  // listing would have sold two Garum Seeds — the only herb seeds of the whole
+  // session — because the list reordered underneath it and index 91 stopped
+  // meaning Oak Logs. The sale would have been deliberate in form and not at
+  // all in intent. The drift guard refused it, and the sell reader now also
+  // refuses to offer the last of any recipe ingredient, which is the cheaper
+  // and automatic version of a lock.
+  //
+  // The manual lock stays unoffered: with those two guards in place it is once
+  // again an operator's tool rather than a play decision.
   toggle_bank_lock: 'an operator safeguard, not a play decision',
 };
 

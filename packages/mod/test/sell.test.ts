@@ -272,3 +272,30 @@ describe('items an open task wants', () => {
     expect(bank.filter((e) => !wanted.has(e.itemId))).toHaveLength(1);
   });
 });
+
+describe('the last of an ingredient', () => {
+  // Scarcity is the signal. Two Garum Seeds — the only herb seeds obtained in
+  // a full session, and exactly one Garum Herb planting's worth — came within
+  // a drift check of being sold in a batch aimed at Oak Logs, because the
+  // candidate list reordered between the listing and the plan.
+  const scarce = (held: number, cost: number) => held > 0 && held <= cost;
+
+  it('protects an item held at exactly one craft cost', () => {
+    expect(scarce(2, 2)).toBe(true);
+  });
+
+  it('protects an item held below one craft cost', () => {
+    expect(scarce(1, 2)).toBe(true);
+  });
+
+  it('releases it once there is more than a single craft', () => {
+    // Deliberately narrow: three of something costing two is stock, not the
+    // last of a kind, and selling has to stay available — a full bank stalled
+    // the agent repeatedly today.
+    expect(scarce(3, 2)).toBe(false);
+  });
+
+  it('ignores items not held at all', () => {
+    expect(scarce(0, 2)).toBe(false);
+  });
+});
