@@ -288,28 +288,40 @@ const QUIVER_SLOT_ID = 'melvorD:Quiver';
 /**
  * Why this fight cannot be fought, or null if it can.
  *
- * Ranged with an empty quiver is not a fight, it is a stalemate: the character
- * cannot attack, so the enemy never dies and nothing is learned. That produced
- * one of the least legible failures of the session — the agent engaged, the
- * adapter reported `combat.engage ok`, and the state read "Doing: nothing" with
- * full health across two different monsters in two different areas while the
- * objective sat there for twenty minutes.
+ * Two ways to walk into a fight unable to throw a punch, and the agent found
+ * both in one session. Ranged with an empty quiver; magic with a staff but no
+ * spell selected. Each produced the same picture: engage succeeds, the state
+ * reads "Doing: Combat", health stays full, and nothing else moves — no kills,
+ * no XP, no runes spent — for as long as anyone leaves it.
  *
- * Nothing lied. Engaging genuinely succeeded, because the evidence for engaging
- * is deliberately "the game committed to this fight" rather than "punches have
- * been thrown" — the enemy spawns a tick later. A fight that can never start
- * looks exactly like one that is about to, which is precisely the gap a
- * precondition is for.
+ * Nothing lied in either case. Engaging genuinely succeeded, because the
+ * evidence for engaging is deliberately "the game committed to this fight"
+ * rather than "punches have been thrown" — the enemy spawns a tick later, and
+ * requiring `isActive` once reported every successful engage as a no-op. A
+ * fight that can never start looks exactly like one that is about to. That gap
+ * is what a precondition is for, and the general lesson is that *being able to
+ * attack* is state, as much as health or ammunition, and nothing was checking
+ * it.
  */
-function ammunitionRefusal(): string | null {
+function cannotAttackRefusal(): string | null {
   const player = game.combat.player;
-  if (player.attackType !== 'ranged') return null;
 
-  const quiver = player.equipment.equippedItems[QUIVER_SLOT_ID];
-  const held = quiver === undefined || quiver.item === quiver.emptyItem ? 0 : quiver.quantity;
-  if (held > 0) return null;
+  if (player.attackType === 'ranged') {
+    const quiver = player.equipment.equippedItems[QUIVER_SLOT_ID];
+    const held = quiver === undefined || quiver.item === quiver.emptyItem ? 0 : quiver.quantity;
+    if (held <= 0) {
+      return 'the quiver is empty and the equipped weapon is ranged, so no attack can land';
+    }
+  }
 
-  return 'the quiver is empty and the equipped weapon is ranged, so no attack can land';
+  if (player.attackType === 'magic' && player.spellSelection.attack === undefined) {
+    // Equipping a staff is only half of arming a mage. The other half has no
+    // slot and no inventory entry, so it is invisible in every projection the
+    // agent takes.
+    return 'the weapon is a staff but no attack spell is selected, so no attack can be cast';
+  }
+
+  return null;
 }
 
 /**
@@ -356,8 +368,8 @@ export function engageMonster(
           return `entry requirements not met for ${areaId}`;
         }
         if (game.combat.isActive) return 'already in combat';
-        const ammunition = ammunitionRefusal();
-        if (ammunition !== null) return ammunition;
+        const cannotAttack = cannotAttackRefusal();
+        if (cannotAttack !== null) return cannotAttack;
         const active = game.activeAction;
         if (active !== undefined) return `another action is running: ${active.id}`;
         return null;
@@ -438,8 +450,8 @@ export function startDungeon(
           return `entry requirements not met for ${dungeonId}`;
         }
         if (game.combat.isActive) return 'already in combat';
-        const ammunition = ammunitionRefusal();
-        if (ammunition !== null) return ammunition;
+        const cannotAttack = cannotAttackRefusal();
+        if (cannotAttack !== null) return cannotAttack;
         const active = game.activeAction;
         if (active !== undefined) return `another action is running: ${active.id}`;
         return null;
@@ -669,4 +681,36 @@ export function shouldCollectLoot(): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Runes that an attack spell the character could cast actually requires.
+ *
+ * Selling these is how Magic became unreachable. A bank-clearing pass sold all
+ * 81 Mind Runes with the note "not the runes Township wants" — true, and beside
+ * the point: the basic strike spells take a Mind Rune as catalyst alongside the
+ * elemental one, so the stack that looked like spare change was half of every
+ * castable spell. The failure surfaced much later and in a completely different
+ * place: a staff equipped, 821 Air Runes banked, and a fight that could not
+ * land a cast.
+ *
+ * Deliberately restricted to spells within the character's Magic level. Runes
+ * for spells decades away are genuinely surplus, and a guard that protects
+ * everything protects nothing — the bank filling up has stalled this agent
+ * repeatedly, and selling is the planner's lever for that.
+ */
+export function readSpellRuneIds(): Set<string> {
+  const runes = new Set<string>();
+  const magicLevel = game.skills.getObjectByID('melvorD:Magic')?.level ?? 0;
+
+  try {
+    for (const spell of game.attackSpells.allObjects) {
+      if (spell.level > magicLevel) continue;
+      for (const rune of spell.runesRequired) runes.add(rune.item.id);
+    }
+  } catch {
+    // Failing to protect a rune beats failing to build the sell list at all.
+  }
+
+  return runes;
 }

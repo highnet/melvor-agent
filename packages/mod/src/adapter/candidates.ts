@@ -1,5 +1,6 @@
 import type { Candidate } from '@melvor-agent/shared';
 import { readAllSeedIds, readBarelyEnoughIngredientIds } from './farming.js';
+import { readSpellRuneIds } from './combat.js';
 import {
   FISHING_ID,
   MINING_ID,
@@ -455,12 +456,17 @@ export function readSellCandidates(): Candidate[] {
   // last untrained skill in scope, seeds are worth a few GP against a harvest's
   // XP, and the list was offering 32 Ancient Corn Seeds while Farming sat at 1.
   const seeds = readAllSeedIds();
+  // And never a rune an attack spell in reach actually needs. All 81 Mind Runes
+  // were sold as spare change; they were half of every castable spell, and
+  // Magic was unreachable for the rest of the session.
+  const spellRunes = readSpellRuneIds();
 
   return (
     [...game.bank.items.values()]
       .filter((entry) => !wantedByTasks.has(entry.item.id))
       .filter((entry) => !scarceIngredients.has(entry.item.id))
       .filter((entry) => !seeds.has(entry.item.id))
+      .filter((entry) => !spellRunes.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({

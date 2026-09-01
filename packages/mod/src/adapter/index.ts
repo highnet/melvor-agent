@@ -36,6 +36,7 @@ export {
   screenByCombatLevel,
   shouldCollectLoot,
   readSpellCandidates,
+  readSpellRuneIds,
   selectAttackSpell,
   startDungeon,
   type CombatProjection,

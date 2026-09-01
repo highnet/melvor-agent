@@ -325,3 +325,28 @@ describe('farming seeds', () => {
     expect(sellable('melvorD:Oak_Logs')).toBe(true);
   });
 });
+
+describe('runes a castable spell needs', () => {
+  // All 81 Mind Runes were sold in a bank-clearing pass, noted as "not the runes
+  // Township wants" — true, and beside the point. The basic strike spells take a
+  // Mind Rune as catalyst alongside the elemental one, so the stack that looked
+  // like spare change was half of every castable spell. It surfaced much later
+  // and somewhere else entirely: a staff equipped, 821 Air Runes banked, and a
+  // fight that could not land a cast.
+  const needed = new Set(['melvorD:Mind_Rune', 'melvorD:Air_Rune']);
+  const sellable = (itemId: string) => !needed.has(itemId);
+
+  it('protects the catalyst rune, not just the elemental one', () => {
+    expect(sellable('melvorD:Mind_Rune')).toBe(false);
+  });
+
+  it('protects the elemental rune too', () => {
+    expect(sellable('melvorD:Air_Rune')).toBe(false);
+  });
+
+  it('leaves runes for spells far out of reach sellable', () => {
+    // A guard that protects everything protects nothing: the bank filling up
+    // has stalled this agent repeatedly, and selling is the lever for that.
+    expect(sellable('melvorD:Ancient_Rune')).toBe(true);
+  });
+});
