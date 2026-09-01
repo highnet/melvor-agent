@@ -340,7 +340,12 @@ export function stopGathering(
 
   const skill = gatheringSkill(skillId);
   if (skill === null) {
-    return fail('skill.stop', 'precondition', `no verified routine for skill ${skillId}`);
+    // Any skill that can hold the action slot can release it: `stop()` lives on
+    // the active-skill base class. Without this fallback, Cartography took the
+    // slot and nothing could take it back — the agent was stranded in it,
+    // refusing every objective with "no verified routine", and the stopgap
+    // looped on the same refusal.
+    return stopAnyActiveSkill(skillId, isSuspended);
   }
 
   return act(
@@ -376,4 +381,48 @@ function gatheringSkill(skillId: string): GatheringSkillHandle | null {
     default:
       return null;
   }
+}
+
+/**
+ * Releases the action slot from a skill with no dedicated routine.
+ *
+ * The dedicated routines exist because most skills need a *selection* cleared
+ * as well — a tree deselected, a recipe unset — and stopping without that
+ * leaves a half-state. Skills like Cartography have no such selection, so the
+ * game's own `stop()` is the whole operation.
+ *
+ * Verified by the skill reporting itself inactive, never by the return value.
+ */
+function stopAnyActiveSkill(
+  skillId: string,
+  isSuspended: () => boolean,
+): ActionResult<GatheringProjection> {
+  const skill = game.skills.getObjectByID(skillId) as
+    | (AnySkill & { stop?: () => boolean; isActive?: boolean })
+    | undefined;
+
+  if (skill === undefined || typeof skill.stop !== 'function') {
+    return fail('skill.stop', 'precondition', `no verified routine for skill ${skillId}`);
+  }
+
+  const project = (): GatheringProjection => ({
+    skillId,
+    active: skill.isActive === true,
+    selected: [],
+    activeActionId: game.activeAction?.id ?? null,
+  });
+
+  return act(
+    {
+      name: 'skill.stop',
+      observe: project,
+      precondition: () => (skill.isActive === true ? null : `${skillId} is not running`),
+      perform: () => skill.stop?.(),
+      // The slot being free is the point, so either signal counts: the skill
+      // reporting itself stopped, or the game's action slot letting go.
+      changed: (before, after) =>
+        (before.active && !after.active) || after.activeActionId !== before.activeActionId,
+    },
+    isSuspended,
+  );
 }
