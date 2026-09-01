@@ -66,6 +66,50 @@ export function dumpRegistries(): KnowledgeDump {
         return [];
       }
     })(),
+    // Rare drops per skill — the things a skill yields that are not its
+    // product.
+    //
+    // Added because the whole Herblore route rests on one of them. Farming is
+    // blocked on seeds, seeds come from Bird Nests, and Bird Nests were
+    // asserted to come from Woodcutting on recollection alone: the dump records
+    // only each tree's primary product, so there was no way to check. The same
+    // shape of gap as the Summoning recipes, and the same fix — dump it and
+    // stop guessing.
+    //
+    // `chance` is left as the raw object the game holds rather than flattened,
+    // because its shape varies by drop type and inventing a normalisation would
+    // be exactly the guesswork this removes.
+    skillRareDrops: (() => {
+      const out: {
+        skillId: string;
+        skillName: string;
+        itemId: string;
+        itemName: string;
+        quantity: number;
+      }[] = [];
+      try {
+        for (const skill of game.skills.allObjects) {
+          const drops = (skill as { rareDrops?: unknown }).rareDrops;
+          if (!Array.isArray(drops)) continue;
+          for (const drop of drops.slice(0, 6)) {
+            try {
+              out.push({
+                skillId: skill.id,
+                skillName: skill.name,
+                itemId: drop.item.id,
+                itemName: drop.item.name,
+                quantity: drop.quantity,
+              });
+            } catch {
+              // A drop that cannot describe itself is skipped, not invented.
+            }
+          }
+        }
+      } catch {
+        return [];
+      }
+      return out.slice(0, 60);
+    })(),
     // Summoning tablet recipes.
     //
     // Added because the planner was reasoning about Summoning by guesswork: the

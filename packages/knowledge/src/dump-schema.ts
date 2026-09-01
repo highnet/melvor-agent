@@ -62,6 +62,23 @@ export const knowledgeDumpSchema = z.object({
   ),
 
   /**
+   * Rare drops per skill — what a skill yields besides its product.
+   *
+   * The Herblore route depends on one of these: Farming needs seeds, seeds come
+   * from Bird Nests, and which skill drops those was previously a matter of
+   * recollection rather than record.
+   */
+  skillRareDrops: z.array(
+    z.object({
+      skillId: z.string(),
+      skillName: z.string(),
+      itemId: z.string(),
+      itemName: z.string(),
+      quantity: z.number().int(),
+    }),
+  ),
+
+  /**
    * Summoning tablet recipes.
    *
    * `nonShardOptions` carries the "one of several secondaries" rule, which is
