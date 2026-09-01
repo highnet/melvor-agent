@@ -103,6 +103,8 @@ function clampToViewport(left: number, top: number, width: number): { left: numb
  */
 export function createPanel(agent: Agent, log: Logger): PanelHandles {
   const layout = loadLayout();
+  // Survives the frequent re-render; see PendingConfirm.
+  const confirm: { pending: PendingConfirm | null } = { pending: null };
 
   const root = document.createElement('div');
   root.id = PANEL_ID;
@@ -136,7 +138,7 @@ export function createPanel(agent: Agent, log: Logger): PanelHandles {
 
   const render = (): void => {
     if (root.style.display === 'none') return;
-    root.replaceChildren(...renderContent(agent, log, layout, render));
+    root.replaceChildren(...renderContent(agent, log, layout, confirm, render));
     attachDrag(root, layout);
   };
 
@@ -227,6 +229,7 @@ function renderContent(
   agent: Agent,
   log: Logger,
   layout: Layout,
+  confirm: { pending: PendingConfirm | null },
   render: () => void,
 ): HTMLElement[] {
   const header = el('div', 'block-header block-header-default');
@@ -266,7 +269,7 @@ function renderContent(
   }
 
   content.appendChild(renderVitals(agent));
-  content.appendChild(renderControls(agent));
+  content.appendChild(renderControls(agent, confirm, render));
   content.appendChild(
     renderDisclosure(
       'Diagnostics',
@@ -497,22 +500,84 @@ function renderDisclosure(
   return wrapper;
 }
 
-function renderControls(agent: Agent): HTMLElement {
+/**
+ * A destructive control the operator has armed but not yet confirmed.
+ *
+ * Held outside the render so it survives the panel rebuilding, which happens on
+ * every agent change and every log line — several times a second while running.
+ */
+interface PendingConfirm {
+  action: 'disarm' | 'kill';
+  until: number;
+}
+
+/**
+ * How long a confirmation stays armed.
+ *
+ * Short on purpose. Kill is the operator's emergency exit and a dialog in front
+ * of it would be worse than the misclick it prevents, so the safeguard is a
+ * second click rather than a prompt: two taps in under four seconds stops an
+ * accident without slowing down someone who means it.
+ */
+const CONFIRM_WINDOW_MS = 4000;
+
+function renderControls(
+  agent: Agent,
+  confirm: { pending: PendingConfirm | null },
+  render: () => void,
+): HTMLElement {
   const row = el('div', 'row row-deck mb-3');
 
-  const arm = button(agent.runState === 'running' ? 'Disarm' : 'Arm', 'btn-primary', () => {
-    if (agent.runState === 'running') agent.disarm();
-    else void agent.arm();
-  });
+  const now = Date.now();
+  const armed = (action: PendingConfirm['action']): boolean =>
+    confirm.pending?.action === action && confirm.pending.until > now;
+
+  /**
+   * Turns a destructive action into a two-click one.
+   *
+   * The first click arms and re-renders; the second, inside the window, acts.
+   * The timer re-renders once more so an abandoned confirmation visibly
+   * disarms itself rather than lying in wait.
+   */
+  const guard = (action: PendingConfirm['action'], perform: () => void) => (): void => {
+    if (armed(action)) {
+      confirm.pending = null;
+      perform();
+      render();
+      return;
+    }
+    confirm.pending = { action, until: Date.now() + CONFIRM_WINDOW_MS };
+    render();
+    setTimeout(() => {
+      if (confirm.pending !== null && confirm.pending.until <= Date.now()) {
+        confirm.pending = null;
+        render();
+      }
+    }, CONFIRM_WINDOW_MS + 50);
+  };
+
+  const running = agent.runState === 'running';
+  const arm = running
+    ? button(
+        armed('disarm') ? 'Confirm disarm' : 'Disarm',
+        armed('disarm') ? 'btn-warning' : 'btn-primary',
+        guard('disarm', () => agent.disarm()),
+      )
+    : button('Arm', 'btn-primary', () => void agent.arm());
   arm.disabled = agent.runState === 'killed';
 
   // The kill switch stays enabled in every state; it is the operator's exit.
   // Once pulled it becomes Revive, because a switch with no way back is a
-  // reload disguised as a button.
+  // reload disguised as a button. Revive is not guarded — recovering from a
+  // misclick should never itself need confirming.
   const kill =
     agent.runState === 'killed'
       ? button('Revive', 'btn-success', () => agent.revive())
-      : button('Kill', 'btn-danger', () => agent.kill());
+      : button(
+          armed('kill') ? 'Confirm kill' : 'Kill',
+          armed('kill') ? 'btn-warning' : 'btn-danger',
+          guard('kill', () => agent.kill()),
+        );
 
   for (const control of [arm, kill]) {
     const cell = el('div', 'col-6');
@@ -540,9 +605,6 @@ function renderControls(agent: Agent): HTMLElement {
     row.appendChild(allowCell);
   }
 
-  // Revoke and Dump are maintenance, not operation: they were taking two full
-  // rows above the state the operator is actually watching. Kept, made small,
-  // and put last.
   if (allowed && characterName !== null) {
     const revoke = button(`Revoke "${characterName}"`, 'btn-secondary', () => {
       agent.updateSettings({
@@ -556,18 +618,16 @@ function renderControls(agent: Agent): HTMLElement {
       agent.disarm();
     });
     revoke.className = 'btn btn-sm btn-secondary w-100 font-size-sm';
-    const revokeCell = el('div', 'col-6 mt-2');
+    const revokeCell = el('div', 'col-12 mt-2');
     revokeCell.appendChild(revoke);
     row.appendChild(revokeCell);
   }
 
-  // The dump must be produced from inside the game: only the running game
-  // knows its own registries for the exact installed version.
-  const dump = button('Dump knowledge', 'btn-secondary', () => void agent.dumpKnowledge());
-  dump.className = 'btn btn-sm btn-secondary w-100 font-size-sm';
-  const dumpCell = el('div', `${allowed ? 'col-6' : 'col-12'} mt-2`);
-  dumpCell.appendChild(dump);
-  row.appendChild(dumpCell);
+  // No "Dump knowledge" button. Arming already checks the stored dump for
+  // freshness and regenerates it when it is missing, stale for the installed
+  // version, or fails its schema — which is the whole reason a game update
+  // needs no intervention. A button for something that has already happened
+  // invites the operator to think it is their job.
 
   return row;
 }
