@@ -53,11 +53,27 @@ function probeMonsterStats(monster: Monster): ProbedStats | null {
   try {
     const probe = new Enemy(game.combat, game);
     probe.setNewMonster(monster);
-    probe.setStatsFromMonster(monster);
+
+    // The full derivation chain, in the game's own order. `computeCombatStats`
+    // reads from levels, equipment stats and modifiers — none of which exist
+    // until they are computed — so calling it alone produced a monster with a
+    // max hit of zero. Every enemy measured as harmless, which the gate then
+    // read as safe: Red Dragon was offered to a level 3 character.
+    probe.computeAttackType();
+    probe.computeDamageType();
+    probe.computeLevels();
+    probe.computeEquipmentStats();
+    probe.computeModifiers();
     probe.computeCombatStats();
 
-    // A probe that computes nothing is a failed probe, not a harmless monster.
-    if (!(probe.stats.maxHit > 0) || !(probe.stats.attackInterval > 0)) return null;
+    // A probe that still computes nothing has failed, not found a harmless
+    // monster. Refusing on this is what keeps the gate failing closed — and the
+    // numbers go into the reason, because "could not compute" without them sent
+    // me guessing at the cause twice.
+    if (!(probe.stats.maxHit > 0) || !(probe.stats.attackInterval > 0)) {
+      lastProbeFailure = `${monster.id}: max hit ${probe.stats.maxHit}, interval ${probe.stats.attackInterval}ms, levels ${probe.levels.Attack}/${probe.levels.Strength}`;
+      return null;
+    }
 
     return {
       maxHit: probe.stats.maxHit,
@@ -66,11 +82,27 @@ function probeMonsterStats(monster: Monster): ProbedStats | null {
       hitChance: Math.min(1, Math.max(0, probe.stats.hitChance / 100)),
       damageType: probe.damageType,
     };
-  } catch {
+  } catch (error) {
     // A failed probe means we cannot prove survivability, which is a refusal —
     // never an assumption that it is fine.
+    lastProbeFailure = `${monster.id} threw: ${String(error)}`;
     return null;
   }
+}
+
+/**
+ * Why the last probe failed.
+ *
+ * Module-level rather than returned, because the probe is called from inside a
+ * reduce over every monster in a dungeon and threading a reason through all of
+ * that would obscure the code for a diagnostic. It exists because "could not
+ * compute enemy stats" told me nothing twice in a row.
+ */
+let lastProbeFailure = '';
+
+/** The reason the most recent probe failed, for error messages. */
+export function readLastProbeFailure(): string {
+  return lastProbeFailure;
 }
 
 /**
@@ -126,7 +158,10 @@ export function readCombatGateInputs(
       : probeMonsterStats(monster as Monster);
 
   if (stats === null) {
-    return { ok: false, detail: `could not compute enemy stats for ${targetId}` };
+    return {
+      ok: false,
+      detail: `could not compute enemy stats for ${targetId} (${readLastProbeFailure()})`,
+    };
   }
 
   const player = game.combat.player;
