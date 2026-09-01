@@ -1,21 +1,25 @@
 /**
- * Realms whose content the agent refuses to engage with entirely.
+ * Realms whose content the agent refuses to engage with.
  *
- * Into the Abyss behaves differently enough that the Phase 2 combat gate's
- * assumptions do not carry over. This is enforced by realm identity rather than
- * by matching names, because a name check is defeated by any renamed or
- * localised content while realm membership is structural.
+ * Empty, by operator decision. Into the Abyss and the Eternal realm were
+ * excluded from the start because the combat gate's assumptions do not carry
+ * over to them, and lifting that was always stated as a decision only the
+ * operator could make — the planner was never allowed to negotiate it. That
+ * decision has now been made: nothing is excluded.
  *
- * Lifting this is an explicit operator decision, not something the planner can
- * negotiate.
+ * The set is kept rather than deleted, and every call site still consults it,
+ * so re-excluding a realm is a one-line change instead of an archaeology
+ * exercise across nine files.
+ *
+ * What this does *not* change is the survivability gate. Abyssal enemies are
+ * screened by the same combat-level ceiling as everything else, and that screen
+ * was written for the base game — the original comment's warning is still true,
+ * it is simply no longer a reason to refuse. The brief permits the character to
+ * die; it does not permit irreversible damage, and the categorical refusals
+ * below are untouched because they are about destroying things that cannot be
+ * recovered, not about which content is in scope.
  */
-const REFUSED_REALM_IDS: ReadonlySet<string> = new Set([
-  // Values of the `RealmIDs` const enum in idEnums.d.ts. Inlined as literals
-  // because ambient `const enum` members cannot be referenced under
-  // isolatedModules, which the build requires.
-  'melvorItA:Abyssal',
-  'melvorItA:Eternal',
-]);
+const REFUSED_REALM_IDS: ReadonlySet<string> = new Set([]);
 
 /** Whether a realm is on the hard refusal list. */
 export function isRefusedRealm(realmId: string): boolean {
@@ -30,7 +34,7 @@ export function isRefusedRealm(realmId: string): boolean {
 export function checkRealmAllowed(): string | null {
   const realm = game.currentRealm;
   if (isRefusedRealm(realm.id)) {
-    return `realm ${realm.name} (${realm.id}) is refused until explicitly whitelisted`;
+    return `realm ${realm.name} (${realm.id}) is on the refusal list`;
   }
   return null;
 }

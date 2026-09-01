@@ -453,20 +453,32 @@ export function claimFinishedTasks(
 /**
  * Fraction of held GP a single automatic upgrade may cost.
  *
- * Two percent is deliberately timid. The point is not to spend well — that is
- * the planner's job, with the whole shop in front of it — but to make "you
- * have 43,860 GP and no 50 GP axe" impossible. Anything this reflex buys is
- * rounding error against the balance; anything genuinely expensive stays a
- * decision.
+ * Started at two percent, which was too timid and was set for the wrong reason.
+ * The stated aim was "make 43,860 GP and no 50 GP axe impossible" — a floor
+ * against oversights — and the argument was that anything dearer is a
+ * trade-off belonging to the planner.
  *
- * A consequence worth stating: a poor character buys nothing here, which is
- * correct. The upgrades stay on the candidate list and become affordable to the
- * reflex exactly when they stop being a real trade-off.
+ * In practice the planner did not make it. A Mithril Axe at 10,000 GP against
+ * 58,733 held is a seventeen percent purchase and an obvious one: it is -20% on
+ * the cut interval of the exact action the agent was running for hours, and
+ * nests roll per action. It sat unbought while the character chopped, and the
+ * operator had to point at it.
+ *
+ * A quarter is the honest line. These are one-off permanent upgrades granting
+ * no items, so the list is finite and each is bought once — the total drain is
+ * bounded by the shop rather than open-ended. Cheapest first means the agent
+ * ladders up as it earns instead of lunging at the most expensive thing it can
+ * technically afford. And a quarter still refuses to sink most of a balance
+ * into a single purchase, which is the failure the low cap was really guarding
+ * against.
+ *
+ * A poor character still buys nothing dear, which remains correct: the same
+ * upgrade becomes automatic exactly when it stops being a real sacrifice.
  */
-const TRIVIAL_UPGRADE_GP_FRACTION = 0.02;
+const UPGRADE_GP_FRACTION = 0.25;
 
 /**
- * Buys permanent upgrades that cost a rounding error against held GP.
+ * Buys permanent upgrades the character can comfortably afford.
  *
  * Cheapest first, one per tick. Buying an Iron Axe shortly before a Steel Axe
  * becomes affordable wastes 50 GP, and that is the right trade: the alternative
@@ -485,7 +497,7 @@ export function buyTrivialUpgrades(
 ): ReflexOutcome | null {
   const affordable = state.upgrades.find(
     (upgrade) =>
-      upgrade.gpCost <= state.gp && upgrade.gpCost <= state.gp * TRIVIAL_UPGRADE_GP_FRACTION,
+      upgrade.gpCost <= state.gp && upgrade.gpCost <= state.gp * UPGRADE_GP_FRACTION,
   );
   if (affordable === undefined) return null;
 

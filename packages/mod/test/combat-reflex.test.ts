@@ -612,18 +612,34 @@ describe('buyTrivialUpgrades', () => {
     expect(bought).toEqual(['melvorD:Iron_Axe']);
   });
 
-  it('leaves anything that is a real trade-off to the planner', () => {
-    // The Mithril Axe at 10,000 GP against 43,860 held is 23% of the balance.
-    // That is a decision, not an oversight, and the planner keeps it.
-    expect(
-      buyTrivialUpgrades({ gp: 43_860, upgrades: [shop[3] as (typeof shop)[number]] }, () => ok()),
-    ).toBeNull();
+  it('buys an upgrade the character can comfortably afford', () => {
+    // This test previously asserted the opposite. The old band was 2% of held
+    // GP, on the argument that anything dearer was a trade-off for the planner
+    // — and then the planner did not make it. A Mithril Axe at 10,000 against
+    // 58,733 held is -20% on the cut interval of the action the agent was
+    // running for hours, and it sat unbought until the operator pointed at it.
+    const bought: string[] = [];
+    buyTrivialUpgrades({ gp: 58_733, upgrades: [shop[3] as (typeof shop)[number]] }, (id) => {
+      bought.push(id);
+      return ok();
+    });
+
+    expect(bought).toEqual(['melvorD:Mithril_Axe']);
   });
 
-  it('buys nothing when the character is poor', () => {
-    // A 50 GP axe against 400 GP held is 12.5% — genuinely a trade-off for a
-    // character this broke, and it stays on the candidate list either way.
-    expect(buyTrivialUpgrades({ gp: 400, upgrades: shop }, () => ok())).toBeNull();
+  it('still refuses to sink most of a balance into one purchase', () => {
+    // The failure the low cap was really guarding against, and the reason the
+    // new line is a quarter rather than no limit at all.
+    const dear = [{ purchaseId: 'melvorD:Adamant_Axe', name: 'Adamant Axe', gpCost: 50_000 }];
+
+    expect(buyTrivialUpgrades({ gp: 58_733, upgrades: dear }, () => ok())).toBeNull();
+  });
+
+  it('buys nothing dear when the character is poor', () => {
+    // A 50 GP axe against 150 GP held is a third of everything, which is a real
+    // sacrifice. The same upgrade becomes automatic exactly when it stops being
+    // one — the character need only earn a little first.
+    expect(buyTrivialUpgrades({ gp: 150, upgrades: shop }, () => ok())).toBeNull();
   });
 
   it('does nothing when everything worth having is already owned', () => {
