@@ -496,8 +496,7 @@ export function buyTrivialUpgrades(
   buy: (purchaseId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   const affordable = state.upgrades.find(
-    (upgrade) =>
-      upgrade.gpCost <= state.gp && upgrade.gpCost <= state.gp * UPGRADE_GP_FRACTION,
+    (upgrade) => upgrade.gpCost <= state.gp && upgrade.gpCost <= state.gp * UPGRADE_GP_FRACTION,
   );
   if (affordable === undefined) return null;
 
@@ -536,4 +535,29 @@ export function removePenalisingGear(
   if (worst === undefined) return null;
 
   return { name: 'reflex.removePenalisingGear', result: unequip(worst.slotId) };
+}
+
+/**
+ * Claims Mastery Tokens sitting in the bank.
+ *
+ * The same shape as opening a container, and for the same reason: holding one
+ * does literally nothing, claiming it pours a percentage into the skill's
+ * mastery pool, and there is no judgement in between. A reflex rather than a
+ * candidate because an efficiency the operator has to notice and choose is an
+ * efficiency that will be missed — these sat in the bank all session, and the
+ * sell reader was offering them as a stack to liquidate.
+ *
+ * Not gated on combat: claiming touches the bank, not the action slot.
+ */
+export function claimMasteryTokens(
+  state: { tokens: readonly { itemId: string; quantity: number }[] },
+  claim: (itemId: string, quantity: number) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const token = state.tokens[0];
+  if (token === undefined || token.quantity <= 0) return null;
+
+  return {
+    name: 'reflex.claimMasteryToken',
+    result: claim(token.itemId, token.quantity),
+  };
 }

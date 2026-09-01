@@ -55,6 +55,7 @@ export const objectiveKindSchema = z.enum([
   'convert_from_township',
   'bury_bones',
   'open_item',
+  'claim_mastery_token',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -303,6 +304,19 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
   z.object({
     /** Bird nests and chests: the only source of some items, seeds included. */
     kind: z.literal('open_item'),
+    itemId: gameIdSchema,
+    quantity: z.number().int().positive(),
+  }),
+  z.object({
+    /**
+     * Mastery Tokens, which are not containers and were being offered for sale.
+     *
+     * A separate kind rather than folding into `open_item`, because the game
+     * models them as a separate class with a separate claim call — and the
+     * reason they were invisible was precisely an `instanceof OpenableItem`
+     * check that excludes them.
+     */
+    kind: z.literal('claim_mastery_token'),
     itemId: gameIdSchema,
     quantity: z.number().int().positive(),
   }),

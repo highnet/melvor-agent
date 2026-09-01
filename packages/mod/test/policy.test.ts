@@ -37,6 +37,7 @@ describe('capability registry', () => {
       'change_equipment_set',
       'choose_event_passive',
       'claim_casual_task',
+      'claim_mastery_token',
       'claim_township_task',
       'compost_plot',
       'convert_from_township',

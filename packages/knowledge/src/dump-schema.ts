@@ -186,6 +186,8 @@ export const knowledgeDumpSchema = z.object({
       level: z.number().int().nonnegative(),
       maxHit: z.number().nonnegative(),
       lootTable: z.array(z.string()),
+      /** The guaranteed drop, which the loot table does not include. */
+      uniqueDrop: z.string().default(''),
     }),
   ),
 
@@ -200,6 +202,16 @@ export const knowledgeDumpSchema = z.object({
       id: z.string(),
       name: z.string(),
       combatLevel: z.number().nonnegative(),
+      /**
+       * Percent chance the loot table rolls at all.
+       *
+       * Carried with the table because presence is not a rate: a seed on a
+       * table that rolls one kill in fifty is not comparable to a Bird Nest,
+       * and comparing them is the reason to have either.
+       */
+      lootChance: z.number().nonnegative().default(0),
+      lootTable: z.array(z.string()).default([]),
+      bones: z.string().default(''),
     }),
   ),
 

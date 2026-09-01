@@ -262,6 +262,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `opening ${params.quantity}x ${params.itemId}`,
       );
 
+    case 'claim_mastery_token':
+      return act(
+        { type: 'claim_mastery_token', itemId: params.itemId, quantity: params.quantity },
+        `claiming ${params.quantity}x ${params.itemId} into the mastery pool`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 

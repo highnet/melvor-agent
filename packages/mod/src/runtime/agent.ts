@@ -15,6 +15,7 @@ import {
   buildAgilityObstacle,
   buildTownshipBuilding,
   buryBones,
+  claimMasteryToken,
   buyShopPurchase,
   unequipItem,
   changeEquipmentSet,
@@ -71,6 +72,7 @@ import {
   readLockedActions,
   readMasteryCandidates,
   readNextContainer,
+  readMasteryTokenCandidates,
   readOpenableCandidates,
   readPaperCandidates,
   readPassiveCookingCandidates,
@@ -138,6 +140,7 @@ import {
   compostBeforePlanting,
   eatWhenLow,
   buyTrivialUpgrades,
+  claimMasteryTokens,
   removePenalisingGear,
   expandBankWhenFull,
   harvestReadyPlots,
@@ -525,6 +528,17 @@ export class Agent {
           autoEatThresholdFraction: normaliseFraction(snapshot.combat.autoEatThreshold),
         },
         () => eatFood(isSuspended),
+      ),
+      // Same shape as opening a container: holding a token does nothing, and
+      // there is no judgement between holding and claiming.
+      claimMasteryTokens(
+        {
+          tokens: readMasteryTokenCandidates().map((candidate) => ({
+            itemId: String((candidate.params as { itemId?: unknown }).itemId ?? ''),
+            quantity: Number((candidate.params as { quantity?: unknown }).quantity ?? 0),
+          })),
+        },
+        (itemId, quantity) => claimMasteryToken(itemId, quantity, isSuspended),
       ),
       openPendingContainers({ hasContainer: readNextContainer() !== null }, () => {
         const container = readNextContainer();
@@ -1202,6 +1216,8 @@ export class Agent {
         return buryBones(action.itemId, action.quantity, isSuspended);
       case 'open_item':
         return openItem(action.itemId, action.quantity, isSuspended);
+      case 'claim_mastery_token':
+        return claimMasteryToken(action.itemId, action.quantity, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1481,6 +1497,7 @@ export class Agent {
       ['combat event', readEventCandidates],
       ['bones', readBoneCandidates],
       ['containers', readOpenableCandidates],
+      ['masteryTokens', readMasteryTokenCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
       ['paper', readPaperCandidates],

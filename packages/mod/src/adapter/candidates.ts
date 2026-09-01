@@ -1,5 +1,6 @@
 import type { Candidate } from '@melvor-agent/shared';
 import { readAllSeedIds, readBarelyEnoughIngredientIds, readSeedShortfalls } from './farming.js';
+import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
 import { readSlayerBlockedReason } from './management.js';
 import {
@@ -488,6 +489,11 @@ export function readSellCandidates(): Candidate[] {
   // were sold as spare change; they were half of every castable spell, and
   // Magic was unreachable for the rest of the session.
   const spellRunes = readSpellRuneIds();
+  // And never a Mastery Token. They are not containers, so the open reader's
+  // instanceof check never saw them, while this reader — filtering on nothing
+  // of the sort — listed six Woodcutting tokens as a stack to liquidate. A
+  // token held does nothing; a token sold is mastery XP set on fire.
+  const masteryTokens = readMasteryTokenIds();
 
   return (
     [...game.bank.items.values()]
@@ -495,6 +501,7 @@ export function readSellCandidates(): Candidate[] {
       .filter((entry) => !scarceIngredients.has(entry.item.id))
       .filter((entry) => !seeds.has(entry.item.id))
       .filter((entry) => !spellRunes.has(entry.item.id))
+      .filter((entry) => !masteryTokens.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({

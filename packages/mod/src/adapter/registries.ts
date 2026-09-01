@@ -14,6 +14,39 @@ import type { KnowledgeDump } from '@melvor-agent/knowledge';
  *
  * @returns A structured dump ready to be serialised to `knowledge/dump.json`.
  */
+/**
+ * Reading game data that may not be there, without inventing what is.
+ *
+ * A dump that throws produces nothing; a dump that guesses produces something
+ * worse. These return a stated empty value so a missing field is visibly empty
+ * rather than plausibly wrong — the distinction that made "no monster drops
+ * seeds" indistinguishable from "monster drops were never dumped".
+ */
+function safeNumber(read: () => number, fallback: number): number {
+  try {
+    const value = read();
+    return Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function safeText(read: () => string): string {
+  try {
+    return read();
+  } catch {
+    return '';
+  }
+}
+
+function safeList(read: () => string[]): string[] {
+  try {
+    return read();
+  } catch {
+    return [];
+  }
+}
+
 export function dumpRegistries(): KnowledgeDump {
   return {
     gameVersion: gameVersion,
@@ -306,6 +339,9 @@ export function dumpRegistries(): KnowledgeDump {
       level: npc.level,
       maxHit: npc.maxHit,
       lootTable: npc.lootTable.drops.map((drop) => drop.item.name),
+      // The guaranteed drop, which the table does not include and which was
+      // invisible for the same reason monster loot was.
+      uniqueDrop: safeText(() => npc.uniqueDrop?.item.name ?? ''),
     })),
     monsters: game.monsters.allObjects.map((monster) => ({
       id: monster.id,
@@ -314,6 +350,19 @@ export function dumpRegistries(): KnowledgeDump {
       // Deliberately absent: maxHit. A Monster in the registry is data with no
       // computed max hit — only an instantiated Enemy has one. Dumping a
       // plausible-looking number here would poison the Phase 2 combat gate.
+      //
+      // Loot, by contrast, was absent for no reason at all. Thieving NPCs have
+      // had their drop tables dumped since the section was written, and the
+      // question "what drops the seed Farming is blocked on" could be answered
+      // for Thieving and not for combat — so the answer for combat was "the
+      // data is not there", which reads exactly like "nothing drops it".
+      //
+      // `lootChance` is carried alongside the table because presence is not a
+      // rate: a seed on a table that rolls one kill in fifty is not comparable
+      // to a Bird Nest, and comparing them was the entire point of asking.
+      lootChance: safeNumber(() => monster.lootChance, 0),
+      lootTable: safeList(() => monster.lootTable.drops.map((drop) => drop.item.name)),
+      bones: safeText(() => monster.bones?.item.name ?? ''),
     })),
     dungeons: game.dungeons.allObjects.map((dungeon) => ({
       id: dungeon.id,

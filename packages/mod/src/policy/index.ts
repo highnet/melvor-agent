@@ -58,6 +58,7 @@ const EXECUTORS: Record<ObjectiveKind, PolicyExecutor> = {
   convert_from_township: manage,
   bury_bones: manage,
   open_item: manage,
+  claim_mastery_token: manage,
   restore_town_health: manage,
   select_dig_map: manage,
   travel_to_poi: manage,

@@ -330,3 +330,105 @@ export function readNextContainer(): { itemId: string; quantity: number } | null
 
   return null;
 }
+
+/**
+ * Claims a Mastery Token, pouring its percentage into the skill's mastery pool.
+ *
+ * Tokens were invisible to this agent in the worst possible way: not merely
+ * unclaimable, but offered *for sale*. `readOpenableCandidates` filters on
+ * `instanceof OpenableItem` and a `MasteryTokenItem` is a sibling class, not a
+ * subclass — so the container reflex could never see one, while the sell reader,
+ * which filters on nothing of the sort, happily listed six Woodcutting tokens
+ * as a stack to liquidate.
+ *
+ * One caveat carried deliberately into the code. Unlike opening — where
+ * `openItemOnClick` raises a confirmation nothing here will answer and
+ * `processItemOpen` does the real work — the typings expose *only*
+ * `claimMasteryTokenOnClick`. There is no process-level counterpart to call, so
+ * this uses the click callback knowing it may raise a modal, which would show
+ * up as a no-state-change failure rather than a silent success.
+ *
+ * That is why the evidence is the pool, not the bank. A token leaving the bank
+ * proves a click landed; mastery pool XP rising proves the claim actually paid
+ * out, and it distinguishes the case where the pool is already full.
+ *
+ * @param itemId - Namespaced `MasteryTokenItem` id, already in the bank.
+ * @param quantity - How many to claim. Capped at what the bank holds.
+ * @param isSuspended - Guard against acting during offline catch-up.
+ */
+export function claimMasteryToken(
+  itemId: string,
+  quantity: number,
+  isSuspended: () => boolean,
+): ActionResult<{ held: number; poolXp: number }> {
+  const item = game.items.getObjectByID(itemId);
+  if (item === undefined || !(item instanceof MasteryTokenItem)) {
+    return fail('bank.claimMasteryToken', 'precondition', `${itemId} is not a mastery token`);
+  }
+
+  const project = (): { held: number; poolXp: number } => ({
+    held: game.bank.getQty(item),
+    poolXp: item.skill.getMasteryPoolXP(item.realm),
+  });
+
+  return act(
+    {
+      name: 'bank.claimMasteryToken',
+      observe: project,
+      precondition: () => {
+        const held = game.bank.getQty(item);
+        if (held <= 0) return `bank holds no ${itemId}`;
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+          return `quantity must be a positive integer, got ${quantity}`;
+        }
+        return null;
+      },
+      perform: () =>
+        game.bank.claimMasteryTokenOnClick(item, Math.min(quantity, game.bank.getQty(item))),
+      // Pool XP, not the bank count: a token leaving proves a click landed,
+      // while the pool rising proves it paid out.
+      changed: (before, after) => after.poolXp > before.poolXp || after.held < before.held,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Mastery Tokens sitting in the bank.
+ *
+ * Their own reader, because they are not `OpenableItem`s and the container
+ * reader's `instanceof` check excludes them by construction.
+ */
+export function readMasteryTokenCandidates(): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  for (const entry of game.bank.items.values()) {
+    if (!(entry.item instanceof MasteryTokenItem)) continue;
+
+    candidates.push({
+      kind: 'claim_mastery_token',
+      params: {
+        kind: 'claim_mastery_token',
+        itemId: entry.item.id,
+        quantity: entry.quantity,
+      },
+      label: `Claim ${entry.quantity}x ${entry.item.name} — each pours ${entry.item.percent}% into the ${entry.item.skill.name} mastery pool, and holding one does nothing`,
+      available: true,
+    });
+  }
+
+  return candidates;
+}
+
+/** Ids of every Mastery Token held, so the sell reader can refuse them. */
+export function readMasteryTokenIds(): Set<string> {
+  const ids = new Set<string>();
+  try {
+    for (const entry of game.bank.items.values()) {
+      if (entry.item instanceof MasteryTokenItem) ids.add(entry.item.id);
+    }
+  } catch {
+    // Failing to protect a token beats failing to build the sell list.
+  }
+  return ids;
+}

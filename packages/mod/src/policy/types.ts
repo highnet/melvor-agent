@@ -67,6 +67,7 @@ export type PolicyAction =
   | { type: 'convert_from_township'; resourceId: string; itemId: string; quantity: number }
   | { type: 'bury_bones'; itemId: string; quantity: number }
   | { type: 'open_item'; itemId: string; quantity: number }
+  | { type: 'claim_mastery_token'; itemId: string; quantity: number }
   | { type: 'toggle_curse'; curseId: string }
   | { type: 'toggle_aurora'; auroraId: string }
   | { type: 'toggle_bank_lock'; itemId: string }
