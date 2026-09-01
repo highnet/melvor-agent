@@ -209,3 +209,100 @@ Three shapes cover it:
 
 A recipe matching none of these consumes nothing (Woodcutting, Thieving) and is
 allowed through — refusing the unknown would silently delete whole skills.
+
+## Equipping is a quantity, not a boolean — ammunition needs the whole stack
+
+`player.equipItem(item, set, slot, quantity)` takes a quantity, and passing `1`
+is right for a platebody and catastrophic for arrows. The agent equipped one
+Bronze Arrow out of 1,259, fired it, and fought on with an empty quiver.
+
+`EquipmentSlot.allowQuantity` is the game's own answer to "does this slot hold a
+stack" — ask it rather than inferring from the item:
+
+```ts
+const quantity = slot.allowQuantity ? Math.max(1, game.bank.getQty(item)) : 1;
+```
+
+The slot projection records *which* item is worn, not how many, so a quantity
+bug is invisible in before/after evidence. The only symptom was the bank count
+dropping by exactly one.
+
+## Gear stats are per attack style — summing them all misjudges every piece
+
+`item.equipmentStats` is a flat `{key, value}[]`, and summing it scores a Steel
+Platebody as an upgrade for an archer: its large melee-defence numbers drown out
+a `rangedAttackBonus` of −12. Equipped as "free survivability", it made the
+character unable to land a shot — full health, no kills, twenty minutes.
+
+Melee attack is three keys, not one:
+
+| Style | Keys |
+|---|---|
+| ranged | `rangedAttackBonus` |
+| magic | `magicAttackBonus` |
+| melee | `stabAttackBonus` + `slashAttackBonus` + `blockAttackBonus` |
+
+A negative bonus for the style in use is disqualifying, not a trade-off against
+defence: no amount of armour compensates for never hitting anything.
+
+## Being able to attack is state, and nothing reports it
+
+`combat.engage` succeeding proves the game committed to the fight, not that a
+punch can land — the enemy spawns a tick later, so requiring `isActive` reports
+every successful engage as a no-op. A fight that can *never* start therefore
+looks exactly like one about to start: "Doing: Combat", full health, nothing
+moving, indefinitely.
+
+Two ways in, both hit in one session:
+
+- **Ranged**: the Quiver slot (`melvorD:Quiver`) empty.
+- **Magic**: no spell selected — *or* a spell selected whose runes are not in
+  the bank. Checking only `player.spellSelection.attack !== undefined` misses
+  the second and is the more common failure. Wind Strike was selected the whole
+  time; its Mind Runes had been sold as spare change.
+
+Check both in the engage precondition. Equipping a staff is half of arming a
+mage; the other half has no slot and no inventory entry.
+
+## `canStop` is a moment, not a verdict
+
+`skill.canStop` is false while a skill is mid-action, and while Thieving is
+stunned from a failed pickpocket — seconds either way. Returning that as a
+precondition makes the policy tier abandon whatever was queued behind it.
+
+It cost a whole objective and three wrong diagnoses: a plan of food → Magic →
+Thieving hit one stun while Thieving held the action slot, and the Magic step
+was moved to the back of the plan and never came round again. From outside it
+read as combat failing on its own merits.
+
+Return `{ wait: ... }`, not a string.
+
+## Summoning secondaries are priced by value — "held" is not "enough"
+
+A tablet takes shards plus *one of several* secondaries, and the game prices
+each by its value: a cheap log is needed in far greater quantity than an
+expensive one. Picking the first option with `getQty(item) > 0` points the
+recipe at something there is nowhere near enough of.
+
+```ts
+skill.getAltRecipeCosts(recipe, item).checkIfOwned()   // ask the game
+```
+
+Only visible with a mixed bank: one Normal Log and fifteen Mahogany produced
+"missing materials" while holding 57 shards and plenty of usable wood.
+
+## An empty candidate list is not self-explanatory
+
+Three times in one session an empty list meant three different things, and none
+of them said which:
+
+- No spell candidates meant **everything was already correct** — at Magic 1 the
+  only castable spell is Wind Strike, and the reader skips the selected one.
+- No Slayer candidates meant **a bug in a different subsystem**: the food reflex
+  was reading a stale bank, food kept coming unequipped, and `readSlayerCandidates`
+  returns `[]` with no food — silently removing a whole skill from the board.
+- 348 plant-reflex warnings meant **already fixed hours ago**, which timestamps
+  showed and the count did not.
+
+When a reader can return nothing for unrelated reasons, publish the reason.
+Check timestamps before "fixing" anything a log complains about.
