@@ -152,6 +152,20 @@ describe('locked plots', () => {
     });
   });
 
+  it('still offers the unlock when no plot is empty or ready', () => {
+    // The live shape that exposed this: one plot growing, two unlockable, and
+    // nothing empty. An early `return []` further down discarded the unlock
+    // candidate, so the farm offered nothing while two plots were affordable.
+    const decision = tendFarm(
+      context([plot('p1', 'growing', SEED), plot('p2', 'locked', null, true)]),
+    );
+
+    expect(decision).toMatchObject({
+      kind: 'act',
+      actions: [{ type: 'unlock_plot', plotId: 'p2' }],
+    });
+  });
+
   it('leaves a plot alone when the game says it cannot be unlocked yet', () => {
     // The level or the cost is not met. Offering it anyway would produce an
     // objective that fails its precondition every tick.

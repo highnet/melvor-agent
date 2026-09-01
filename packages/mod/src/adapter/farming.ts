@@ -385,7 +385,10 @@ export function readFarmCandidates(): Candidate[] {
   }
 
   const empty = plots.filter((plot) => plot.state === 'empty');
-  if (empty.length === 0) return [];
+  // `return candidates`, not `return []`: an unlock candidate may already be
+  // waiting in the list, and a bare `[]` silently discarded it. With one plot
+  // growing and two unlockable, the farm offered nothing at all.
+  if (empty.length === 0) return candidates;
 
   for (const seed of readPlantableSeeds().slice(0, 3)) {
     candidates.push({
