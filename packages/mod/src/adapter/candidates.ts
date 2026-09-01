@@ -263,17 +263,46 @@ export function affordableNonShardItem(recipe: object): AnyItem | null {
   return options.find((item) => game.bank.getQty(item) > 0) ?? null;
 }
 
+/** Shared with the artisan adapter; see `selectAffordableInputs` there. */
+function selectAffordableRecipeInputs(
+  skill: {
+    setAltRecipes?: Map<object, number>;
+    selectedNonShardCosts?: Map<object, AnyItem>;
+  },
+  recipe: object,
+): void {
+  const alternative = affordableAlternative(recipe);
+  if (alternative !== null && typeof skill.setAltRecipes?.set === 'function') {
+    skill.setAltRecipes.set(recipe, alternative);
+  }
+
+  const nonShard = affordableNonShardItem(recipe);
+  if (nonShard !== null && typeof skill.selectedNonShardCosts?.set === 'function') {
+    skill.selectedNonShardCosts.set(recipe, nonShard);
+  }
+}
+
 function canAfford(
-  skill: { getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean } },
+  skill: {
+    getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean };
+    setAltRecipes?: Map<object, number>;
+    selectedNonShardCosts?: Map<object, AnyItem>;
+  },
   recipe: object,
 ): boolean {
   if (typeof skill.getRecipeCosts === 'function') {
     if (skill.getRecipeCosts(recipe).checkIfOwned()) return true;
+
     // `getRecipeCosts` prices the *selected* alternative only. Fletching arrow
     // shafts default to Normal Logs, so a character holding 300 Oak and 258
-    // Mahogany read as unable to fletch anything at all, and the skill had no
-    // candidates whatsoever.
-    return affordableAlternative(recipe) !== null || affordableNonShardItem(recipe) !== null;
+    // Mahogany read as unable to fletch anything at all. Point the recipe at
+    // inputs the bank holds and ask again — the second answer is the real one.
+    //
+    // Asking whether *some* component is held instead was too lenient: it
+    // offered Summoning tablets whose shard colour the character did not have,
+    // and the skill silently refused to start.
+    selectAffordableRecipeInputs(skill, recipe);
+    return skill.getRecipeCosts(recipe).checkIfOwned();
   }
 
   const consumes = recipe as {

@@ -149,11 +149,12 @@ export function startArtisan(
         // reimplementing the cost calculation. A recipe with alternative inputs
         // is priced against the *selected* alternative, so one the character
         // can plainly make reads as unaffordable until the right one is chosen.
-        if (
-          !skill.getRecipeCosts(recipe).checkIfOwned() &&
-          affordableAlternative(recipe) === null &&
-          affordableNonShardItem(recipe) === null
-        ) {
+        // Point the recipe at inputs the bank holds, then ask the game what it
+        // actually costs. Checking only that *some* alternative component is
+        // held was too lenient and let Summoning start with the wrong shard
+        // colour: it reported success and the skill never ticked.
+        selectAffordableInputs(skill, recipe);
+        if (!skill.getRecipeCosts(recipe).checkIfOwned()) {
           return `missing materials for ${recipeId}`;
         }
         const current = project(skill);
@@ -167,19 +168,7 @@ export function startArtisan(
         return null;
       },
       perform: () => {
-        // Point the recipe at inputs the bank actually holds before starting.
-        // Without this the skill starts against a material it does not have and
-        // stops immediately, which reads as a mysterious no-op.
-        const alternative = affordableAlternative(recipe);
-        if (alternative !== null && typeof skill.setAltRecipes?.set === 'function') {
-          skill.setAltRecipes.set(recipe, alternative);
-        }
-
-        // Summoning's equivalent: pick a secondary material actually held.
-        const nonShard = affordableNonShardItem(recipe);
-        if (nonShard !== null && typeof skill.selectedNonShardCosts?.set === 'function') {
-          skill.selectedNonShardCosts.set(recipe, nonShard);
-        }
+        selectAffordableInputs(skill, recipe);
 
         if (skill.selectedRecipe?.id !== recipeId) {
           skill.selectRecipeOnClick(recipe);
@@ -225,4 +214,36 @@ export function stopArtisan(
     },
     isSuspended,
   );
+}
+
+/**
+ * Points a recipe at inputs the bank actually holds.
+ *
+ * Several artisan recipes accept a choice of materials — a log of any kind for
+ * arrow shafts, one of several secondaries for a summoning tablet — and the
+ * game prices whichever is currently selected. Left alone, the selection points
+ * at whatever the recipe defaults to, so a recipe the character can plainly
+ * make reads as unaffordable.
+ *
+ * Called from the precondition as well as the action, deliberately: the honest
+ * question is "can this be made *with inputs we would actually use*", and that
+ * cannot be answered without making the selection first. The mutation is a UI
+ * choice the player makes freely and changes nothing about the world.
+ */
+function selectAffordableInputs(
+  skill: {
+    setAltRecipes?: Map<object, number>;
+    selectedNonShardCosts?: Map<object, AnyItem>;
+  },
+  recipe: object,
+): void {
+  const alternative = affordableAlternative(recipe);
+  if (alternative !== null && typeof skill.setAltRecipes?.set === 'function') {
+    skill.setAltRecipes.set(recipe, alternative);
+  }
+
+  const nonShard = affordableNonShardItem(recipe);
+  if (nonShard !== null && typeof skill.selectedNonShardCosts?.set === 'function') {
+    skill.selectedNonShardCosts.set(recipe, nonShard);
+  }
 }
