@@ -89,6 +89,17 @@ export const agentReportSchema = z.object({
    * list alone cannot express that.
    */
   blockedOpportunities: z.array(blockedOpportunitySchema).default([]),
+  /**
+   * When the running bundle was built.
+   *
+   * The mod only reloads with the game, so the code on disk and the code
+   * actually running can be hours apart. Without this, "is that fix live yet?"
+   * was unanswerable from outside the game — a whole session of changes were
+   * described as pending a reload with no way to confirm when one happened.
+   *
+   * Optional so an older mod still validates against a newer service.
+   */
+  buildStamp: z.string().nullable().optional(),
   logs: z.array(logRecordSchema),
   quality: z.array(qualitySampleSchema),
   /** Non-null while the agent is refusing to arm; rendered verbatim by the TUI. */

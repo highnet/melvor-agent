@@ -19,8 +19,19 @@ const watch = process.argv.includes('--watch');
  */
 const outDir = readEnv('MELVOR_CT_DIR') ?? join(here, 'dist-local');
 
+/**
+ * When this bundle was built, stamped in at compile time.
+ *
+ * The mod only reloads with the game, so a build sitting on disk and the code
+ * actually running can be hours apart — and nothing said so. A whole session
+ * was spent describing fixes as "pending a reload" with no way for anyone,
+ * including the agent, to check whether that was still true.
+ */
+const buildStamp = new Date().toISOString();
+
 const options = {
   entryPoints: [join(here, 'src/setup.ts')],
+  define: { __MELVOR_AGENT_BUILD__: JSON.stringify(buildStamp) },
   outfile: join(outDir, 'dist/setup.js'),
   bundle: true,
   platform: 'browser',

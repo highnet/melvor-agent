@@ -128,6 +128,7 @@ import {
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
+import { readBuildStamp } from './build-stamp.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import type { PolicyAction } from '../policy/types.js';
 import {
@@ -361,6 +362,11 @@ export class Agent {
     else this.log.error('operator', `planner service: ${outcome.detail}`);
     this.notify();
     return outcome;
+  }
+
+  /** When the running bundle was built; see the build stamp module. */
+  get buildStamp(): string | null {
+    return readBuildStamp();
   }
 
   get serviceError(): string | null {
@@ -1384,6 +1390,7 @@ export class Agent {
       objective: this.settings.objective,
       candidates: this.state === 'killed' ? [] : this.safeCandidates(),
       blockedOpportunities: this.state === 'killed' ? [] : this.safeBlocked(),
+      buildStamp: readBuildStamp(),
       logs,
       quality: this.quality.slice(-120),
       blockedReason: this.blockedReason,

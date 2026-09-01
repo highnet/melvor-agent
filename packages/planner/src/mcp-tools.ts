@@ -78,6 +78,10 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Objective: ${report.objective === null ? 'none' : report.objective.rationale}`,
       '',
       `Character ${s.characterName} (${s.gameVersion}) — total level ${s.totalLevel}, completion ${s.completionPercent.toFixed(2)}%, GP ${gp.toLocaleString()}`,
+      // The mod only reloads with the game, so a fix committed minutes ago may
+      // not be the code that is running. Saying which build is live turns "is
+      // that live yet?" from a guess into a fact.
+      `Running mod build: ${store.report?.buildStamp ?? 'unknown (older mod, or not reported)'}`,
       `Doing: ${s.activeAction === null ? 'nothing' : s.activeAction.name}`,
       `Skills above 1: ${levelled || '(none)'}`,
       `Bank: ${s.bank.slotsUsed}/${s.bank.slotsMax} slots — ${topStacks(s.bank.items)}`,
