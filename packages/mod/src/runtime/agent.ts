@@ -388,7 +388,6 @@ export class Agent {
       // the eat is attempted rather than failing on an empty slot.
       eatWhenLow(
         {
-          inCombat: snapshot.combat.inCombat,
           hitpoints: snapshot.combat.hitpoints,
           maxHitpoints: snapshot.combat.maxHitpoints,
           equippedFoodQty: slot?.qty ?? 0,

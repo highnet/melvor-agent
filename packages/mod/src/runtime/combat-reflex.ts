@@ -109,12 +109,16 @@ export const MANUAL_EAT_THRESHOLD = 0.6;
  * Does nothing when Auto Eat is owned — two things eating the same slot would
  * waste food, and Auto Eat is better at it.
  *
+ * **Not gated on combat.** Thieving damages the character on every failed
+ * pickpocket, and it is not combat: gating this on `inCombat` meant nothing ate
+ * during it. Observed live at 5 HP out of 110, one failure from death, after
+ * the agent had been pickpocketing unattended for two minutes.
+ *
  * @param eat - The adapter's eat call, injected so this stays testable.
  * @returns What was done, or null when nothing needed doing.
  */
 export function eatWhenLow(
   state: {
-    inCombat: boolean;
     hitpoints: number;
     maxHitpoints: number;
     equippedFoodQty: number;
@@ -123,7 +127,6 @@ export function eatWhenLow(
   },
   eat: () => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  if (!state.inCombat) return null;
   if (state.equippedFoodQty <= 0) return null;
   if (state.autoEatThresholdFraction > 0) return null;
   if (state.maxHitpoints <= 0) return null;

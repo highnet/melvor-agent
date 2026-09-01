@@ -71,12 +71,32 @@ export type AbortVerdict =
  * @param deathsSinceStart - Deaths observed during this objective.
  * @returns Whether to abort, and why.
  */
+/** Below this share of max HP, with no food, nothing is worth continuing. */
+const CRITICAL_HP_FRACTION = 0.25;
+
 export function checkAbort(
   snapshot: StateSnapshot,
   abortWhen: AbortConditions,
   elapsedMinutes: number,
   deathsSinceStart: number,
 ): AbortVerdict {
+  // A universal floor, checked before anything the planner asked for. Damage is
+  // not exclusive to combat — a failed pickpocket hurts — and with no food there
+  // is no way back up, so continuing any activity is just waiting to die. This
+  // sits here rather than in one executor because the next damaging skill will
+  // not be Thieving.
+  const maxHp = snapshot.combat.maxHitpoints;
+  const hpFraction = maxHp > 0 ? snapshot.combat.hitpoints / maxHp : 1;
+  const foodLeft = snapshot.combat.food.reduce((sum, slot) => sum + slot.qty, 0);
+
+  if (hpFraction < CRITICAL_HP_FRACTION && foodLeft <= 0) {
+    return {
+      abort: true,
+      outcome: 'aborted_stuck',
+      detail: `hitpoints at ${(hpFraction * 100).toFixed(0)}% with no food equipped; stopping rather than continuing to take damage with no way to heal`,
+    };
+  }
+
   if (elapsedMinutes > abortWhen.minutesExceed) {
     return {
       abort: true,

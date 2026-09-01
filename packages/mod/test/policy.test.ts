@@ -335,3 +335,40 @@ describe('leaving combat for a skill', () => {
     expect(decision).toMatchObject({ kind: 'act', actions: [{ type: 'disengage' }] });
   });
 });
+
+describe('the critical hitpoints floor', () => {
+  const noAbort = { minutesExceed: 60 };
+
+  it('stops any activity at low HP with no food', () => {
+    // Damage is not exclusive to combat: a failed pickpocket hurts, and with no
+    // food there is no way back up. Live, this reached 5 HP out of 110 while
+    // Thieving unattended, one failure from death.
+    const dying = snapshot({
+      combat: { ...snapshot().combat, hitpoints: 5, maxHitpoints: 110, food: [] },
+    });
+
+    const verdict = checkAbort(dying, noAbort, 1, 0);
+
+    expect(verdict.abort).toBe(true);
+    expect(verdict.detail).toMatch(/no food/);
+  });
+
+  it('keeps going at low HP while food remains', () => {
+    // Food means the eat reflex can recover, so low HP alone is not a reason to
+    // abandon the objective — only low HP with nothing to eat.
+    const hurt = snapshot({
+      combat: {
+        ...snapshot().combat,
+        hitpoints: 5,
+        maxHitpoints: 110,
+        food: [{ itemId: 'melvorD:Shrimp', itemName: 'Shrimp', qty: 20, healsFor: 30 }],
+      },
+    });
+
+    expect(checkAbort(hurt, noAbort, 1, 0).abort).toBe(false);
+  });
+
+  it('does not fire at healthy HP', () => {
+    expect(checkAbort(snapshot(), noAbort, 1, 0).abort).toBe(false);
+  });
+});

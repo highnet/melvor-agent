@@ -81,7 +81,6 @@ describe('eatWhenLow', () => {
 
   function hurt(overrides: Partial<Parameters<typeof eatWhenLow>[0]> = {}) {
     return {
-      inCombat: true,
       hitpoints: 40,
       maxHitpoints: 100,
       equippedFoodQty: 20,
@@ -111,10 +110,11 @@ describe('eatWhenLow', () => {
     expect(eatWhenLow(hurt({ hitpoints: 95 }), () => ok)).toBeNull();
   });
 
-  it('does nothing outside combat', () => {
-    // Eating to heal up between fights is a decision about food stock, not a
-    // reflex — the policy tier owns it.
-    expect(eatWhenLow(hurt({ inCombat: false }), () => ok)).toBeNull();
+  it('eats outside combat too, because Thieving hurts', () => {
+    // Gating this on combat is what took the character to 5 HP out of 110: a
+    // failed pickpocket deals damage, Thieving is not combat, and so nothing
+    // ate for two minutes of unattended play.
+    expect(eatWhenLow(hurt(), () => ok)).not.toBeNull();
   });
 
   it('does nothing with an empty slot', () => {
