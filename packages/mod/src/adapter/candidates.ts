@@ -589,6 +589,31 @@ function missingInputs(
     return have > 0 ? [] : [{ itemId: consumes.log.id, name: consumes.log.name, need: 1, have }];
   }
 
+  // A recipe can be unaffordable because of a material it *chooses* rather than
+  // one it lists. Summoning tablets take shards plus one of several secondary
+  // items; with the shards in hand and no secondary, the listed costs all read
+  // as satisfied, the recipe reported nothing missing, and it was dropped from
+  // the blocked list too — the skill was absent from both, which is how it
+  // stayed invisible with 37 shards banked.
+  const choices = (recipe as { nonShardItemCosts?: AnyItem[] }).nonShardItemCosts;
+  if (Array.isArray(choices) && choices.length > 0) {
+    const held = choices.find((item) => game.bank.getQty(item) > 0);
+    if (held === undefined) {
+      const first = choices[0];
+      if (first !== undefined) {
+        return [
+          {
+            itemId: first.id,
+            // Named as a choice, because any one of them unblocks the recipe.
+            name: `${first.name} (or any of ${choices.length} secondary materials)`,
+            need: 1,
+            have: 0,
+          },
+        ];
+      }
+    }
+  }
+
   if (Array.isArray(consumes.itemCosts)) {
     return consumes.itemCosts
       .map((cost) => ({
