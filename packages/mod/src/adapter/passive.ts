@@ -108,6 +108,28 @@ export function readPassiveCookingCandidates(): Candidate[] {
  * @param resourceId - The `TownshipResource` to spend, usually Herbs or Potions.
  * @param amount - How much to spend.
  */
+/**
+ * Town health as a real percentage.
+ *
+ * `townData.healthPercent` reads 0 on a town the game's own Township page shows
+ * at 100%, so it is not the displayed figure and cannot be compared against
+ * 100. The stored `health` against `maxHealth` is, and that is what the page
+ * agrees with.
+ *
+ * This mattered more than a wrong label: because the reader believed health was
+ * 0%, it offered restores on a town that was already full, the game did nothing
+ * each time, and the "already full" precondition could never fire to explain
+ * why. The earlier diagnosis — that only herbs and potions are accepted — is
+ * true of the API but was not what was happening here.
+ */
+function townHealthPercent(): number {
+  const township = game.township;
+  const max = township.maxHealth;
+  if (max <= 0) return 0;
+
+  return (township.townData.health / max) * 100;
+}
+
 export function increaseTownHealth(
   resourceId: string,
   amount: number,
@@ -120,7 +142,7 @@ export function increaseTownHealth(
   }
 
   const project = (): { healthPercent: number } => ({
-    healthPercent: township.townData.healthPercent,
+    healthPercent: townHealthPercent(),
   });
 
   return act(
@@ -129,7 +151,7 @@ export function increaseTownHealth(
       observe: project,
       precondition: () => {
         if (!township.townData.townCreated) return 'the town has not been created yet';
-        if (township.townData.healthPercent >= 100) return 'town health is already full';
+        if (townHealthPercent() >= 100) return 'town health is already full';
         // Refused with a reason rather than performed as a silent no-op: the
         // game only accepts herbs or potions here.
         if (!HEALTH_RESOURCE_IDS.includes(resourceId)) {
@@ -168,7 +190,7 @@ const HEALTH_RESOURCE_IDS = ['melvorF:Herbs', 'melvorF:Potions'];
 export function readTownHealthCandidates(): Candidate[] {
   const township = game.township;
   if (!township.townData.townCreated) return [];
-  if (township.townData.healthPercent >= 100) return [];
+  if (townHealthPercent() >= 100) return [];
 
   const candidates: Candidate[] = [];
 
@@ -181,7 +203,7 @@ export function readTownHealthCandidates(): Candidate[] {
       candidates.push({
         kind: 'restore_town_health',
         params: { kind: 'restore_town_health', resourceId: resource.id, amount: cost },
-        label: `Restore town health with ${cost} ${resource.name} (currently ${Math.round(township.townData.healthPercent)}% — low health drags every rate in the town down)`,
+        label: `Restore town health with ${cost} ${resource.name} (currently ${Math.round(townHealthPercent())}% — low health drags every rate in the town down)`,
         available: true,
       });
     } catch {
