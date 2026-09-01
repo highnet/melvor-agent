@@ -131,6 +131,7 @@ import {
   openPendingContainers,
   plantEmptyPlots,
   refillFood,
+  unlockAffordablePlots,
 } from './combat-reflex.js';
 import type { Logger } from './logger.js';
 import type { Transport } from './transport.js';
@@ -474,6 +475,12 @@ export class Agent {
             .map((plot) => plot.id),
         },
         (plotId) => harvestFarmPlot(plotId, isSuspended),
+      ),
+      // Ahead of every other farm reflex: a plot that does not exist cannot be
+      // composted, planted or harvested.
+      unlockAffordablePlots(
+        { unlockablePlotIds: livePlots.filter((plot) => plot.canUnlock).map((plot) => plot.id) },
+        (plotId) => unlockFarmPlot(plotId, isSuspended),
       ),
       // Before planting: compost laid down first protects the entire growth
       // cycle, and an uncomposted crop has only a 50% chance to grow.

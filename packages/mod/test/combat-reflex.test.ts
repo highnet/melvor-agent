@@ -11,6 +11,7 @@ import {
   openPendingContainers,
   plantEmptyPlots,
   refillFood,
+  unlockAffordablePlots,
 } from '../src/runtime/combat-reflex.js';
 
 const ok: ActionResult<unknown> = {
@@ -478,5 +479,38 @@ describe('compostBeforePlanting', () => {
     const spent = { itemId: 'melvorD:Compost', held: 0 };
 
     expect(compostBeforePlanting({ bareplotIds: ['p1'], compost: spent }, () => ok())).toBeNull();
+  });
+});
+
+describe('unlockAffordablePlots', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  it('buys a plot the moment the game says it can be bought', () => {
+    // Unattended, the character would otherwise reach Farming 5 holding the
+    // 10,000 GP for a Herb plot and never buy it — and the Herb plot is what
+    // Herblore is waiting behind.
+    const bought: string[] = [];
+    unlockAffordablePlots({ unlockablePlotIds: ['herb1'] }, (id) => {
+      bought.push(id);
+      return ok();
+    });
+
+    expect(bought).toEqual(['herb1']);
+  });
+
+  it('does nothing when no plot can be unlocked', () => {
+    // `canUnlock` is the game's own answer, covering both the level
+    // requirement and the cost, so neither is second-guessed here.
+    expect(unlockAffordablePlots({ unlockablePlotIds: [] }, () => ok())).toBeNull();
+  });
+
+  it('takes one plot per tick so each purchase is verified on its own', () => {
+    const bought: string[] = [];
+    unlockAffordablePlots({ unlockablePlotIds: ['p1', 'p2'] }, (id) => {
+      bought.push(id);
+      return ok();
+    });
+
+    expect(bought).toEqual(['p1']);
   });
 });

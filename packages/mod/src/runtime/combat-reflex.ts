@@ -372,3 +372,26 @@ export function compostBeforePlanting(
 
   return { name: 'reflex.compostPlot', result: apply(plotId, compost.itemId) };
 }
+
+/**
+ * Buys a farming plot the moment one becomes affordable.
+ *
+ * The unlock already existed as a candidate and as a step inside `tend_farm`,
+ * which means it only ever happened while a planner was watching. Unattended,
+ * the character would reach Farming 5 holding the 10,000 GP for a Herb plot and
+ * simply never buy it — and the Herb plot is the step Herblore, the last
+ * untrained skill in scope, is waiting behind.
+ *
+ * Same reasoning as the bank slot: additive, permanent, and impossible to lose
+ * anything by. `canUnlock` is the game's own answer, so affordability and the
+ * level requirement are not second-guessed here.
+ */
+export function unlockAffordablePlots(
+  state: { unlockablePlotIds: readonly string[] },
+  unlock: (plotId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const plotId = state.unlockablePlotIds[0];
+  if (plotId === undefined) return null;
+
+  return { name: 'reflex.unlockPlot', result: unlock(plotId) };
+}
