@@ -115,7 +115,9 @@ server.registerTool(
         )
         .min(2)
         .max(8)
-        .describe('The plan, in order. Earn before you spend; the agent will not reorder it.'),
+        .describe(
+          'The plan, in order. Earn before you spend; the agent will not reorder it. A step the game refuses as too early — smithing before the ore is mined — is moved to the back of the plan once and retried, so a chain like mine → mine → smith can be queued in one call even though the later step is not yet available as a candidate.',
+        ),
     },
   },
   (args) => callTool('set_plan', args),

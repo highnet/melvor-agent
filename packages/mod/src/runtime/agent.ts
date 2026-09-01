@@ -236,6 +236,9 @@ export class Agent {
   private replanning = false;
   /** Consecutive failed actions for the current objective. */
   private consecutiveActionFailures = 0;
+  /** Plan steps already retried once, so a refused step cannot loop forever. */
+  private readonly requeuedSteps = new Set<string>();
+
   /** The last refusal, surfaced to the planner so it does not re-choose it. */
   private lastRefusal: { action: string; detail: string; at: number } | null = null;
   private readonly changeListeners = new Set<() => void>();
@@ -821,7 +824,31 @@ export class Agent {
           // refused it, for this reason" is the most useful thing a planner can
           // be told, and it is exactly what was lost before.
           this.lastRefusal = { action: result.action, detail: result.detail, at: Date.now() };
-          this.settings = { ...this.settings, objective: null };
+          // A step the game refuses *right now* may simply be early: "smith
+          // bronze bars" is impossible until the ore is mined, and a plan that
+          // orders mining before smithing is correct rather than broken. So a
+          // refused step goes to the back of the plan once, and is dropped if
+          // it is refused again. Retrying forever would spin; dropping
+          // immediately would make ordered chains impossible to express.
+          const objective = this.settings.objective;
+          const requeue =
+            isDeterministic && objective !== null && !this.requeuedSteps.has(objective.id);
+
+          if (requeue && objective !== null) {
+            this.requeuedSteps.add(objective.id);
+            this.settings = {
+              ...this.settings,
+              objective: null,
+              plan: [...this.settings.plan, objective],
+            };
+            this.log.info(
+              'planner',
+              `step refused as too early; moved to the back of the plan: ${result.detail}`,
+            );
+          } else {
+            this.settings = { ...this.settings, objective: null };
+          }
+
           this.consecutiveActionFailures = 0;
           this.requestReplan('objective_aborted');
         }
