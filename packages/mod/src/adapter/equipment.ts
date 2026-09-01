@@ -315,3 +315,41 @@ export function changeEquipmentSet(
     isSuspended,
   );
 }
+
+/**
+ * Eats one item from the equipped food slot.
+ *
+ * `Player.eatFood` returns void and silently does nothing with an empty slot,
+ * so healing is proved by hitpoints rising and the slot falling — either alone
+ * is ambiguous. A heal at full HP raises nothing, which is why the caller is
+ * responsible for only asking when it is low.
+ *
+ * `interrupt: false` — eating must not stop the fight it is keeping alive.
+ */
+export function eatFood(
+  isSuspended: () => boolean,
+): ActionResult<{ hp: number; quantity: number }> {
+  const player = game.combat.player;
+
+  const project = (): { hp: number; quantity: number } => ({
+    hp: player.hitpoints,
+    quantity: player.food.currentSlot.quantity,
+  });
+
+  return act(
+    {
+      name: 'equipment.eatFood',
+      observe: project,
+      precondition: () => {
+        if (player.food.currentSlot.quantity <= 0) return 'no food equipped';
+        if (player.hitpoints >= player.stats.maxHitpoints) {
+          return 'already at full hitpoints; eating would waste the item';
+        }
+        return null;
+      },
+      perform: () => player.eatFood(1, false),
+      changed: (before, after) => after.quantity < before.quantity && after.hp > before.hp,
+    },
+    isSuspended,
+  );
+}

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-136 exports.
+137 exports.
 
 ## `act`
 
@@ -394,6 +394,23 @@ reads is just a large file that goes stale.
 
 ```ts
 dumpRegistries: () => KnowledgeDump
+```
+
+## `eatFood`
+
+`function`
+
+Eats one item from the equipped food slot.
+
+`Player.eatFood` returns void and silently does nothing with an empty slot,
+so healing is proved by hitpoints rising and the slot falling — either alone
+is ambiguous. A heal at full HP raises nothing, which is why the caller is
+responsible for only asking when it is low.
+
+`interrupt: false` — eating must not stop the fight it is keeping alive.
+
+```ts
+eatFood: (isSuspended: () => boolean) => ActionResult<{ hp: number; quantity: number; }>
 ```
 
 ## `engageMonster`

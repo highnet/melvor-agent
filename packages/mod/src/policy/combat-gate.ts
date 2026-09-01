@@ -41,28 +41,55 @@ const FOOD_MARGIN = 1.25;
  * @param inputs - Numbers read from the game by the adapter.
  * @returns A verdict carrying its own workings, so a dry run is inspectable.
  */
+/**
+ * Where the manual-eat reflex triggers, as a fraction of max HP.
+ *
+ * Must match {@link MANUAL_EAT_THRESHOLD} in the reflex. The gate promises the
+ * character will eat at this point; the reflex is what keeps that promise, and
+ * a mismatch would make the gate's arithmetic describe a character that does
+ * not exist.
+ */
+const MANUAL_EAT_THRESHOLD_FRACTION = 0.6;
+
+/** How often reflexes run. Bounds how fast the character can eat by hand. */
+const REFLEX_INTERVAL_SECONDS = 1;
+
 export function assessSurvivability(inputs: CombatGateInputs): CombatGateVerdict {
   const refusals: { reason: GateRefusal; detail: string }[] = [];
 
   const damageMultiplier = Math.max(0, 1 - inputs.playerDamageReductionPercent / 100);
   const effectiveEnemyMaxHit = inputs.enemyMaxHit * damageMultiplier;
 
-  const oneShotCeiling =
-    inputs.autoEatThresholdFraction * inputs.playerMaxHitpoints * ONE_SHOT_SAFETY_FACTOR;
+  // Without Auto Eat the character still eats — a reflex does it, the way a
+  // human clicks food. It is worse in two specific ways, and both are modelled
+  // rather than waved away: it triggers at a fixed fraction of max HP, and it
+  // only looks once a second, so a fast enemy lands free hits between checks.
+  const hasAutoEat = inputs.autoEatThresholdFraction > 0;
+  const eatThresholdFraction = hasAutoEat
+    ? inputs.autoEatThresholdFraction
+    : MANUAL_EAT_THRESHOLD_FRACTION;
+  const eatEfficiency = hasAutoEat ? inputs.autoEatEfficiencyFraction : 1;
+
+  const oneShotCeiling = eatThresholdFraction * inputs.playerMaxHitpoints * ONE_SHOT_SAFETY_FACTOR;
 
   // Expected damage per second, using hit chance so a low-accuracy enemy is not
   // over-penalised. The one-shot check above covers the worst case separately.
   const incomingDps =
     (effectiveEnemyMaxHit * inputs.enemyHitChance) / (inputs.enemyAttackIntervalMs / 1000);
 
-  const healPerFood = inputs.foodHealPerItem * inputs.autoEatEfficiencyFraction;
+  const healPerFood = inputs.foodHealPerItem * eatEfficiency;
 
   // Auto eat restores at most the band between its trigger threshold and its
   // HP limit, so a huge food item is wasted above that ceiling.
-  const healBand = Math.max(
-    0,
-    (inputs.autoEatHpLimitFraction - inputs.autoEatThresholdFraction) * inputs.playerMaxHitpoints,
-  );
+  // Auto eat tops up to its HP limit; eating by hand restores one item's worth
+  // and no more, so there is no band to cap it against.
+  const healBand = hasAutoEat
+    ? Math.max(
+        0,
+        (inputs.autoEatHpLimitFraction - inputs.autoEatThresholdFraction) *
+          inputs.playerMaxHitpoints,
+      )
+    : 0;
   const effectiveHealPerEat = healBand > 0 ? Math.min(healPerFood, healBand) : healPerFood;
 
   const secondsPerAttack = inputs.enemyAttackIntervalMs / 1000;
@@ -71,7 +98,14 @@ export function assessSurvivability(inputs: CombatGateInputs): CombatGateVerdict
   // auto eat gets at most one trigger between incoming hits, so healing has to
   // outpace damage on that cadence. Comparing aggregate rates would let a slow
   // enemy with a huge hit look sustainable when a single exchange is lethal.
-  const healingThroughput = effectiveHealPerEat / secondsPerAttack;
+  // Auto eat gets one trigger between incoming hits. The reflex gets one per
+  // tick, so against anything faster than the tick it is the tick that binds —
+  // which is exactly why fighting without Auto Eat is harder, not merely
+  // slower.
+  const secondsPerEat = hasAutoEat
+    ? secondsPerAttack
+    : Math.max(secondsPerAttack, REFLEX_INTERVAL_SECONDS);
+  const healingThroughput = effectiveHealPerEat / secondsPerEat;
 
   // How long the equipped food lasts at the rate combat consumes it.
   const eatsPerSecond =
@@ -82,13 +116,6 @@ export function assessSurvivability(inputs: CombatGateInputs): CombatGateVerdict
       : Number.POSITIVE_INFINITY;
 
   const sessionSecondsRequired = inputs.intendedSessionMinutes * 60 * FOOD_MARGIN;
-
-  if (inputs.autoEatThresholdFraction <= 0) {
-    refusals.push({
-      reason: 'no_auto_eat',
-      detail: 'no Auto Eat owned; a single unlucky hit is unrecoverable',
-    });
-  }
 
   if (inputs.foodQuantity <= 0 || inputs.foodHealPerItem <= 0) {
     refusals.push({

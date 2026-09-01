@@ -83,3 +83,53 @@ export function dropUnpayablePrayers(
     result: togglePrayer(first),
   };
 }
+
+/**
+ * How low HP may fall before the reflex eats, as a fraction of max.
+ *
+ * Higher than an auto-eat threshold on purpose. Auto-eat fires the instant the
+ * threshold is crossed; this reflex only looks once a second, so it has to
+ * leave room for whatever lands in between.
+ */
+export const MANUAL_EAT_THRESHOLD = 0.6;
+
+/**
+ * Eats when HP is low and Auto Eat is not doing it.
+ *
+ * This is how a human plays before owning Auto Eat, which costs 1,000,000 GP —
+ * dozens of hours of early income. Without it the agent cannot fight anything
+ * at all until then, so the entire combat half of the game, and every skill
+ * that depends on it, stays out of reach for the whole early game.
+ *
+ * It is strictly worse than Auto Eat and the gate is told so: reflexes run once
+ * a second, so a fast enemy gets free hits between checks. That is the honest
+ * cost of playing without the upgrade, and it is the reason the threshold sits
+ * well above where an auto-eater would trigger.
+ *
+ * Does nothing when Auto Eat is owned — two things eating the same slot would
+ * waste food, and Auto Eat is better at it.
+ *
+ * @param eat - The adapter's eat call, injected so this stays testable.
+ * @returns What was done, or null when nothing needed doing.
+ */
+export function eatWhenLow(
+  state: {
+    inCombat: boolean;
+    hitpoints: number;
+    maxHitpoints: number;
+    equippedFoodQty: number;
+    /** Auto-eat trigger as a fraction of max HP; 0 when not owned. */
+    autoEatThresholdFraction: number;
+  },
+  eat: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.inCombat) return null;
+  if (state.equippedFoodQty <= 0) return null;
+  if (state.autoEatThresholdFraction > 0) return null;
+  if (state.maxHitpoints <= 0) return null;
+
+  const fraction = state.hitpoints / state.maxHitpoints;
+  if (fraction > MANUAL_EAT_THRESHOLD) return null;
+
+  return { name: 'reflex.eatWhenLow', result: eat() };
+}

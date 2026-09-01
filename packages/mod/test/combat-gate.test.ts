@@ -2,6 +2,7 @@ import type { CombatGateInputs } from '@melvor-agent/shared';
 import { combatGateInputsSchema } from '@melvor-agent/shared';
 import { describe, expect, it } from 'vitest';
 import { assessSurvivability, normaliseFraction } from '../src/policy/combat-gate.js';
+import { MANUAL_EAT_THRESHOLD } from '../src/runtime/combat-reflex.js';
 
 /**
  * The gate decides whether the agent is allowed to risk dying, so it is tested
@@ -81,10 +82,48 @@ describe('assessSurvivability — one-shot protection', () => {
 });
 
 describe('assessSurvivability — sustain', () => {
-  it('refuses without Auto Eat, whatever else is true', () => {
-    const verdict = assessSurvivability(inputs({ autoEatThresholdFraction: 0 }));
+  it('allows a manageable fight without Auto Eat, the way a human plays', () => {
+    // Auto Eat costs 1,000,000 GP — dozens of hours of early income. Refusing
+    // every fight until then walls off the whole combat half of the game, so
+    // the reflex eats instead and the gate judges that on its merits.
+    const verdict = assessSurvivability(
+      inputs({ autoEatThresholdFraction: 0, autoEatHpLimitFraction: 0, enemyMaxHit: 20 }),
+    );
+    expect(verdict.safe).toBe(true);
+  });
+
+  it('holds eating by hand to a harder standard than Auto Eat', () => {
+    // The reflex looks once a second, so a fast enemy lands free hits between
+    // checks. The same fight that Auto Eat sustains can be lethal without it,
+    // and the gate must say so rather than treating them as equivalent.
+    // A fast, light hitter: Auto Eat triggers on every incoming attack and
+    // keeps up comfortably, while a once-a-second reflex heals half as often.
+    const fastEnemy = {
+      enemyAttackIntervalMs: 500,
+      enemyMaxHit: 100,
+      foodHealPerItem: 120,
+      foodQuantity: 5000,
+      intendedSessionMinutes: 5,
+    };
+
+    const withAutoEat = assessSurvivability(inputs(fastEnemy));
+    const byHand = assessSurvivability(
+      inputs({ ...fastEnemy, autoEatThresholdFraction: 0, autoEatHpLimitFraction: 0 }),
+    );
+
+    expect(withAutoEat.safe).toBe(true);
+    expect(byHand.safe).toBe(false);
+    expect(byHand.refusals.map((r) => r.reason)).toContain('insufficient_healing_throughput');
+  });
+
+  it('still refuses a one-shot when eating by hand', () => {
+    // Nothing about eating manually survives a hit that lands before the reflex
+    // can react at all.
+    const verdict = assessSurvivability(
+      inputs({ autoEatThresholdFraction: 0, autoEatHpLimitFraction: 0, enemyMaxHit: 900 }),
+    );
     expect(verdict.safe).toBe(false);
-    expect(verdict.refusals.map((r) => r.reason)).toContain('no_auto_eat');
+    expect(verdict.refusals.map((r) => r.reason)).toContain('can_be_one_shot');
   });
 
   it('refuses with no food equipped', () => {
@@ -117,21 +156,17 @@ describe('assessSurvivability — refusal completeness', () => {
   it('reports every failing check, not just the first', () => {
     // A dry run should show everything wrong at once rather than making the
     // operator fix one problem at a time to discover the next.
-    const verdict = assessSurvivability(
-      inputs({ autoEatThresholdFraction: 0, foodQuantity: 0, enemyMaxHit: 5000 }),
-    );
+    const verdict = assessSurvivability(inputs({ foodQuantity: 0, enemyMaxHit: 5000 }));
     const reasons = verdict.refusals.map((r) => r.reason);
-    expect(reasons).toContain('no_auto_eat');
     expect(reasons).toContain('no_food_equipped');
     expect(reasons).toContain('can_be_one_shot');
-    expect(verdict.refusals.length).toBeGreaterThanOrEqual(3);
+    expect(verdict.refusals.length).toBeGreaterThanOrEqual(2);
   });
 
   it('is safe only when there are no refusals at all', () => {
     // Any nonzero death chance means refuse: `safe` must never be true
     // alongside a refusal.
     for (const override of [
-      { autoEatThresholdFraction: 0 },
       { foodQuantity: 0 },
       { enemyMaxHit: 9999 },
       { intendedSessionMinutes: 1_000_000 },
@@ -176,5 +211,15 @@ describe('normaliseFraction', () => {
       normalised.workings.effectiveEnemyMaxHit,
     );
     expect(normalised.refusals.map((r) => r.reason)).toContain('can_be_one_shot');
+  });
+});
+
+describe('the gate and the reflex agree', () => {
+  it('uses the same manual-eat threshold the reflex acts on', () => {
+    // The gate's arithmetic assumes the character eats at 60% HP. The reflex is
+    // what makes that true. If they drift, the gate is doing sums about a
+    // character that does not exist — and it would be the optimistic direction
+    // that kills the character, so this is pinned rather than trusted.
+    expect(MANUAL_EAT_THRESHOLD).toBe(0.6);
   });
 });

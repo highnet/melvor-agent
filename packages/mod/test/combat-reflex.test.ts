@@ -1,6 +1,6 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { dropUnpayablePrayers, refillFood } from '../src/runtime/combat-reflex.js';
+import { dropUnpayablePrayers, eatWhenLow, refillFood } from '../src/runtime/combat-reflex.js';
 
 const ok: ActionResult<unknown> = {
   ok: true,
@@ -67,5 +67,57 @@ describe('mid-fight reflexes', () => {
       ),
     ).toBeNull();
     expect(toggle).not.toHaveBeenCalled();
+  });
+});
+
+describe('eatWhenLow', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  function hurt(overrides: Partial<Parameters<typeof eatWhenLow>[0]> = {}) {
+    return {
+      inCombat: true,
+      hitpoints: 40,
+      maxHitpoints: 100,
+      equippedFoodQty: 20,
+      autoEatThresholdFraction: 0,
+      ...overrides,
+    };
+  }
+
+  it('eats when HP is low and nothing else will', () => {
+    let eaten = 0;
+    const outcome = eatWhenLow(hurt(), () => {
+      eaten += 1;
+      return ok;
+    });
+
+    expect(outcome?.name).toBe('reflex.eatWhenLow');
+    expect(eaten).toBe(1);
+  });
+
+  it('leaves it to Auto Eat when Auto Eat is owned', () => {
+    // Two things eating the same slot wastes food, and Auto Eat is better at
+    // it: it triggers on the game's own cadence rather than once a second.
+    expect(eatWhenLow(hurt({ autoEatThresholdFraction: 0.4 }), () => ok)).toBeNull();
+  });
+
+  it('does nothing at healthy HP', () => {
+    expect(eatWhenLow(hurt({ hitpoints: 95 }), () => ok)).toBeNull();
+  });
+
+  it('does nothing outside combat', () => {
+    // Eating to heal up between fights is a decision about food stock, not a
+    // reflex — the policy tier owns it.
+    expect(eatWhenLow(hurt({ inCombat: false }), () => ok)).toBeNull();
+  });
+
+  it('does nothing with an empty slot', () => {
+    expect(eatWhenLow(hurt({ equippedFoodQty: 0 }), () => ok)).toBeNull();
+  });
+
+  it('does not divide by a zero max HP', () => {
+    // maxHitpoints is 0 on a snapshot taken mid-load, and NaN > threshold is
+    // false, so the guard is what stops it eating the whole bank.
+    expect(eatWhenLow(hurt({ maxHitpoints: 0 }), () => ok)).toBeNull();
   });
 });

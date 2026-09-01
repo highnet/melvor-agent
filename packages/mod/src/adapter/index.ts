@@ -36,6 +36,7 @@ export {
   type FarmPlotState,
 } from './farming.js';
 export {
+  eatFood,
   equipFood,
   equipItem,
   changeEquipmentSet,

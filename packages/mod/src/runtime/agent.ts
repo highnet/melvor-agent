@@ -24,6 +24,7 @@ import {
   compostFarmPlot,
   disengageCombat,
   dumpRegistries,
+  eatFood,
   engageMonster,
   equipFood,
   equipItem,
@@ -95,7 +96,7 @@ import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
 import type { PolicyAction } from '../policy/types.js';
-import { refillFood } from './combat-reflex.js';
+import { eatWhenLow, refillFood } from './combat-reflex.js';
 import type { Logger } from './logger.js';
 import type { Transport } from './transport.js';
 
@@ -363,6 +364,18 @@ export class Agent {
             snapshot.bank.items.find((entry) => entry.id === itemId)?.qty ?? 0,
         },
         (itemId, quantity) => equipFood(itemId, quantity, isSuspended),
+      ),
+      // Runs after the refill, so a slot that just emptied is topped up before
+      // the eat is attempted rather than failing on an empty slot.
+      eatWhenLow(
+        {
+          inCombat: snapshot.combat.inCombat,
+          hitpoints: snapshot.combat.hitpoints,
+          maxHitpoints: snapshot.combat.maxHitpoints,
+          equippedFoodQty: slot?.qty ?? 0,
+          autoEatThresholdFraction: normaliseFraction(snapshot.combat.autoEatThreshold),
+        },
+        () => eatFood(isSuspended),
       ),
     ];
 
