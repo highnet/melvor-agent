@@ -356,11 +356,13 @@ describe('the critical hitpoints floor', () => {
 
   it('keeps going at low HP while food remains', () => {
     // Food means the eat reflex can recover, so low HP alone is not a reason to
-    // abandon the objective — only low HP with nothing to eat.
+    // abandon the objective — only low HP with nothing to eat. Below the
+    // emergency floor this no longer holds: at 5 hitpoints the reflex is
+    // demonstrably losing, which is what the Golbin incident showed.
     const hurt = snapshot({
       combat: {
         ...snapshot().combat,
-        hitpoints: 5,
+        hitpoints: 25,
         maxHitpoints: 110,
         food: [{ itemId: 'melvorD:Shrimp', itemName: 'Shrimp', qty: 20, healsFor: 30 }],
       },
@@ -371,5 +373,44 @@ describe('the critical hitpoints floor', () => {
 
   it('does not fire at healthy HP', () => {
     expect(checkAbort(snapshot(), noAbort, 1, 0).abort).toBe(false);
+  });
+});
+
+describe('the emergency hitpoints floor', () => {
+  const noAbort = { minutesExceed: 60 };
+
+  it('stops at very low HP even with food equipped', () => {
+    // Food that cannot keep up is not safety. Live, Thieving a Golbin reached 6
+    // hitpoints of 120 with 33 food equipped and the eat reflex firing
+    // sixty-six times: it ate, and the damage outpaced it. The critical floor
+    // did not fire precisely because food was available.
+    const losing = snapshot({
+      combat: {
+        ...snapshot().combat,
+        hitpoints: 6,
+        maxHitpoints: 120,
+        food: [{ itemId: 'melvorD:Chicken', itemName: 'Chicken', qty: 33, healsFor: 40 }],
+      },
+    });
+
+    const verdict = checkAbort(losing, noAbort, 1, 0);
+
+    expect(verdict.abort).toBe(true);
+    expect(verdict.detail).toMatch(/not keeping up/);
+  });
+
+  it('keeps going at merely low HP while food can still recover it', () => {
+    // Between the two floors the reflex is given room to work: 20% with food is
+    // a fight worth continuing, 5% is not.
+    const hurt = snapshot({
+      combat: {
+        ...snapshot().combat,
+        hitpoints: 24,
+        maxHitpoints: 120,
+        food: [{ itemId: 'melvorD:Chicken', itemName: 'Chicken', qty: 33, healsFor: 40 }],
+      },
+    });
+
+    expect(checkAbort(hurt, noAbort, 1, 0).abort).toBe(false);
   });
 });

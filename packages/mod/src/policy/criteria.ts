@@ -74,6 +74,14 @@ export type AbortVerdict =
 /** Below this share of max HP, with no food, nothing is worth continuing. */
 const CRITICAL_HP_FRACTION = 0.25;
 
+/**
+ * Below this share of max HP, nothing is worth continuing *whatever* the food.
+ *
+ * Lower than the critical fraction because it overrides the food check rather
+ * than joining it: reaching here means the eat reflex is already losing.
+ */
+const EMERGENCY_HP_FRACTION = 0.15;
+
 export function checkAbort(
   snapshot: StateSnapshot,
   abortWhen: AbortConditions,
@@ -94,6 +102,22 @@ export function checkAbort(
       abort: true,
       outcome: 'aborted_stuck',
       detail: `hitpoints at ${(hpFraction * 100).toFixed(0)}% with no food equipped; stopping rather than continuing to take damage with no way to heal`,
+    };
+  }
+
+  // Food that cannot keep up is not safety. Live, Thieving a Golbin took the
+  // character to 6 hitpoints of 120 with 33 food equipped and the eat reflex
+  // firing sixty-six times — it ate, and the damage outpaced it. The earlier
+  // floor did not fire precisely because food *was* available, which turned a
+  // guard into a blind spot.
+  //
+  // Below this, the activity is unsafe whatever the food situation, and the
+  // honest response is to stop rather than to keep eating into a losing race.
+  if (hpFraction < EMERGENCY_HP_FRACTION) {
+    return {
+      abort: true,
+      outcome: 'aborted_stuck',
+      detail: `hitpoints at ${(hpFraction * 100).toFixed(0)}% with ${foodLeft} food left; eating is not keeping up with the damage, so stopping is the only thing that will`,
     };
   }
 
