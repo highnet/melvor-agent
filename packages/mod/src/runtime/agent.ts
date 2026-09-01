@@ -71,6 +71,7 @@ import {
   readPaperCandidates,
   readPassiveCookingCandidates,
   readPlantableSeeds,
+  readPlayerHitpoints,
   readRaidCandidates,
   readSellCandidates,
   readShopObjectiveCandidates,
@@ -443,8 +444,11 @@ export class Agent {
       // the eat is attempted rather than failing on an empty slot.
       eatWhenLow(
         {
-          hitpoints: snapshot.combat.hitpoints,
-          maxHitpoints: snapshot.combat.maxHitpoints,
+          // Live, not from the snapshot. A snapshot refreshes on report, so the
+          // reflex was both retrying an eat it had already made and — the half
+          // that actually matters — able to read a healthy figure for a
+          // character that had since been hurt, and decline to eat at all.
+          ...readPlayerHitpoints(),
           equippedFoodQty: slot?.qty ?? 0,
           autoEatThresholdFraction: normaliseFraction(snapshot.combat.autoEatThreshold),
         },

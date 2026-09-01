@@ -39,6 +39,7 @@ export {
   selectAttackSpell,
   startDungeon,
   type CombatProjection,
+  readPlayerHitpoints,
 } from './combat.js';
 export {
   FARMING_ID,

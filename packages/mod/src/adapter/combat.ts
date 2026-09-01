@@ -208,6 +208,24 @@ function playerCombatLevel(): number {
   }
 }
 
+/**
+ * The player's hitpoints, read live.
+ *
+ * The eat reflex was taking these from the snapshot, which refreshes only when
+ * the mod reports. Two consequences, and the second is the serious one: it
+ * retried an eat it had already done — "already at full hitpoints; eating would
+ * waste the item" — and, in the other direction, it could read a healthy figure
+ * for a character that had since been hurt, and decline to eat at all.
+ *
+ * The whole point of the reflex tier is reacting faster than a planning cycle,
+ * which it cannot do from a number a planning cycle produced.
+ */
+export function readPlayerHitpoints(): { hitpoints: number; maxHitpoints: number } {
+  const player = game.combat.player;
+
+  return { hitpoints: player.hitpoints, maxHitpoints: player.stats.maxHitpoints };
+}
+
 export function readCombatGateInputs(
   targetId: string,
   intendedSessionMinutes: number,
