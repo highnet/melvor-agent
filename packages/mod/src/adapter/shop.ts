@@ -6,6 +6,8 @@ import { act } from './act.js';
 export interface PurchaseProjection {
   purchaseId: string;
   owned: number;
+  /** Items the purchase grants, counted in the bank. */
+  granted: number;
   gp: number;
 }
 
@@ -71,6 +73,15 @@ export function buyShopPurchase(
   const project = (): PurchaseProjection => ({
     purchaseId,
     owned: game.shop.getPurchaseCount(purchase),
+    // A consumable bought from the shop — leather, summoning shards — does not
+    // raise the purchase count: it drops items into the bank. Counting only
+    // `owned` reported every such purchase as a no-op while the goods were
+    // sitting in the bank, which is the same mistake burying bones made by
+    // watching Prayer XP instead of the stack.
+    granted: purchase.contains.items.reduce(
+      (total, entry) => total + game.bank.getQty(entry.item),
+      0,
+    ),
     gp: game.gp.amount,
   });
 
@@ -105,7 +116,10 @@ export function buyShopPurchase(
       },
       // `confirmed` skips the modal, which nothing would answer.
       perform: () => game.shop.buyItemOnClick(purchase, true),
-      changed: (before, after) => after.owned > before.owned,
+      // Either signal counts: an upgrade raises the purchase count, a
+      // consumable raises the bank. Both spend the currency, but GP alone is
+      // not proof — a failed purchase that refunds would look identical.
+      changed: (before, after) => after.owned > before.owned || after.granted > before.granted,
     },
     isSuspended,
   );
