@@ -206,6 +206,11 @@ export function readEquipCandidates(): Candidate[] {
     // already knows.
     if (!game.checkRequirements(item.equipRequirements, false)) continue;
 
+    // Nor gear that makes the character worse at the style it is fighting with.
+    // See penalisesAttackStyle: a Steel Platebody read as an upgrade for an
+    // archer and cost twenty minutes of unwinnable fighting.
+    if (penalisesAttackStyle(item.equipmentStats, player.attackType)) continue;
+
     const currentItem =
       current.itemId === null ? undefined : game.items.equipment.getObjectByID(current.itemId);
 
@@ -249,6 +254,50 @@ export function readEquipCandidates(): Candidate[] {
 function statScore(item: EquipmentItem): number {
   const stats = item.equipmentStats;
   return stats.reduce((sum, stat) => sum + (typeof stat.value === 'number' ? stat.value : 0), 0);
+}
+
+/**
+ * Attack bonus an item gives for one attack style.
+ *
+ * Melee is three keys rather than one — the game splits it by stab, slash and
+ * block — so they are summed. Ranged and magic each have a single key.
+ */
+export function attackBonusFor(
+  stats: readonly { key: string; value: number }[],
+  attackType: string,
+): number {
+  const keys =
+    attackType === 'ranged'
+      ? ['rangedAttackBonus']
+      : attackType === 'magic'
+        ? ['magicAttackBonus']
+        : ['stabAttackBonus', 'slashAttackBonus', 'blockAttackBonus'];
+
+  return stats
+    .filter((stat) => keys.includes(stat.key))
+    .reduce((sum, stat) => sum + (typeof stat.value === 'number' ? stat.value : 0), 0);
+}
+
+/**
+ * Whether wearing this would make the character worse at what it is doing.
+ *
+ * Melee armour carries a negative ranged attack bonus, and `statScore` sums
+ * every stat blindly — so a Steel Platebody's large melee-defence numbers
+ * drowned out its ranged penalty and it scored as an upgrade for an archer.
+ * The agent equipped one as "free survivability" with an empty torso slot, and
+ * then could not land a shot: full health, no kills, across two monsters in two
+ * areas, for twenty minutes.
+ *
+ * A human does not wear plate to use a bow. Neither is this a close call worth
+ * weighing against defence — an attack bonus that is negative for the style
+ * actually in use makes the fight unwinnable, and no amount of armour
+ * compensates for never hitting anything.
+ */
+export function penalisesAttackStyle(
+  stats: readonly { key: string; value: number }[],
+  attackType: string,
+): boolean {
+  return attackBonusFor(stats, attackType) < 0;
 }
 
 /**
