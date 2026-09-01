@@ -58,6 +58,7 @@ export {
 export {
   newSlayerTask,
   readMasteryCandidates,
+  readSlayerCandidates,
   setAttackStyle,
   spendMasteryPool,
   togglePrayer,

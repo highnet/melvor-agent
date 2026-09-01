@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-148 exports.
+149 exports.
 
 ## `act`
 
@@ -1300,6 +1300,25 @@ Skill tree nodes that can be afforded and unlocked now.
 
 ```ts
 readSkillTreeCandidates: () => Candidate[]
+```
+
+## `readSlayerCandidates`
+
+`function`
+
+Slayer tasks the character could take.
+
+The capability to take one existed all along and nothing ever offered it, so
+the planner could not choose Slayer at all — a whole progression system
+present in the contract and unreachable in play.
+
+Only offered when no task is running: taking one mid-task discards the kills
+already made, which is a real loss rather than a fresh start. Categories the
+character cannot enter are left out, and the level requirement is stated so a
+blocked one reads as a target rather than an absence.
+
+```ts
+readSlayerCandidates: () => Candidate[]
 ```
 
 ## `readSnapshot`

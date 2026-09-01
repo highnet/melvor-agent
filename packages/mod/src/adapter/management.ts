@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { isRefusedRealm } from './guards.js';
 
 /**
  * The management actions a human performs constantly and an agent could not.
@@ -302,4 +303,46 @@ export function newSlayerTask(
     },
     isSuspended,
   );
+}
+
+/**
+ * Slayer tasks the character could take.
+ *
+ * The capability to take one existed all along and nothing ever offered it, so
+ * the planner could not choose Slayer at all — a whole progression system
+ * present in the contract and unreachable in play.
+ *
+ * Only offered when no task is running: taking one mid-task discards the kills
+ * already made, which is a real loss rather than a fresh start. Categories the
+ * character cannot enter are left out, and the level requirement is stated so a
+ * blocked one reads as a target rather than an absence.
+ */
+export function readSlayerCandidates(): Candidate[] {
+  const task = game.combat.slayerTask;
+  if (task.active) return [];
+
+  // Slayer means fighting, and fighting without food is how a character dies
+  // unattended — the same gate Thieving needed.
+  if (game.combat.player.food.currentSlot.quantity <= 0) return [];
+
+  const slayerLevel = game.skills.getObjectByID('melvorD:Slayer')?.level ?? 1;
+  const candidates: Candidate[] = [];
+
+  for (const category of task.categories.allObjects) {
+    try {
+      if (isRefusedRealm(category.realm.id)) continue;
+      if (category.level > slayerLevel) continue;
+
+      candidates.push({
+        kind: 'new_slayer_task',
+        params: { kind: 'new_slayer_task', categoryId: category.id, payWithCoins: false },
+        label: `Take a ${category.name} Slayer task (needs Slayer ${category.level}, have ${slayerLevel}) — Slayer XP comes only from killing the assigned monster`,
+        available: true,
+      });
+    } catch {
+      // A category that cannot describe itself is not a candidate.
+    }
+  }
+
+  return candidates;
 }
