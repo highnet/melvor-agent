@@ -213,12 +213,45 @@ function safely(name: string, enumerate: () => Candidate[]): Candidate[] {
  * through: a skill that consumes nothing (Woodcutting, Thieving) is the common
  * case, and refusing everything unknown would silently remove whole skills.
  */
+/**
+ * The first alternative input set the bank can pay for.
+ *
+ * Several artisan recipes accept different materials for the same product —
+ * arrow shafts from any log, for instance. The game tracks which alternative is
+ * *selected*, and prices only that one, so a recipe the character can plainly
+ * make looks unaffordable whenever the selection points at a material they do
+ * not hold.
+ *
+ * @returns The index of an affordable alternative, or null if none.
+ */
+export function affordableAlternative(recipe: object): number | null {
+  const alternatives = (
+    recipe as { alternativeCosts?: { itemCosts: { item: AnyItem; quantity: number }[] }[] }
+  ).alternativeCosts;
+
+  if (!Array.isArray(alternatives)) return null;
+
+  for (const [index, alternative] of alternatives.entries()) {
+    const affordable = alternative.itemCosts.every(
+      (cost) => game.bank.getQty(cost.item) >= cost.quantity,
+    );
+    if (affordable) return index;
+  }
+
+  return null;
+}
+
 function canAfford(
   skill: { getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean } },
   recipe: object,
 ): boolean {
   if (typeof skill.getRecipeCosts === 'function') {
-    return skill.getRecipeCosts(recipe).checkIfOwned();
+    if (skill.getRecipeCosts(recipe).checkIfOwned()) return true;
+    // `getRecipeCosts` prices the *selected* alternative only. Fletching arrow
+    // shafts default to Normal Logs, so a character holding 300 Oak and 258
+    // Mahogany read as unable to fletch anything at all, and the skill had no
+    // candidates whatsoever.
+    return affordableAlternative(recipe) !== null;
   }
 
   const consumes = recipe as {

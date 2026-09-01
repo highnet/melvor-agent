@@ -1,6 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { affordableAlternative } from './candidates.js';
 import type { GatheringProjection } from './gathering.js';
 
 /**
@@ -43,6 +44,8 @@ interface ArtisanLike {
   actions: { getObjectByID(id: string): { id: string; level: number } | undefined };
   isMasteryActionUnlocked(recipe: object): boolean;
   getRecipeCosts(recipe: object): { checkIfOwned(): boolean };
+  /** Present on skills whose recipes accept alternative inputs, e.g. Fletching. */
+  setAltRecipes?: Map<object, number>;
   selectRecipeOnClick(recipe: object): void;
   createButtonOnClick(): void;
   stop(): boolean;
@@ -141,8 +144,13 @@ export function startArtisan(
           return `recipe ${recipeId} is locked (needs level ${recipe.level})`;
         }
         // Ask the game whether the materials are actually there, rather than
-        // reimplementing the cost calculation.
-        if (!skill.getRecipeCosts(recipe).checkIfOwned()) {
+        // reimplementing the cost calculation. A recipe with alternative inputs
+        // is priced against the *selected* alternative, so one the character
+        // can plainly make reads as unaffordable until the right one is chosen.
+        if (
+          !skill.getRecipeCosts(recipe).checkIfOwned() &&
+          affordableAlternative(recipe) === null
+        ) {
           return `missing materials for ${recipeId}`;
         }
         const current = project(skill);
@@ -156,6 +164,14 @@ export function startArtisan(
         return null;
       },
       perform: () => {
+        // Point the recipe at inputs the bank actually holds before starting.
+        // Without this the skill starts against a material it does not have and
+        // stops immediately, which reads as a mysterious no-op.
+        const alternative = affordableAlternative(recipe);
+        if (alternative !== null && typeof skill.setAltRecipes?.set === 'function') {
+          skill.setAltRecipes.set(recipe, alternative);
+        }
+
         if (skill.selectedRecipe?.id !== recipeId) {
           skill.selectRecipeOnClick(recipe);
         }
