@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   abandonIfOutmatched,
   collectPendingLoot,
+  compostBeforePlanting,
   dropUnpayablePrayers,
   eatWhenLow,
   expandBankWhenFull,
@@ -445,5 +446,37 @@ describe('expandBankWhenFull', () => {
     const outcome = expandBankWhenFull({ freeSlots: 0, expansion: slot }, () => ok());
 
     expect(outcome?.name).toBe('reflex.expandBank');
+  });
+});
+
+describe('compostBeforePlanting', () => {
+  const ok = () => ({ ok: true }) as never;
+  const compost = { itemId: 'melvorD:Compost', held: 25 };
+
+  it('composts a bare plot before a seed goes in', () => {
+    // An uncomposted crop has a 50% chance to grow, and seeds arrive two and
+    // three at a time. Losing half of them is the difference between Farming
+    // moving and Farming never starting.
+    const applied: string[] = [];
+    compostBeforePlanting({ bareplotIds: ['p1'], compost }, (plotId, compostId) => {
+      applied.push(`${plotId}:${compostId}`);
+      return ok();
+    });
+
+    expect(applied).toEqual(['p1:melvorD:Compost']);
+  });
+
+  it('does nothing when no compost is held', () => {
+    expect(compostBeforePlanting({ bareplotIds: ['p1'], compost: null }, () => ok())).toBeNull();
+  });
+
+  it('does nothing when there is no bare plot', () => {
+    expect(compostBeforePlanting({ bareplotIds: [], compost }, () => ok())).toBeNull();
+  });
+
+  it('treats an empty compost stack as none', () => {
+    const spent = { itemId: 'melvorD:Compost', held: 0 };
+
+    expect(compostBeforePlanting({ bareplotIds: ['p1'], compost: spent }, () => ok())).toBeNull();
   });
 });

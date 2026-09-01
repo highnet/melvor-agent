@@ -342,3 +342,33 @@ export function expandBankWhenFull(
 
   return { name: 'reflex.expandBank', result: buy(expansion.purchaseId) };
 }
+
+/**
+ * Composts an empty plot before anything is planted in it.
+ *
+ * An uncomposted crop has a 50% chance to grow. The character reached this
+ * point holding two potato seeds against a three-seed planting cost, so losing
+ * half of what does get planted is the difference between Farming progressing
+ * and Farming never moving at all — and Herblore sits behind Farming.
+ *
+ * Deliberately before planting rather than during growth: compost applied first
+ * covers the whole cycle, and it is where the game's own plot UI offers it.
+ * Compost is cheap and bought in bulk, so there is no scarcity judgement here
+ * of the kind that keeps seed choice with the planner.
+ */
+export function compostBeforePlanting(
+  state: {
+    /** Empty plots not yet fully composted. */
+    bareplotIds: readonly string[];
+    compost: { itemId: string; held: number } | null;
+  },
+  apply: (plotId: string, compostId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const plotId = state.bareplotIds[0];
+  if (plotId === undefined) return null;
+
+  const compost = state.compost;
+  if (compost === null || compost.held <= 0) return null;
+
+  return { name: 'reflex.compostPlot', result: apply(plotId, compost.itemId) };
+}

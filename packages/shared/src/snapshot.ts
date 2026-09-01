@@ -135,6 +135,11 @@ export const farmPlotStateSchema = z.object({
    * Farming is unreachable for the life of the character.
    */
   canUnlock: z.boolean(),
+  /**
+   * Percent compost applied. Without it a crop has only a 50% chance to grow,
+   * which is ruinous when seeds arrive a few at a time.
+   */
+  compostLevel: z.number(),
 });
 export type FarmPlot = z.infer<typeof farmPlotStateSchema>;
 

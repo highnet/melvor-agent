@@ -20,6 +20,7 @@ function plot(
     plantedName: planted === null ? null : 'Potato',
     categoryId: 'melvorD:Allotment',
     canUnlock,
+    compostLevel: 0,
   };
 }
 

@@ -58,6 +58,7 @@ import {
   readFarmCandidates,
   readGameVersion,
   readGatherCandidates,
+  readHeldCompost,
   readLevelCapCandidates,
   readLoadoutCandidates,
   readLockedActions,
@@ -122,6 +123,7 @@ import type { PolicyAction } from '../policy/types.js';
 import {
   abandonIfOutmatched,
   collectPendingLoot,
+  compostBeforePlanting,
   eatWhenLow,
   expandBankWhenFull,
   harvestReadyPlots,
@@ -464,6 +466,17 @@ export class Agent {
             .map((plot) => plot.id),
         },
         (plotId) => harvestFarmPlot(plotId, isSuspended),
+      ),
+      // Before planting: compost laid down first protects the entire growth
+      // cycle, and an uncomposted crop has only a 50% chance to grow.
+      compostBeforePlanting(
+        {
+          bareplotIds: snapshot.farm
+            .filter((plot) => plot.state === 'empty' && plot.compostLevel < 100)
+            .map((plot) => plot.id),
+          compost: readHeldCompost(),
+        },
+        (plotId, compostId) => compostFarmPlot(plotId, compostId, 5, isSuspended),
       ),
       // Runs after the harvest, so a plot cleared this tick is available to be
       // replanted on the next rather than being read as still occupied.

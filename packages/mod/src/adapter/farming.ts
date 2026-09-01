@@ -25,6 +25,8 @@ export interface FarmPlotState {
   categoryId: string;
   /** Whether a locked plot can be bought right now. */
   canUnlock: boolean;
+  /** Percent compost applied; 0 means the crop has a 50% chance to die. */
+  compostLevel: number;
 }
 
 function describeState(state: number): FarmPlotState['state'] {
@@ -65,6 +67,7 @@ export function readFarmPlots(): FarmPlotState[] {
     categoryId: plot.category.id,
     // Only meaningful while locked, and cheap enough to always ask.
     canUnlock: plot.state === PLOT_LOCKED && game.farming.canUnlockPlot(plot),
+    compostLevel: plot.compostLevel,
   }));
 }
 
@@ -246,6 +249,14 @@ export function readPlantableSeeds(): {
     .sort((a, b) => b.xp - a.xp);
 }
 
+/** The cheapest compost actually held, or null when there is none. */
+export function readHeldCompost(): { itemId: string; held: number } | null {
+  const compost = game.farming.composts.allObjects.find((item) => game.bank.getQty(item) > 0);
+  if (compost === undefined) return null;
+
+  return { itemId: compost.id, held: game.bank.getQty(compost) };
+}
+
 /**
  * Applies compost to a plot.
  *
@@ -321,7 +332,12 @@ export function readCompostCandidates(): Candidate[] {
     try {
       // Ambient const enums are unavailable under verbatimModuleSyntax, so
       // the shared string mapping is the honest way to ask this question.
-      if (describeState(plot.state) !== 'growing') continue;
+      //
+      // Empty plots count, and matter more than growing ones: compost applied
+      // before the seed goes in protects the whole cycle, and the game's own
+      // plot UI offers it exactly there.
+      const state = describeState(plot.state);
+      if (state !== 'growing' && state !== 'empty') continue;
       if (plot.compostLevel >= 100) continue;
 
       candidates.push({
