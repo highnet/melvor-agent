@@ -1338,8 +1338,19 @@ export class Agent {
             ]
           : []),
         ...readBankPressure(),
-        ...readLockedActions(),
+        // Task needs before locked actions, deliberately. Only the first twelve
+        // of these ever reach a planning session, and `readLockedActions`
+        // emits one per skill — around twenty — so it filled every slot and
+        // task needs were never once seen in a whole session's planning.
+        //
+        // The ordering reflects what each is for. "Yew unlocks at level 60" is
+        // a fact to notice in passing; "this task wants 5,000 Fishing XP, and
+        // pays Township XP for it" is a job that can be started now, in a skill
+        // the character already has. Township level is the gate on the last
+        // untrained skill in scope, which makes these the most actionable lines
+        // the agent produces.
         ...readTaskOpportunities(),
+        ...readLockedActions(),
         ...readBlockedOpportunities(),
         ...this.blockedCombat(),
       ];
