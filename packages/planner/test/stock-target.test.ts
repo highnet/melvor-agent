@@ -22,7 +22,7 @@ function storeWith(candidate: { kind: string; params: Record<string, unknown>; l
     queued,
     report: { snapshot: null, candidates: [candidate] },
     rememberShownCandidates() {},
-    checkChoice: () => null,
+    resolveChoice: (index: number) => ({ index, moved: false }),
     enqueue(command: unknown) {
       queued.push(command);
     },

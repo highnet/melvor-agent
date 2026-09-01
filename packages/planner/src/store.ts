@@ -78,19 +78,44 @@ export class Store {
   }
 
   /**
-   * Checks a chosen index still points at what the session was shown.
+   * Resolves a chosen index to the candidate the session actually picked.
    *
-   * @returns null when the choice is sound, or the mismatch to report.
+   * The guard exists because an index is a position in a list that moves with
+   * game state, and acting on a stale one is silent and wrong: a request to
+   * equip a dagger once built a storehouse, because smithing finished between
+   * listing and choosing.
+   *
+   * But refusing was too blunt. The list churns constantly — every sale, every
+   * item consumed in a fight, every skill that levels reshuffles it — so a plan
+   * built from a fresh listing could still be stale by the time it was
+   * submitted, and a whole afternoon produced refusal after refusal for choices
+   * that were never actually wrong. A guard that fires on the correct answer
+   * gets worked around, which is the failure mode it was written to prevent.
+   *
+   * So: if the exact identity the session chose is still on the list somewhere,
+   * follow it. That satisfies the guard's real purpose — act on what was
+   * chosen, never on whatever slid into that slot — while surviving churn that
+   * changes only positions. Only a choice that has genuinely *gone* is refused.
+   *
+   * @returns The index to act on, or the mismatch to report.
    */
-  checkChoice(
+  resolveChoice(
     index: number,
-    current: { kind: string; params: unknown; label: string },
-  ): string | null {
+    current: readonly { kind: string; params: unknown; label: string }[],
+  ): { index: number; moved: boolean } | { error: string } {
     const shown = this.lastShownCandidates[index];
-    if (shown === undefined) return null;
-    if (shown.key === identityOf(current)) return null;
+    const atIndex = current[index];
+    // Nothing remembered, or nothing there: the caller's own range check owns
+    // this case.
+    if (shown === undefined || atIndex === undefined) return { index, moved: false };
+    if (shown.key === identityOf(atIndex)) return { index, moved: false };
 
-    return `candidate ${index} was "${shown.label}" when you listed it and is now "${current.label}" — the list shifted, so this choice would act on something you did not pick`;
+    const relocated = current.findIndex((candidate) => identityOf(candidate) === shown.key);
+    if (relocated >= 0) return { index: relocated, moved: true };
+
+    return {
+      error: `candidate ${index} was "${shown.label}" when you listed it, and that choice is no longer available at all (position ${index} now holds "${atIndex.label}")`,
+    };
   }
 
   /** Queues a command for the next report. */

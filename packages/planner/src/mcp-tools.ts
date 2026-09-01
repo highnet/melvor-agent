@@ -138,20 +138,25 @@ export const TOOLS: Record<string, ToolHandler> = {
   },
 
   async set_objective(args, { store }) {
-    const index = Number(args.candidateIndex);
+    const requested = Number(args.candidateIndex);
     const candidates = store.report?.candidates ?? [];
-    const chosen = candidates[index];
 
-    if (chosen === undefined) {
-      return `Index ${index} is out of range — there are ${candidates.length} candidates (0..${candidates.length - 1}). Call list_candidates again; the list changes with game state.`;
+    if (candidates[requested] === undefined) {
+      return `Index ${requested} is out of range — there are ${candidates.length} candidates (0..${candidates.length - 1}). Call list_candidates again; the list changes with game state.`;
     }
 
     // An index is a position in a list that moves with game state. Acting on a
     // stale one is silent and wrong: a request to equip a dagger built a
-    // storehouse, because smithing finished between listing and choosing.
-    const drift = store.checkChoice(index, chosen);
-    if (drift !== null) {
-      return `Refused: ${drift}. Call list_candidates and choose again.`;
+    // storehouse, because smithing finished between listing and choosing. The
+    // choice is followed to its new position when it has merely moved.
+    const resolved = store.resolveChoice(requested, candidates);
+    if ('error' in resolved) {
+      return `Refused: ${resolved.error}. Call list_candidates and choose again.`;
+    }
+    const index = resolved.index;
+    const chosen = candidates[index];
+    if (chosen === undefined) {
+      return `Index ${index} is out of range — call list_candidates again.`;
     }
 
     const targetLevel = Number(args.targetLevel);
@@ -206,18 +211,24 @@ export const TOOLS: Record<string, ToolHandler> = {
     }
 
     const objectives = [];
+    /** Steps whose candidate merely changed position; reported, not refused. */
+    const moved: string[] = [];
     for (const [position, raw] of steps.entries()) {
       const step = raw as Record<string, unknown>;
       const stepIndex = Number(step.candidateIndex);
-      const chosen = candidates[stepIndex];
-      if (chosen === undefined) {
+      if (candidates[stepIndex] === undefined) {
         return `Step ${position + 1} names candidate ${String(step.candidateIndex)}, which is out of range — there are ${candidates.length}. Call list_candidates again; the list changes with game state.`;
       }
 
-      const stepDrift = store.checkChoice(stepIndex, chosen);
-      if (stepDrift !== null) {
-        return `Refused: step ${position + 1} — ${stepDrift}. Call list_candidates and build the plan again.`;
+      const resolvedStep = store.resolveChoice(stepIndex, candidates);
+      if ('error' in resolvedStep) {
+        return `Refused: step ${position + 1} — ${resolvedStep.error}. Call list_candidates and build the plan again.`;
       }
+      const chosen = candidates[resolvedStep.index];
+      if (chosen === undefined) {
+        return `Step ${position + 1} could not be resolved — call list_candidates again.`;
+      }
+      if (resolvedStep.moved) moved.push(`step ${position + 1} (${chosen.label})`);
 
       const abortMinutes = Number(step.abortMinutes ?? 60);
       objectives.push({
@@ -240,6 +251,11 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Queued a plan of ${objectives.length} objectives:`,
       ...objectives.map((objective, index) => `  ${index + 1}. ${objective.rationale}`),
       '',
+      ...(moved.length === 0
+        ? []
+        : [
+            `Followed ${moved.length} choice(s) that had moved position since your listing: ${moved.join(', ')}. The candidates themselves are unchanged.`,
+          ]),
       'Each step starts when the one before it finishes or times out. Later steps were chosen against the candidates available now, so re-plan if the character changes shape.',
     ].join(NEWLINE);
   },
