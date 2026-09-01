@@ -100,6 +100,25 @@ export function dumpRegistries(): KnowledgeDump {
         return [];
       }
     })(),
+    // What the town will accept from the bank.
+    //
+    // The mirror of the trade-back list, and the one that matters when the town
+    // is short: it is short of Wood while the character holds 1,412 Normal
+    // Logs, and nothing said whether those two facts connect.
+    townshipTradesToTown: (() => {
+      try {
+        return game.township.resources.allObjects.flatMap((resource) =>
+          game.township.getResourceItemConversionsToTownship(resource).map((conversion) => ({
+            resourceId: resource.id,
+            resourceName: resource.name,
+            itemId: conversion.item.id,
+            itemName: conversion.item.name,
+          })),
+        );
+      } catch {
+        return [];
+      }
+    })(),
     // What the town will trade back for its resources.
     //
     // `readTraderCandidates` deliberately offers only the bank-to-town

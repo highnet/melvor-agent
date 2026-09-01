@@ -71,6 +71,16 @@ export const knowledgeDumpSchema = z.object({
     }),
   ),
 
+  /** Items the Township will accept from the bank, and the resource each becomes. */
+  townshipTradesToTown: z.array(
+    z.object({
+      resourceId: z.string(),
+      resourceName: z.string(),
+      itemId: z.string(),
+      itemName: z.string(),
+    }),
+  ),
+
   /** Items the Township will trade back for its resources. */
   townshipTradesFromTown: z.array(
     z.object({
