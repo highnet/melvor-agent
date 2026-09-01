@@ -48,6 +48,7 @@ import {
   readCheapPermanentUpgrades,
   readBankPressure,
   readBankedFood,
+  readEquippedFood,
   readBlockedOpportunities,
   readBoneCandidates,
   readClaimableTasks,
@@ -479,6 +480,8 @@ export class Agent {
         ? selected
         : (snapshot.combat.food.find((entry) => entry.qty > 0) ?? selected);
 
+    const liveFood = readEquippedFood();
+
     // Read live rather than from the snapshot. The snapshot refreshes only on
     // report, so a reflex could not see the effect of its own previous tick and
     // retried a plot it had just finished — "already fully composted", once a
@@ -490,10 +493,12 @@ export class Agent {
       refillFood(
         {
           inCombat: snapshot.combat.inCombat,
-          equippedFoodId: slot?.itemId ?? null,
-          equippedFoodQty: slot?.qty ?? 0,
-          bankQuantityOf: (itemId) =>
-            snapshot.bank.items.find((entry) => entry.id === itemId)?.qty ?? 0,
+          // Live, like the hitpoints above. Reading the slot and the bank from
+          // the snapshot meant acting on a picture that refreshes only on
+          // report, which produced hundreds of harmless-but-loud failures.
+          equippedFoodId: liveFood.itemId,
+          equippedFoodQty: liveFood.quantity,
+          bankQuantityOf: liveFood.bankQuantityOf,
           // Any food in the bank, so an empty slot can be refilled rather than
           // only topped up. Named by the snapshot's own item list, which is
           // already filtered to what the character actually holds.

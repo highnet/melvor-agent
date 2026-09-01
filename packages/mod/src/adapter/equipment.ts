@@ -558,6 +558,42 @@ export function readEquipmentSetCandidates(): Candidate[] {
  * it is reached by ordinary play: Thieving and combat both consume food until
  * there is none left.
  */
+/**
+ * The equipped food slot and what the bank holds of that food, read live.
+ *
+ * The food reflexes were fed a mix: banked food read live, but the equipped
+ * slot and bank quantities taken from the snapshot, which refreshes only when
+ * the agent reports. So the reflex acted on a picture of the bank that could be
+ * a minute old, and produced a steady drip of failures — "bank holds no
+ * melvorD:Chicken" for a stack that had since been eaten, and "state unchanged"
+ * for a slot it thought was empty and was not.
+ *
+ * Individually harmless, since every one was caught by the adapter's own
+ * preconditions. Collectively not: 570 of them buried the single warning that
+ * actually mattered, which was Thieving refusing to release the action slot.
+ * Noise is not free when the log is the diagnostic.
+ *
+ * The same fix as `readPlayerHitpoints`, applied to the reflex next door — the
+ * hitpoints half was corrected this session and the food half was missed.
+ */
+export function readEquippedFood(): {
+  itemId: string | null;
+  quantity: number;
+  bankQuantityOf: (itemId: string) => number;
+} {
+  const player = game.combat.player;
+  const slot = player.food.currentSlot;
+
+  return {
+    itemId: slot.item === game.emptyFoodItem ? null : slot.item.id,
+    quantity: slot.quantity,
+    bankQuantityOf: (itemId) => {
+      const item = game.items.getObjectByID(itemId);
+      return item === undefined ? 0 : game.bank.getQty(item);
+    },
+  };
+}
+
 export function readBankedFood(): { itemId: string; quantity: number }[] {
   const food: { itemId: string; quantity: number; heals: number }[] = [];
 
