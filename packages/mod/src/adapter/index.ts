@@ -47,6 +47,7 @@ export {
   harvestFarmPlot,
   readCompostCandidates,
   readFarmCandidates,
+  readAllSeedIds,
   readHeldCompost,
   unlockFarmPlot,
   plantFarmPlot,

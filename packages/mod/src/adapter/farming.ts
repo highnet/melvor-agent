@@ -250,6 +250,32 @@ export function readPlantableSeeds(): {
 }
 
 /**
+ * Every seed the farm can ever plant, at any level.
+ *
+ * Deliberately unfiltered by level, which is the whole point. Seeds for crops
+ * the character cannot plant yet are not surplus — they are exactly the stock
+ * that becomes useful as Farming rises, and the sell list was offering 32
+ * Ancient Corn Seeds and 30 Ancient Carrot Seeds while Farming sat at level 1
+ * blocking the only untrained skill left in scope.
+ *
+ * A seed is worth a few GP and a harvest is worth Farming XP, which is the
+ * scarce thing here; there is no bank balance at which that trade is correct.
+ * Selling seeds is not a judgement the planner should be offered.
+ */
+export function readAllSeedIds(): Set<string> {
+  const seeds = new Set<string>();
+  for (const recipe of game.farming.actions.allObjects) {
+    try {
+      seeds.add(recipe.seedCost.item.id);
+    } catch {
+      // A recipe with no readable seed cost is skipped rather than throwing:
+      // failing to protect one seed beats failing to build the sell list.
+    }
+  }
+  return seeds;
+}
+
+/**
  * Ingredients the character holds barely enough of to use once.
  *
  * Scarcity is the signal. Two Garum Seeds were nearly sold as part of a batch

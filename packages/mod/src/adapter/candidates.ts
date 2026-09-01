@@ -1,5 +1,5 @@
 import type { Candidate } from '@melvor-agent/shared';
-import { readBarelyEnoughIngredientIds } from './farming.js';
+import { readAllSeedIds, readBarelyEnoughIngredientIds } from './farming.js';
 import {
   FISHING_ID,
   MINING_ID,
@@ -451,11 +451,16 @@ export function readSellCandidates(): Candidate[] {
   // of the session and exactly one planting's worth — came within a drift
   // check of being sold in a batch aimed at Oak Logs.
   const scarceIngredients = readBarelyEnoughIngredientIds();
+  // And never a farming seed, at any level. Farming is the prerequisite for the
+  // last untrained skill in scope, seeds are worth a few GP against a harvest's
+  // XP, and the list was offering 32 Ancient Corn Seeds while Farming sat at 1.
+  const seeds = readAllSeedIds();
 
   return (
     [...game.bank.items.values()]
       .filter((entry) => !wantedByTasks.has(entry.item.id))
       .filter((entry) => !scarceIngredients.has(entry.item.id))
+      .filter((entry) => !seeds.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({

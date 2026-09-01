@@ -299,3 +299,29 @@ describe('the last of an ingredient', () => {
     expect(scarce(0, 2)).toBe(false);
   });
 });
+
+describe('farming seeds', () => {
+  // The sell list offered 32 Ancient Corn Seeds and 30 Ancient Carrot Seeds
+  // while Farming sat at level 1 — and Farming 30 is the prerequisite for
+  // Herblore, the last untrained skill in scope. A seed is worth a few GP; the
+  // harvest is worth Farming XP, which is the scarce thing.
+  const seeds = new Set(['melvorD:Ancient_Corn_Seeds', 'melvorD:Potato_Seeds']);
+  const sellable = (itemId: string) => !seeds.has(itemId);
+
+  it('never offers a seed for sale', () => {
+    expect(sellable('melvorD:Ancient_Corn_Seeds')).toBe(false);
+  });
+
+  it('protects seeds for crops the character cannot plant yet', () => {
+    // The point of protecting them at every level rather than only plantable
+    // ones: an unplantable seed is not surplus, it is stock for the level the
+    // agent is working towards.
+    expect(sellable('melvorD:Potato_Seeds')).toBe(false);
+  });
+
+  it('leaves the rest of the bank sellable', () => {
+    // The guard must not become "never sell anything" — a full bank stalled the
+    // agent repeatedly, and selling is the planner's lever for that.
+    expect(sellable('melvorD:Oak_Logs')).toBe(true);
+  });
+});
