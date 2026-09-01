@@ -225,6 +225,8 @@ export class Agent {
   private replanning = false;
   /** Consecutive failed actions for the current objective. */
   private consecutiveActionFailures = 0;
+  /** The last refusal, surfaced to the planner so it does not re-choose it. */
+  private lastRefusal: { action: string; detail: string; at: number } | null = null;
   private readonly changeListeners = new Set<() => void>();
 
   constructor(
@@ -764,18 +766,34 @@ export class Agent {
         // paused, and counting it would abandon a fine objective mid catch-up.
         if (result.reason === 'suspended') return false;
 
-        this.consecutiveActionFailures += 1;
+        // A precondition refusal is a *judgement about current state*, not a
+        // mishap: the same call against the same state will refuse identically.
+        // Retrying it four more times only delays the replan by fifteen seconds
+        // and buries the reason under repeated warnings.
+        const isDeterministic = result.reason === 'precondition';
+        this.consecutiveActionFailures = isDeterministic
+          ? ACTION_FAILURE_LIMIT
+          : this.consecutiveActionFailures + 1;
+
         this.log.warn(
           'adapter',
-          `${result.action} failed (${result.reason}) [${this.consecutiveActionFailures}/${ACTION_FAILURE_LIMIT}]`,
+          isDeterministic
+            ? `${result.action} refused: ${result.detail}`
+            : `${result.action} failed (${result.reason}) [${this.consecutiveActionFailures}/${ACTION_FAILURE_LIMIT}]`,
           result,
         );
 
         if (this.consecutiveActionFailures >= ACTION_FAILURE_LIMIT) {
           this.log.error(
             'policy',
-            `abandoning objective after ${this.consecutiveActionFailures} consecutive failures: ${result.detail}`,
+            isDeterministic
+              ? `abandoning objective; the game refuses it in this state: ${result.detail}`
+              : `abandoning objective after ${this.consecutiveActionFailures} consecutive failures: ${result.detail}`,
           );
+          // Kept for the next planning call: "this was offered and the game
+          // refused it, for this reason" is the most useful thing a planner can
+          // be told, and it is exactly what was lost before.
+          this.lastRefusal = { action: result.action, detail: result.detail, at: Date.now() };
           this.settings = { ...this.settings, objective: null };
           this.consecutiveActionFailures = 0;
           this.requestReplan('objective_aborted');
@@ -1087,7 +1105,21 @@ export class Agent {
    */
   private safeBlocked(): ReturnType<typeof readBlockedOpportunities> {
     try {
+      const refusal = this.lastRefusal;
+      // Ten minutes: long enough to reach the next planning call, short enough
+      // that a refusal the character has since grown out of stops being advice.
+      const recent = refusal !== null && Date.now() - refusal.at < 600_000;
+
       return [
+        ...(recent && refusal !== null
+          ? [
+              {
+                label: `Last refusal: ${refusal.action} — ${refusal.detail}. It was offered as a candidate and the game refused it, so do not simply re-choose it.`,
+                xpPerHour: 0,
+                missing: [],
+              },
+            ]
+          : []),
         ...readBankPressure(),
         ...readTaskOpportunities(),
         ...readBlockedOpportunities(),
