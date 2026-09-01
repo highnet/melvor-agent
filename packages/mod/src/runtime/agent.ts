@@ -58,6 +58,7 @@ import {
   readEquipCandidates,
   readEquipmentSetCandidates,
   readEquippedFood,
+  readEquippedFoodHealing,
   readEventCandidates,
   readExplorationCandidates,
   readFarmCandidates,
@@ -515,6 +516,7 @@ export class Agent {
           // only topped up. Named by the snapshot's own item list, which is
           // already filtered to what the character actually holds.
           bankedFood: readBankedFood(),
+          equippedFoodHeals: readEquippedFoodHealing(),
         },
         (itemId, quantity) => equipFood(itemId, quantity, isSuspended),
       ),

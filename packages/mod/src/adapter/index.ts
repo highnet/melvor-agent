@@ -67,6 +67,7 @@ export {
   unequipItem,
   readBankedFood,
   readEquippedFood,
+  readEquippedFoodHealing,
   equipFood,
   equipItem,
   changeEquipmentSet,

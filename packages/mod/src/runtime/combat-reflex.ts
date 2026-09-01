@@ -25,6 +25,15 @@ import type { ActionResult } from '@melvor-agent/shared';
  */
 const FOOD_TOPUP_THRESHOLD = 15;
 
+/**
+ * How much better banked food must be before the slot is swapped.
+ *
+ * A quarter better, so a genuine upgrade goes in and two near-equal foods do
+ * not trade places every tick. The slot is not free to change during a fight,
+ * and churn there is worse than eating slightly weaker food.
+ */
+const FOOD_UPGRADE_MARGIN = 1.25;
+
 /** What one reflex pass did, for the journal. */
 export interface ReflexOutcome {
   name: string;
@@ -52,8 +61,10 @@ export function refillFood(
     equippedFoodId: string | null;
     equippedFoodQty: number;
     bankQuantityOf: (itemId: string) => number;
-    /** Food in the bank, best first, for when the slot is empty entirely. */
-    bankedFood?: { itemId: string; quantity: number }[];
+    /** Food in the bank, best-healing first. */
+    bankedFood?: { itemId: string; quantity: number; heals: number }[];
+    /** What the equipped food heals for, so a better one can be recognised. */
+    equippedFoodHeals: number;
   },
   equipFood: (itemId: string, quantity: number) => ActionResult<unknown>,
 ): ReflexOutcome | null {
@@ -74,6 +85,28 @@ export function refillFood(
     return {
       name: 'reflex.refillFood',
       result: equipFood(replacement.itemId, replacement.quantity),
+    };
+  }
+
+  // Upgrade before topping up. The slot could only ever be refilled with more
+  // of whatever was already in it, so a character that equipped Shrimp early
+  // kept eating Shrimp while better food sat in the bank — and with no Auto
+  // Eat, the healing per item is exactly what buys survival in Thieving and
+  // combat.
+  //
+  // A margin rather than any improvement at all: swapping between two foods of
+  // near-equal value every tick is churn, and the slot is not free to change
+  // mid-fight.
+  const best = state.bankedFood?.[0];
+  if (
+    best !== undefined &&
+    best.itemId !== state.equippedFoodId &&
+    best.quantity > 0 &&
+    best.heals > state.equippedFoodHeals * FOOD_UPGRADE_MARGIN
+  ) {
+    return {
+      name: 'reflex.refillFood',
+      result: equipFood(best.itemId, best.quantity),
     };
   }
 

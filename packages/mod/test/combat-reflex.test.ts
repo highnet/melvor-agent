@@ -646,3 +646,43 @@ describe('buyTrivialUpgrades', () => {
     expect(buyTrivialUpgrades({ gp: 43_860, upgrades: [] }, () => ok())).toBeNull();
   });
 });
+
+describe('upgrading the food in the slot', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  // The slot could only ever be refilled with more of whatever was already in
+  // it, so a character that equipped Shrimp early kept eating Shrimp while
+  // better food sat in the bank. With no Auto Eat, healing per item is exactly
+  // what buys survival in Thieving and combat — the operator's point that
+  // progressing further needs "good hp and food".
+  const state = (equippedHeals: number, bestHeals: number) => ({
+    inCombat: false,
+    equippedFoodId: 'melvorD:Shrimp',
+    equippedFoodQty: 3,
+    equippedFoodHeals: equippedHeals,
+    bankQuantityOf: () => 50,
+    bankedFood: [{ itemId: 'melvorD:Seahorse', quantity: 40, heals: bestHeals }],
+  });
+
+  it('swaps to clearly better food rather than topping up the weak one', () => {
+    const equipped: string[] = [];
+    refillFood(state(3, 30), (itemId) => {
+      equipped.push(itemId);
+      return ok();
+    });
+
+    expect(equipped).toEqual(['melvorD:Seahorse']);
+  });
+
+  it('does not trade places between near-equal foods', () => {
+    // Churn in the slot is worse than eating slightly weaker food, and the slot
+    // is not free to change mid-fight.
+    const equipped: string[] = [];
+    refillFood(state(20, 22), (itemId) => {
+      equipped.push(itemId);
+      return ok();
+    });
+
+    expect(equipped).toEqual(['melvorD:Shrimp']);
+  });
+});

@@ -594,7 +594,7 @@ export function readEquippedFood(): {
   };
 }
 
-export function readBankedFood(): { itemId: string; quantity: number }[] {
+export function readBankedFood(): { itemId: string; quantity: number; heals: number }[] {
   const food: { itemId: string; quantity: number; heals: number }[] = [];
 
   for (const entry of game.bank.items.values()) {
@@ -612,9 +612,22 @@ export function readBankedFood(): { itemId: string; quantity: number }[] {
     }
   }
 
-  return food
-    .sort((a, b) => b.heals - a.heals)
-    .map((entry) => ({ itemId: entry.itemId, quantity: entry.quantity }));
+  // Healing is carried out, not dropped. The refill reflex could only ever
+  // top up whatever was already in the slot, so a character that equipped
+  // Shrimp early kept eating Shrimp while better food sat in the bank — and
+  // Thieving's damage is paid for out of exactly that difference.
+  return food.sort((a, b) => b.heals - a.heals);
+}
+
+/** What the equipped food heals for, so a better one can be recognised. */
+export function readEquippedFoodHealing(): number {
+  try {
+    const slot = game.combat.player.food.currentSlot;
+    if (slot.item === game.emptyFoodItem) return 0;
+    return game.combat.player.getFoodHealing(slot.item);
+  } catch {
+    return 0;
+  }
 }
 
 /**
