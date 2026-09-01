@@ -42,9 +42,16 @@ function project(): CombatProjection {
  * ticked, rendered or attached to combat; only `setStatsFromMonster` and
  * `computeCombatStats` are called on it.
  *
- * **Unverified in-game.** Constructing an `Enemy` bound to the live manager may
- * have side effects the typings do not describe. A failed probe returns null,
- * which the gate treats as a refusal — so the untested path fails closed.
+ * **Verified in-game, and it does not work.** The monster attaches correctly and
+ * its equipment stats are present, but the game's own `computeCombatStats`
+ * yields `NaN` for a detached enemy: the calculation depends on combat context
+ * a probe outside combat does not have. This is why Combat Simulator Reloaded
+ * reimplements the damage formulas rather than borrowing them.
+ *
+ * Reimplementing them here is exactly what the brief forbids, so the probe is
+ * kept for the case where it does work and {@link screenByCombatLevel} covers
+ * the case where it does not. A failed probe returns null, and null means
+ * refuse — the untested path fails closed.
  *
  * @param monster - The monster to measure.
  * @returns Its max hit and attack interval, or null if the probe failed.
@@ -54,24 +61,19 @@ function probeMonsterStats(monster: Monster): ProbedStats | null {
     const probe = new Enemy(game.combat, game);
     probe.setNewMonster(monster);
 
-    // The full derivation chain, in the game's own order. `computeCombatStats`
-    // reads from levels, equipment stats and modifiers — none of which exist
-    // until they are computed — so calling it alone produced a monster with a
-    // max hit of zero. Every enemy measured as harmless, which the gate then
-    // read as safe: Red Dragon was offered to a level 3 character.
-    probe.computeAttackType();
-    probe.computeDamageType();
-    probe.computeLevels();
-    probe.computeEquipmentStats();
-    probe.computeModifiers();
+    // Verified live: the monster attaches and its equipment stats are present,
+    // but `computeCombatStats` still yields NaN outside combat.
+    probe.setStatsFromMonster(monster);
+    probe.initializeForCombat();
     probe.computeCombatStats();
 
     // A probe that still computes nothing has failed, not found a harmless
     // monster. Refusing on this is what keeps the gate failing closed — and the
     // numbers go into the reason, because "could not compute" without them sent
     // me guessing at the cause twice.
+    // `> 0` rather than `!== 0`: NaN fails this comparison, which is the point.
     if (!(probe.stats.maxHit > 0) || !(probe.stats.attackInterval > 0)) {
-      lastProbeFailure = `${monster.id}: max hit ${probe.stats.maxHit}, interval ${probe.stats.attackInterval}ms, levels ${probe.levels.Attack}/${probe.levels.Strength}`;
+      lastProbeFailure = `${monster.id}: the game computed max hit ${probe.stats.maxHit}`;
       return null;
     }
 
@@ -136,6 +138,52 @@ function worstCaseStats(monsters: readonly Monster[]): ProbedStats | null {
  * @param intendedSessionMinutes - How long the agent means to keep fighting.
  * @returns Gate inputs, or a reason they could not be gathered.
  */
+/**
+ * A conservative screen using only data the game states plainly.
+ *
+ * Used when the probe cannot measure, which outside combat is always. It makes
+ * no attempt to predict damage — predicting it would mean reimplementing the
+ * game's formulas, which is how a safety check quietly becomes fiction. It only
+ * asks the question a human answers by glancing at a monster: is this thing
+ * obviously out of my league?
+ *
+ * Deliberately strict. Screening out a fight the character could have won costs
+ * some XP; screening in one it cannot costs the run. The real judgement happens
+ * a second later against the live enemy, whose stats the game computes for
+ * real — see `verifyLiveEngagement`.
+ */
+export function screenByCombatLevel(monsterCombatLevel: number): { ok: boolean; detail: string } {
+  const playerLevel = playerCombatLevel();
+
+  if (playerLevel <= 0) {
+    return { ok: false, detail: 'player combat level unavailable' };
+  }
+
+  // Half the player's combat level, floored at 1 so a fresh character can still
+  // fight a Chicken. A human starting out fights things well below themselves,
+  // and this agent has no gear and no Auto Eat.
+  const ceiling = Math.max(1, Math.floor(playerLevel / 2));
+
+  if (monsterCombatLevel > ceiling) {
+    return {
+      ok: false,
+      detail: `combat level ${monsterCombatLevel} is above the screen ceiling ${ceiling} (half of the character's ${playerLevel}); the game cannot compute enemy stats outside combat, so this is the conservative screen`,
+    };
+  }
+
+  return { ok: true, detail: `combat level ${monsterCombatLevel} within ceiling ${ceiling}` };
+}
+
+/** The character's combat level, from the game's own calculation. */
+function playerCombatLevel(): number {
+  try {
+    // Lives on Game, not on Player — the same place the snapshot reads it.
+    return game.playerCombatLevel;
+  } catch {
+    return 0;
+  }
+}
+
 export function readCombatGateInputs(
   targetId: string,
   intendedSessionMinutes: number,

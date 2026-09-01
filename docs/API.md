@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-142 exports.
+143 exports.
 
 ## `act`
 
@@ -938,11 +938,6 @@ readCharacterName: () => string
 
 `function`
 
-Assembles the inputs for the survivability gate.
-
-Reads only; makes no decision. The decision is `assessSurvivability`, which is
-pure and lives in the policy tier so it can be tested exhaustively.
-
 ```ts
 readCombatGateInputs: (targetId: string, intendedSessionMinutes: number) => { ok: true; inputs: CombatGateInputs; } | { ok: false; detail: string; }
 ```
@@ -1456,6 +1451,27 @@ What selling claims to change: less of the item, more of the currency.
 
 ```ts
 SaleProjection: any
+```
+
+## `screenByCombatLevel`
+
+`function`
+
+A conservative screen using only data the game states plainly.
+
+Used when the probe cannot measure, which outside combat is always. It makes
+no attempt to predict damage — predicting it would mean reimplementing the
+game's formulas, which is how a safety check quietly becomes fiction. It only
+asks the question a human answers by glancing at a monster: is this thing
+obviously out of my league?
+
+Deliberately strict. Screening out a fight the character could have won costs
+some XP; screening in one it cannot costs the run. The real judgement happens
+a second later against the live enemy, whose stats the game computes for
+real — see `verifyLiveEngagement`.
+
+```ts
+screenByCombatLevel: (monsterCombatLevel: number) => { ok: boolean; detail: string; }
 ```
 
 ## `selectAttackSpell`

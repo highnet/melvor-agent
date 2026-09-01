@@ -1,6 +1,11 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
-import { dropUnpayablePrayers, eatWhenLow, refillFood } from '../src/runtime/combat-reflex.js';
+import {
+  abandonIfOutmatched,
+  dropUnpayablePrayers,
+  eatWhenLow,
+  refillFood,
+} from '../src/runtime/combat-reflex.js';
 
 const ok: ActionResult<unknown> = {
   ok: true,
@@ -119,5 +124,38 @@ describe('eatWhenLow', () => {
     // maxHitpoints is 0 on a snapshot taken mid-load, and NaN > threshold is
     // false, so the guard is what stops it eating the whole bank.
     expect(eatWhenLow(hurt({ maxHitpoints: 0 }), () => ok)).toBeNull();
+  });
+});
+
+describe('abandonIfOutmatched', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  function fight(overrides: Partial<Parameters<typeof abandonIfOutmatched>[0]> = {}) {
+    return { inCombat: true, maxHitpoints: 100, enemyMaxHit: 5, ...overrides };
+  }
+
+  it('leaves a fight the enemy is too strong for', () => {
+    // The live counterpart to the pre-fight screen. Outside combat the game
+    // cannot compute enemy stats, so the screen guesses from combat level; this
+    // reads the real number the moment it exists and acts on it.
+    const outcome = abandonIfOutmatched(fight({ enemyMaxHit: 40 }), () => ok);
+
+    expect(outcome?.name).toBe('reflex.abandonIfOutmatched');
+  });
+
+  it('stays in a fight the character can absorb', () => {
+    expect(abandonIfOutmatched(fight({ enemyMaxHit: 20 }), () => ok)).toBeNull();
+  });
+
+  it('does not act on an unknown enemy max hit', () => {
+    // Unknown is not permission, but mid-fight it is not proof of danger
+    // either, and disengaging on every unread stat would make combat
+    // impossible. The policy tier's HP floor is the backstop for that case.
+    expect(abandonIfOutmatched(fight({ enemyMaxHit: null }), () => ok)).toBeNull();
+    expect(abandonIfOutmatched(fight({ enemyMaxHit: 0 }), () => ok)).toBeNull();
+  });
+
+  it('does nothing outside combat', () => {
+    expect(abandonIfOutmatched(fight({ inCombat: false, enemyMaxHit: 999 }), () => ok)).toBeNull();
   });
 });

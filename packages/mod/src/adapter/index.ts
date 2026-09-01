@@ -20,6 +20,7 @@ export {
   engageMonster,
   readCombatGateInputs,
   readCombatTargets,
+  screenByCombatLevel,
   readSpellCandidates,
   selectAttackSpell,
   startDungeon,

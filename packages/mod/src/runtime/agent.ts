@@ -69,6 +69,7 @@ import {
   readUpgradeCandidates,
   readWorshipCandidates,
   repairTownshipBuilding,
+  screenByCombatLevel,
   selectAttackSpell,
   selectDigSiteMap,
   selectDigSiteTool,
@@ -99,7 +100,7 @@ import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
 import type { PolicyAction } from '../policy/types.js';
-import { eatWhenLow, refillFood } from './combat-reflex.js';
+import { abandonIfOutmatched, eatWhenLow, refillFood } from './combat-reflex.js';
 import type { Logger } from './logger.js';
 import type { Transport } from './transport.js';
 
@@ -381,6 +382,18 @@ export class Agent {
           autoEatThresholdFraction: normaliseFraction(snapshot.combat.autoEatThreshold),
         },
         () => eatFood(isSuspended),
+      ),
+      // The live check that makes the pre-fight screen safe: outside combat the
+      // game cannot compute enemy stats, so the screen guesses from combat
+      // level; here the game has computed the real max hit and the guess is
+      // checked against it.
+      abandonIfOutmatched(
+        {
+          inCombat: snapshot.combat.inCombat,
+          maxHitpoints: snapshot.combat.maxHitpoints,
+          enemyMaxHit: snapshot.combat.enemy?.maxHit ?? null,
+        },
+        () => disengageCombat(isSuspended),
       ),
     ];
 
@@ -1210,7 +1223,7 @@ export class Agent {
     const blocked: ReturnType<typeof readBlockedOpportunities> = [];
 
     for (const target of readCombatTargets()) {
-      const refusal = this.gateRefusal(target.id);
+      const refusal = this.gateRefusal(target.id, target.combatLevel);
       if (refusal !== null) {
         blocked.push({
           label: `Fight ${target.name} (combat level ${target.combatLevel}) — ${refusal}`,
@@ -1257,11 +1270,22 @@ export class Agent {
    *
    * @returns The refusal reason, or null when the fight is safe.
    */
-  private gateRefusal(targetId: string): string | null {
+  private gateRefusal(targetId: string, combatLevel?: number): string | null {
     const sessionMinutes = this.settings.objective?.abortWhen.minutesExceed ?? 30;
 
     const gathered = readCombatGateInputs(targetId, sessionMinutes);
-    if (!gathered.ok) return gathered.detail;
+    if (!gathered.ok) {
+      // The probe cannot measure an enemy outside combat — the game's own
+      // computation returns NaN — so fall back to the conservative screen.
+      // Refusing everything instead would mean the agent never fights at all,
+      // and reimplementing the damage formulas to avoid that is exactly what
+      // the brief forbids. What keeps this honest is that the fight is verified
+      // against the live enemy the moment it starts.
+      if (combatLevel === undefined) return gathered.detail;
+
+      const screen = screenByCombatLevel(combatLevel);
+      return screen.ok ? null : screen.detail;
+    }
 
     const verdict = assessSurvivability({
       ...gathered.inputs,

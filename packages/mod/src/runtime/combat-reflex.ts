@@ -133,3 +133,47 @@ export function eatWhenLow(
 
   return { name: 'reflex.eatWhenLow', result: eat() };
 }
+
+/**
+ * How much of max HP a single enemy hit may take before the fight is abandoned.
+ *
+ * The live counterpart to the pre-fight screen. Outside combat the game cannot
+ * compute an enemy's stats, so the screen is a guess from combat level; once
+ * the fight starts the game computes the real numbers, and this is where that
+ * guess gets checked against them.
+ */
+const LIVE_MAX_HIT_FRACTION = 0.35;
+
+/**
+ * Abandons a fight the live enemy turns out to be too strong for.
+ *
+ * This is what makes a conservative screen safe rather than optimistic. The
+ * screen admits it is guessing; this reads the enemy's actual max hit — which
+ * the game computes properly once combat starts — and disengages within a tick
+ * if a single hit could take more than a third of the character's health.
+ *
+ * A third, not a half: the character must survive not just one hit but the hit
+ * that lands while the eat reflex is still a second away.
+ */
+export function abandonIfOutmatched(
+  state: {
+    inCombat: boolean;
+    maxHitpoints: number;
+    /** The live enemy's computed max hit, or null when unknown. */
+    enemyMaxHit: number | null;
+  },
+  disengage: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.inCombat) return null;
+  if (state.maxHitpoints <= 0) return null;
+
+  const enemyMaxHit = state.enemyMaxHit;
+  // Unknown is not permission. But mid-fight it is also not proof of danger, and
+  // disengaging on every unread stat would make combat impossible, so the HP
+  // floor in the policy tier remains the backstop for that case.
+  if (enemyMaxHit === null || !(enemyMaxHit > 0)) return null;
+
+  if (enemyMaxHit < state.maxHitpoints * LIVE_MAX_HIT_FRACTION) return null;
+
+  return { name: 'reflex.abandonIfOutmatched', result: disengage() };
+}
