@@ -61,6 +61,7 @@ import {
   readLoadoutCandidates,
   readLockedActions,
   readMasteryCandidates,
+  readNextContainer,
   readOpenableCandidates,
   readPaperCandidates,
   readPassiveCookingCandidates,
@@ -117,6 +118,7 @@ import {
   abandonIfOutmatched,
   collectPendingLoot,
   eatWhenLow,
+  openPendingContainers,
   refillFood,
 } from './combat-reflex.js';
 import type { Logger } from './logger.js';
@@ -425,6 +427,12 @@ export class Agent {
         },
         () => eatFood(isSuspended),
       ),
+      openPendingContainers({ hasContainer: readNextContainer() !== null }, () => {
+        const container = readNextContainer();
+        return container === null
+          ? fail('bank.openItem', 'precondition', 'no container to open')
+          : openItem(container.itemId, container.quantity, isSuspended);
+      }),
       collectPendingLoot(
         { inCombat: snapshot.combat.inCombat, hasLootWorthTaking: shouldCollectLoot() },
         () => collectLoot(isSuspended),

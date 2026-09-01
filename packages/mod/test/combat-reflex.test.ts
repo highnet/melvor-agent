@@ -5,6 +5,7 @@ import {
   collectPendingLoot,
   dropUnpayablePrayers,
   eatWhenLow,
+  openPendingContainers,
   refillFood,
 } from '../src/runtime/combat-reflex.js';
 
@@ -301,5 +302,22 @@ describe('an empty selected food slot', () => {
         () => ok,
       ),
     ).not.toBeNull();
+  });
+});
+
+describe('openPendingContainers', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  it('opens a container the moment one exists', () => {
+    // The stopgap can open containers too, but only while idle. During a
+    // three-hour objective nothing else would — which is exactly the stretch
+    // where a seed is most likely to arrive unnoticed.
+    const outcome = openPendingContainers({ hasContainer: true }, () => ok);
+
+    expect(outcome?.name).toBe('reflex.openContainers');
+  });
+
+  it('does nothing when there is no container', () => {
+    expect(openPendingContainers({ hasContainer: false }, () => ok)).toBeNull();
   });
 });

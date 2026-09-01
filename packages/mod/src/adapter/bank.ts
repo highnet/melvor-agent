@@ -296,3 +296,16 @@ export function readOpenableCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/** The first container in the bank worth opening, if any. */
+export function readNextContainer(): { itemId: string; quantity: number } | null {
+  if (game.bank.occupiedSlots >= game.bank.maximumSlots) return null;
+
+  for (const entry of game.bank.items.values()) {
+    if (entry.item instanceof OpenableItem) {
+      return { itemId: entry.item.id, quantity: entry.quantity };
+    }
+  }
+
+  return null;
+}

@@ -223,3 +223,25 @@ export function collectPendingLoot(
 
   return { name: 'reflex.collectLoot', result: loot() };
 }
+
+/**
+ * Opens containers as they arrive.
+ *
+ * A reflex rather than a planner decision, for the same reason collecting loot
+ * is: there is no judgement in it, nothing is spent, and the alternative is a
+ * pile of unopened nests. The stopgap can do this too, but only while idle —
+ * during a three-hour objective nothing else would, which is precisely the
+ * stretch where a seed is most likely to arrive unnoticed.
+ *
+ * Refuses on a full bank, where the contents would be discarded outright: that
+ * check lives in the adapter, which is why this passes the decision straight
+ * through.
+ */
+export function openPendingContainers(
+  state: { hasContainer: boolean },
+  open: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.hasContainer) return null;
+
+  return { name: 'reflex.openContainers', result: open() };
+}
