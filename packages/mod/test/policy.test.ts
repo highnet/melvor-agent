@@ -32,6 +32,7 @@ describe('capability registry', () => {
     expect(supportedKinds().sort()).toEqual([
       'build_obstacle',
       'build_township',
+      'bury_bones',
       'buy_shop_upgrade',
       'change_equipment_set',
       'choose_event_passive',

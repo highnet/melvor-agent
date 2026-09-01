@@ -14,6 +14,7 @@ import {
   advanceGolbinRaid,
   buildAgilityObstacle,
   buildTownshipBuilding,
+  buryBones,
   buyShopPurchase,
   changeEquipmentSet,
   checkCharacterAllowed,
@@ -41,6 +42,7 @@ import {
   readAstrologyCandidates,
   readBankPressure,
   readBlockedOpportunities,
+  readBoneCandidates,
   readCombatGateInputs,
   readCombatTargets,
   readCompostCandidates,
@@ -931,6 +933,8 @@ export class Agent {
           action.quantity,
           isSuspended,
         );
+      case 'bury_bones':
+        return buryBones(action.itemId, action.quantity, isSuspended);
       case 'toggle_curse':
         return toggleCurse(action.curseId, isSuspended);
       case 'toggle_aurora':
@@ -1185,6 +1189,7 @@ export class Agent {
       ['township tasks', readTaskCandidates],
       ['township trader', readTraderCandidates],
       ['combat event', readEventCandidates],
+      ['bones', readBoneCandidates],
       ['worship', readWorshipCandidates],
       ['exploration', readExplorationCandidates],
       ['paper', readPaperCandidates],

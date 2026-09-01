@@ -51,6 +51,7 @@ export const objectiveKindSchema = z.enum([
   'start_combat_event',
   'choose_event_passive',
   'convert_to_township',
+  'bury_bones',
 ]);
 export type ObjectiveKind = z.infer<typeof objectiveKindSchema>;
 
@@ -265,6 +266,12 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('convert_to_township'),
     itemId: gameIdSchema,
     resourceId: gameIdSchema,
+    quantity: z.number().int().positive(),
+  }),
+  z.object({
+    /** The only source of Prayer XP and the points prayers spend. */
+    kind: z.literal('bury_bones'),
+    itemId: gameIdSchema,
     quantity: z.number().int().positive(),
   }),
   z.object({

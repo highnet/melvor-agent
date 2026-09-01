@@ -63,6 +63,7 @@ const DESCRIPTIONS: Record<string, string> = {
   start_combat_event: 'Enter a combat event — the end-game gauntlet ending in a final boss',
   choose_event_passive: 'Answer the passive choice an event freezes on between stages',
   convert_to_township: 'Trade bank items to the town for resources it can build with',
+  bury_bones: 'Bury bones for Prayer XP and the points prayers spend',
   claim_township_task: 'Claim a finished Township task',
   claim_casual_task: 'Claim a finished casual task, freeing one of its five slots',
 };

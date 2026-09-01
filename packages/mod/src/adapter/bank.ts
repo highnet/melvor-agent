@@ -1,4 +1,4 @@
-import type { ActionResult } from '@melvor-agent/shared';
+import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 
@@ -136,4 +136,84 @@ export function readBankPressure(): {
       missing: [],
     },
   ];
+}
+
+/**
+ * Buries bones for Prayer XP and Prayer points.
+ *
+ * The only source of both. Prayer cannot be trained any other way, and prayers
+ * cannot be used without points, so bones left in the bank are the whole skill
+ * left unplayed — and combat produces them steadily whether or not anything
+ * uses them.
+ *
+ * `buryItemOnClick` returns void and silently does nothing for a non-bone, so
+ * the evidence taken is the stack falling and Prayer XP rising. XP rather than
+ * points, because points cap out and a full bar would make a successful bury
+ * look like a no-op.
+ *
+ * @param itemId - Namespaced `BoneItem` id, already in the bank.
+ * @param quantity - How many to bury. Capped at what the bank holds.
+ */
+export function buryBones(
+  itemId: string,
+  quantity: number,
+  isSuspended: () => boolean,
+): ActionResult<{ held: number; prayerXp: number }> {
+  const item = game.items.getObjectByID(itemId);
+  if (item === undefined || !(item instanceof BoneItem)) {
+    return fail('bank.buryBones', 'precondition', `${itemId} is not a bone`);
+  }
+
+  const prayer = game.skills.getObjectByID('melvorD:Prayer');
+
+  const project = (): { held: number; prayerXp: number } => ({
+    held: game.bank.getQty(item),
+    prayerXp: prayer?.xp ?? 0,
+  });
+
+  return act(
+    {
+      name: 'bank.buryBones',
+      observe: project,
+      precondition: () => {
+        const held = game.bank.getQty(item);
+        if (held <= 0) return `bank holds no ${itemId}`;
+        if (!Number.isInteger(quantity) || quantity <= 0) {
+          return `quantity must be a positive integer, got ${quantity}`;
+        }
+        return null;
+      },
+      perform: () => game.bank.buryItemOnClick(item, Math.min(quantity, game.bank.getQty(item))),
+      changed: (before, after) => after.held < before.held && after.prayerXp > before.prayerXp,
+    },
+    isSuspended,
+  );
+}
+
+/**
+ * Bones worth burying.
+ *
+ * Offered whenever any are held: there is no reason to hoard them, no recipe
+ * consumes them, and Prayer is otherwise untrainable.
+ */
+export function readBoneCandidates(): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  for (const entry of game.bank.items.values()) {
+    if (!(entry.item instanceof BoneItem)) continue;
+
+    try {
+      const points = game.bank.getPrayerPointsPerBone(entry.item);
+      candidates.push({
+        kind: 'bury_bones',
+        params: { kind: 'bury_bones', itemId: entry.item.id, quantity: entry.quantity },
+        label: `Bury ${entry.quantity}x ${entry.item.name} for ${points} prayer points each — the only way to train Prayer or to pay for a prayer`,
+        available: true,
+      });
+    } catch {
+      // A bone that cannot price itself is not a candidate.
+    }
+  }
+
+  return candidates;
 }

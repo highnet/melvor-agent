@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-146 exports.
+148 exports.
 
 ## `act`
 
@@ -168,6 +168,26 @@ evidence that holds is the building count either side.
 
 ```ts
 buildTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
+```
+
+## `buryBones`
+
+`function`
+
+Buries bones for Prayer XP and Prayer points.
+
+The only source of both. Prayer cannot be trained any other way, and prayers
+cannot be used without points, so bones left in the bank are the whole skill
+left unplayed — and combat produces them steadily whether or not anything
+uses them.
+
+`buryItemOnClick` returns void and silently does nothing for a non-bone, so
+the evidence taken is the stack falling and Prayer XP rising. XP rather than
+points, because points cap out and a full bar would make a successful bury
+look like a no-op.
+
+```ts
+buryBones: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ held: number; prayerXp: number; }>
 ```
 
 ## `buyShopPurchase`
@@ -941,6 +961,19 @@ pick a real candidate that produces the missing input.
 
 ```ts
 readBlockedOpportunities: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+```
+
+## `readBoneCandidates`
+
+`function`
+
+Bones worth burying.
+
+Offered whenever any are held: there is no reason to hoard them, no recipe
+consumes them, and Prayer is otherwise untrainable.
+
+```ts
+readBoneCandidates: () => Candidate[]
 ```
 
 ## `readCharacterName`

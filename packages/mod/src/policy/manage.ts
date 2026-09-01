@@ -224,6 +224,12 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `trading ${params.quantity}x ${params.itemId} to the town for ${params.resourceId}`,
       );
 
+    case 'bury_bones':
+      return act(
+        { type: 'bury_bones', itemId: params.itemId, quantity: params.quantity },
+        `burying ${params.quantity}x ${params.itemId}`,
+      );
+
     case 'toggle_curse':
       return act({ type: 'toggle_curse', curseId: params.curseId }, `toggling ${params.curseId}`);
 
