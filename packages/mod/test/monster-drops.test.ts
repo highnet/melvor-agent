@@ -34,3 +34,25 @@ describe('monster drops the agent is short of', () => {
     expect(dropsOfInterest(['melvorD:Potato_Seeds'], new Set())).toEqual([]);
   });
 });
+
+describe('a better recipe in the skill already running', () => {
+  // An objective pins a recipe, not a skill: "pickpocket Woman until Thieving
+  // 39" keeps pickpocketing Woman for eighteen levels while Marauder unlocks at
+  // 21 and pays more. Nothing re-examined the choice once it was made, and I
+  // caught it by eye rather than the agent reporting it.
+  const notice = (runningRate: number, bestRate: number) => bestRate > runningRate * 1.1;
+
+  it('reports a clearly better option that has since unlocked', () => {
+    // Woman 6,450 xp/h against Marauder 8,585 — the live case.
+    expect(notice(6450, 8585)).toBe(true);
+  });
+
+  it('says nothing when the difference is noise', () => {
+    // A permanent notice is the same as no notice.
+    expect(notice(6450, 6800)).toBe(false);
+  });
+
+  it('says nothing when the running recipe is already the best', () => {
+    expect(notice(8585, 8585)).toBe(false);
+  });
+});

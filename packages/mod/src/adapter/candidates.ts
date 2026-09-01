@@ -693,6 +693,11 @@ export function readBlockedOpportunities(): {
   // out is how an unattended run stops without failing.
   blocked.push(...readFoodReserve());
 
+  // And a better recipe in the skill already running. An objective pins a
+  // recipe, not a skill, so the agent levels past better options without ever
+  // reconsidering — it ground Woman while Marauder unlocked and paid more.
+  blocked.push(...readBetterRecipeNotice());
+
   for (const skillId of STARTABLE_SKILL_IDS) {
     const skill = game.skills.getObjectByID(skillId);
     if (skill === undefined) continue;
@@ -886,32 +891,41 @@ function missingInputs(
  * @param activeSkillId - The skill currently occupying the action slot.
  * @param activeRecipeIds - The recipes it is running.
  */
-export function readBetterRecipeNotice(
-  candidates: readonly Candidate[],
-  activeSkillId: string | null,
-  activeRecipeIds: readonly string[],
-): { label: string; xpPerHour: number; missing: never[] }[] {
-  if (activeSkillId === null || activeRecipeIds.length === 0) return [];
+export function readBetterRecipeNotice(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  const active = game.activeAction;
+  if (active === undefined) return [];
 
-  const inSkill = candidates.filter(
-    (candidate) =>
-      candidate.kind === 'gather_resource' &&
-      (candidate.params as { skillId?: string }).skillId === activeSkillId,
+  let runningRecipeId = '';
+  try {
+    const selected = (active as { selectedRecipe?: { id?: string } }).selectedRecipe;
+    runningRecipeId = selected?.id ?? '';
+  } catch {
+    return [];
+  }
+  if (runningRecipeId === '') return [];
+
+  const inSkill = readGatherCandidates().filter(
+    (candidate) => (candidate.params as { skillId?: string }).skillId === active.id,
   );
 
-  const running = inSkill.find((candidate) =>
-    activeRecipeIds.includes(String((candidate.params as { recipeId?: unknown }).recipeId ?? '')),
+  const running = inSkill.find(
+    (candidate) => (candidate.params as { recipeId?: string }).recipeId === runningRecipeId,
   );
-  if (running === undefined) return [];
-
-  const best = inSkill.reduce((leader, candidate) =>
-    (candidate.xpPerHour ?? 0) > (leader.xpPerHour ?? 0) ? candidate : leader,
+  const best = inSkill.reduce<Candidate | null>(
+    (leader, candidate) =>
+      leader === null || (candidate.xpPerHour ?? 0) > (leader.xpPerHour ?? 0) ? candidate : leader,
+    null,
   );
+  if (running === undefined || best === null || best === running) return [];
 
   const runningRate = running.xpPerHour ?? 0;
   const bestRate = best.xpPerHour ?? 0;
   // A tenth better, so noise and rounding do not produce a permanent notice.
-  if (best === running || bestRate <= runningRate * 1.1) return [];
+  if (bestRate <= runningRate * 1.1) return [];
 
   return [
     {
