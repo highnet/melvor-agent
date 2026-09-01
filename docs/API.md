@@ -181,13 +181,18 @@ cannot be used without points, so bones left in the bank are the whole skill
 left unplayed — and combat produces them steadily whether or not anything
 uses them.
 
+**Burying grants prayer points, not Prayer XP.** Verified live: 52 bones went
+from the bank and Prayer XP stayed at 0. The XP comes later, from *spending*
+those points during combat. Requiring XP to rise made every successful bury
+report as a no-op and retry.
+
 `buryItemOnClick` returns void and silently does nothing for a non-bone, so
-the evidence taken is the stack falling and Prayer XP rising. XP rather than
-points, because points cap out and a full bar would make a successful bury
-look like a no-op.
+the evidence taken is the stack falling while points do not fall. Points are
+not required to rise, because they cap: burying into a full bar is wasteful
+but not a failure to observe.
 
 ```ts
-buryBones: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ held: number; prayerXp: number; }>
+buryBones: (itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<{ held: number; prayerPoints: number; }>
 ```
 
 ## `buyShopPurchase`
@@ -1749,20 +1754,6 @@ startDungeon: (dungeonId: string, isSuspended: () => boolean) => ActionResult<Co
 ## `startGathering`
 
 `function`
-
-Ensures a gathering skill is running on a specific recipe.
-
-Deliberately one call rather than a `select` then `start` pair. Several of
-these skills expose selection as a *UI click callback* (`onRockClick`,
-`onAreaStartButtonClick`) whose side effects are not documented — clicking may
-or may not also start the action. Sequencing two separately-verified steps
-across those would produce a real failure mode: selection succeeds, start
-reports "already active", and the caller cannot tell success from a stuck
-half-state.
-
-Making the composite the unit of verification sidesteps that entirely. The
-post-condition is what the caller actually cares about — this skill is ticking
-on this recipe — and it is observed, not inferred from any return value.
 
 ```ts
 startGathering: (skillId: string, recipeId: string, isSuspended: () => boolean) => ActionResult<GatheringProjection>

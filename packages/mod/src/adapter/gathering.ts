@@ -64,11 +64,52 @@ function isGathering(projection: GatheringProjection, recipeId: string): boolean
  * @param isSuspended - Guard against acting during offline catch-up.
  * @returns Evidence that the skill is now gathering that recipe.
  */
+/**
+ * Refuses to start production the bank cannot hold.
+ *
+ * A full bank does not stop a skill: it keeps ticking, XP keeps accruing, and
+ * every item it makes is discarded. Observed live — a minute of Runecrafting
+ * consumed the essence, earned the XP, and banked no runes at all, because a
+ * Township reward had filled the bank first.
+ *
+ * Only *new item types* are blocked. A skill topping up a stack the bank
+ * already holds is fine at any capacity, which is why this asks whether the
+ * product is already there rather than simply refusing on a full bank.
+ *
+ * @returns A reason to refuse, or null when the product has somewhere to go.
+ */
+function bankCannotHoldProduct(skillId: string, recipeId: string): string | null {
+  try {
+    // Inside the guard: a game object without a bank is a test double, and a
+    // capacity check that throws must not stop the skill from starting.
+    if (game.bank.occupiedSlots < game.bank.maximumSlots) return null;
+
+    const skill = game.skills.getObjectByID(skillId) as
+      | (AnySkill & { actions?: { getObjectByID(id: string): { product?: AnyItem } | undefined } })
+      | undefined;
+
+    const product = skill?.actions?.getObjectByID(recipeId)?.product;
+    // A recipe whose product cannot be read is allowed through: refusing on
+    // ignorance would block skills whose shape simply differs.
+    if (product === undefined) return null;
+    if (game.bank.getQty(product) > 0) return null;
+
+    return `bank is full (${game.bank.occupiedSlots}/${game.bank.maximumSlots}) and holds no ${product.name}; the skill would run and every item it made would be discarded`;
+  } catch {
+    return null;
+  }
+}
+
 export function startGathering(
   skillId: string,
   recipeId: string,
   isSuspended: () => boolean,
 ): ActionResult<GatheringProjection> {
+  const bankRefusal = bankCannotHoldProduct(skillId, recipeId);
+  if (bankRefusal !== null) {
+    return fail('gathering.start', 'precondition', bankRefusal);
+  }
+
   switch (skillId) {
     case WOODCUTTING_ID:
       return startWoodcuttingOn(recipeId, isSuspended);
