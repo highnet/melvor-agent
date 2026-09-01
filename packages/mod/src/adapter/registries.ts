@@ -44,6 +44,28 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // Farming recipes with the level that gates each one.
+    //
+    // Which seeds a character can actually plant decides how fast Farming
+    // moves, and Farming gates the Herb plot that Herblore needs. The seed
+    // dropdown lists every allotment seed with its quantity whether or not the
+    // level is met, so it cannot answer this — 32 Ancient Corn and 30 Ancient
+    // Carrot sat in the bank looking plantable while the reflex, correctly,
+    // ignored them.
+    farmingRecipes: (() => {
+      try {
+        return game.farming.actions.allObjects.map((recipe) => ({
+          id: recipe.id,
+          name: recipe.name,
+          level: recipe.level,
+          categoryId: recipe.category.id,
+          seedItemId: recipe.seedCost.item.id,
+          seedCost: recipe.seedCost.quantity,
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     // Biomes and whether they are open yet.
     //
     // The Herb-producing building is tier 1, so nothing about it is far away —

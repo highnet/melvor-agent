@@ -49,6 +49,18 @@ export const knowledgeDumpSchema = z.object({
    * NPC. With only the *nearest* locked action reported anywhere, how far away
    * that NPC sat could not be seen without grinding toward it and watching.
    */
+  /** Farming recipes, the level gating each, and what its seed costs. */
+  farmingRecipes: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      level: z.number().int().nonnegative(),
+      categoryId: z.string(),
+      seedItemId: z.string(),
+      seedCost: z.number().int().nonnegative(),
+    }),
+  ),
+
   /** Township biomes and whether the town has opened them. */
   townshipBiomes: z.array(
     z.object({
