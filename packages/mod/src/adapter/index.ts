@@ -49,6 +49,7 @@ export {
 } from './farming.js';
 export {
   eatFood,
+  readBankedFood,
   equipFood,
   equipItem,
   changeEquipmentSet,

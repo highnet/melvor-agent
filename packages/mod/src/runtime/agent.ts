@@ -41,6 +41,7 @@ import {
   readAgilityCandidates,
   readAstrologyCandidates,
   readBankPressure,
+  readBankedFood,
   readBlockedOpportunities,
   readBoneCandidates,
   readCombatGateInputs,
@@ -389,6 +390,10 @@ export class Agent {
           equippedFoodQty: slot?.qty ?? 0,
           bankQuantityOf: (itemId) =>
             snapshot.bank.items.find((entry) => entry.id === itemId)?.qty ?? 0,
+          // Any food in the bank, so an empty slot can be refilled rather than
+          // only topped up. Named by the snapshot's own item list, which is
+          // already filtered to what the character actually holds.
+          bankedFood: readBankedFood(),
         },
         (itemId, quantity) => equipFood(itemId, quantity, isSuspended),
       ),

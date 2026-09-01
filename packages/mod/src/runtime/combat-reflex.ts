@@ -44,12 +44,30 @@ export function refillFood(
     equippedFoodId: string | null;
     equippedFoodQty: number;
     bankQuantityOf: (itemId: string) => number;
+    /** Food in the bank, best first, for when the slot is empty entirely. */
+    bankedFood?: { itemId: string; quantity: number }[];
   },
   equipFood: (itemId: string, quantity: number) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  if (!state.inCombat) return null;
-  if (state.equippedFoodId === null) return null;
-  if (state.equippedFoodQty >= FOOD_TOPUP_THRESHOLD) return null;
+  // Not gated on combat: Thieving drains food too, and an empty slot is what
+  // stops the eat reflex from working at all.
+  if (state.equippedFoodQty >= FOOD_TOPUP_THRESHOLD && state.equippedFoodId !== null) {
+    return null;
+  }
+
+  // An empty slot is the case that matters most and the one this reflex used to
+  // ignore: it could only top up food already equipped. Live, Thieving emptied
+  // the slot, the eat reflex had nothing to eat, and the character fell to 32
+  // hitpoints of 120 before an operator noticed.
+  if (state.equippedFoodId === null || state.equippedFoodQty <= 0) {
+    const replacement = state.bankedFood?.find((entry) => entry.quantity > 0);
+    if (replacement === undefined) return null;
+
+    return {
+      name: 'reflex.refillFood',
+      result: equipFood(replacement.itemId, replacement.quantity),
+    };
+  }
 
   const held = state.bankQuantityOf(state.equippedFoodId);
   if (held <= 0) return null;

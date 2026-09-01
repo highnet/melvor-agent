@@ -400,3 +400,34 @@ export function readEquipmentSetCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Food held in the bank, most healing first.
+ *
+ * Exists so a reflex can refill an *empty* food slot, not merely top up what is
+ * already there. An empty slot is precisely when the eat reflex cannot act, and
+ * it is reached by ordinary play: Thieving and combat both consume food until
+ * there is none left.
+ */
+export function readBankedFood(): { itemId: string; quantity: number }[] {
+  const food: { itemId: string; quantity: number; heals: number }[] = [];
+
+  for (const entry of game.bank.items.values()) {
+    if (!(entry.item instanceof FoodItem)) continue;
+
+    try {
+      food.push({
+        itemId: entry.item.id,
+        quantity: entry.quantity,
+        heals: game.combat.player.getFoodHealing(entry.item),
+      });
+    } catch {
+      // Food whose healing cannot be read is still food; rank it last.
+      food.push({ itemId: entry.item.id, quantity: entry.quantity, heals: 0 });
+    }
+  }
+
+  return food
+    .sort((a, b) => b.heals - a.heals)
+    .map((entry) => ({ itemId: entry.itemId, quantity: entry.quantity }));
+}

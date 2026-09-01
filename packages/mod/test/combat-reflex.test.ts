@@ -43,8 +43,11 @@ describe('mid-fight reflexes', () => {
     expect(equip).not.toHaveBeenCalled();
   });
 
-  it('does nothing outside combat, where the policy tier owns the decision', () => {
-    expect(refillFood(fed({ inCombat: false }), () => ok)).toBeNull();
+  it('tops up outside combat too, because Thieving drains food as well', () => {
+    // This used to be gated on combat. Thieving damages on every failed
+    // pickpocket and eats through the same slot, so a reflex that only worked
+    // in fights left the character with nothing to eat during it.
+    expect(refillFood(fed({ inCombat: false }), () => ok)).not.toBeNull();
   });
 
   it('does not fire when the bank has no more of that food', () => {
@@ -183,5 +186,63 @@ describe('collectPendingLoot', () => {
     expect(
       collectPendingLoot({ inCombat: false, hasLootWorthTaking: true }, () => ok),
     ).not.toBeNull();
+  });
+});
+
+describe('refillFood on an empty slot', () => {
+  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
+
+  it('equips food from the bank when the slot is empty', () => {
+    // The case the reflex used to ignore, and the one that matters most: with
+    // nothing equipped the eat reflex cannot act at all. Live, Thieving emptied
+    // the slot and the character fell to 32 hitpoints of 120.
+    let equipped: string | null = null;
+
+    const outcome = refillFood(
+      {
+        inCombat: false,
+        equippedFoodId: null,
+        equippedFoodQty: 0,
+        bankQuantityOf: () => 0,
+        bankedFood: [{ itemId: 'melvorD:Shrimp', quantity: 28 }],
+      },
+      (itemId) => {
+        equipped = itemId;
+        return ok;
+      },
+    );
+
+    expect(outcome?.name).toBe('reflex.refillFood');
+    expect(equipped).toBe('melvorD:Shrimp');
+  });
+
+  it('does nothing when the bank has no food either', () => {
+    expect(
+      refillFood(
+        {
+          inCombat: false,
+          equippedFoodId: null,
+          equippedFoodQty: 0,
+          bankQuantityOf: () => 0,
+          bankedFood: [],
+        },
+        () => ok,
+      ),
+    ).toBeNull();
+  });
+
+  it('leaves a well-stocked slot alone', () => {
+    expect(
+      refillFood(
+        {
+          inCombat: true,
+          equippedFoodId: 'melvorD:Shrimp',
+          equippedFoodQty: 50,
+          bankQuantityOf: () => 100,
+          bankedFood: [{ itemId: 'melvorD:Chicken', quantity: 10 }],
+        },
+        () => ok,
+      ),
+    ).toBeNull();
   });
 });
