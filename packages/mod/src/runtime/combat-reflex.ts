@@ -99,27 +99,22 @@ export function refillFood(
     };
   }
 
-  // Upgrade before topping up. The slot could only ever be refilled with more
-  // of whatever was already in it, so a character that equipped Shrimp early
-  // kept eating Shrimp while better food sat in the bank — and with no Auto
-  // Eat, the healing per item is exactly what buys survival in Thieving and
-  // combat.
+  // No upgrade attempt here, deliberately, and the reason is worth keeping.
   //
-  // A margin rather than any improvement at all: swapping between two foods of
-  // near-equal value every tick is churn, and the slot is not free to change
-  // mid-fight.
-  const best = state.bankedFood?.[0];
-  if (
-    best !== undefined &&
-    best.itemId !== state.equippedFoodId &&
-    best.quantity > 0 &&
-    best.heals > state.equippedFoodHeals * FOOD_UPGRADE_MARGIN
-  ) {
-    return {
-      name: 'reflex.refillFood',
-      result: equipFood(best.itemId, best.quantity),
-    };
-  }
+  // A previous version of this swapped to better banked food whenever it beat
+  // what was equipped by a margin — reasonable on its face, since a character
+  // that equipped Shrimp early otherwise eats Shrimp forever. It did not work:
+  // a food slot already holding one item refuses a different one, so the call
+  // changed nothing and the reflex made it again every four seconds. The slot
+  // projection showed `Beef 8 -> Beef 8` while the bank held no Beef at all,
+  // which is what gave it away.
+  //
+  // Upgrading properly means unequipping first, which is a second action and a
+  // moment with no food equipped — during Thieving, that moment is exactly what
+  // this reflex exists to prevent. So the upgrade stays where it is safe: the
+  // empty-slot branch above already picks the best-healing food in the bank,
+  // because readBankedFood sorts by healing. A character only eats weak food
+  // until the slot next empties, and then it eats the best it has.
 
   const held = state.bankQuantityOf(state.equippedFoodId);
   if (held <= 0) return null;

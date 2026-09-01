@@ -650,39 +650,34 @@ describe('buyTrivialUpgrades', () => {
 describe('upgrading the food in the slot', () => {
   const ok = () => ({ ok: true }) as never;
 
-  // The slot could only ever be refilled with more of whatever was already in
-  // it, so a character that equipped Shrimp early kept eating Shrimp while
-  // better food sat in the bank. With no Auto Eat, healing per item is exactly
-  // what buys survival in Thieving and combat — the operator's point that
-  // progressing further needs "good hp and food".
-  const state = (equippedHeals: number, bestHeals: number) => ({
+  // This described a feature that has been removed, and the removal is the
+  // lesson. Swapping to better banked food looked right — a character that
+  // equipped Shrimp early otherwise eats Shrimp forever — but a food slot
+  // already holding one item refuses a different one, so the call changed
+  // nothing and the reflex repeated it every four seconds. `Beef 8 -> Beef 8`
+  // in the projection, with no Beef in the bank at all.
+  const occupied = {
     inCombat: false,
-    equippedFoodId: 'melvorD:Shrimp',
-    equippedFoodQty: 3,
-    equippedFoodHeals: equippedHeals,
-    bankQuantityOf: () => 50,
-    bankedFood: [{ itemId: 'melvorD:Seahorse', quantity: 40, heals: bestHeals }],
+    equippedFoodId: 'melvorD:Beef',
+    equippedFoodQty: 8,
+    equippedFoodHeals: 3,
+    bankQuantityOf: () => 0,
+    bankedFood: [{ itemId: 'melvorD:Seahorse', quantity: 40, heals: 30 }],
+  };
+
+  it('does not try to swap food into an occupied slot', () => {
+    expect(refillFood(occupied, () => ok())).toBeNull();
   });
 
-  it('swaps to clearly better food rather than topping up the weak one', () => {
+  it('still picks the best food when the slot is empty', () => {
+    // Where the upgrade genuinely belongs: readBankedFood sorts by healing, so
+    // an empty slot always gets the best available.
     const equipped: string[] = [];
-    refillFood(state(3, 30), (itemId) => {
+    refillFood({ ...occupied, equippedFoodId: null, equippedFoodQty: 0 }, (itemId) => {
       equipped.push(itemId);
       return ok();
     });
 
     expect(equipped).toEqual(['melvorD:Seahorse']);
-  });
-
-  it('does not trade places between near-equal foods', () => {
-    // Churn in the slot is worse than eating slightly weaker food, and the slot
-    // is not free to change mid-fight.
-    const equipped: string[] = [];
-    refillFood(state(20, 22), (itemId) => {
-      equipped.push(itemId);
-      return ok();
-    });
-
-    expect(equipped).toEqual(['melvorD:Shrimp']);
   });
 });
