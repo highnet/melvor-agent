@@ -54,7 +54,24 @@ export class SettingsStore {
 
     // Merge over defaults so a setting added in a later build is not read as
     // undefined against an older stored object.
-    return { ...this.defaults, ...cached, ...(remote as Partial<AgentSettings>) };
+    const merged = { ...this.defaults, ...cached, ...(remote as Partial<AgentSettings>) };
+
+    // The allowlist is the one setting where "empty" is never a deliberate
+    // instruction — it is what an unwritten store looks like. Letting an empty
+    // side win means a single failed fetch disarms the agent permanently, which
+    // is what happened: the service had no allowlist, the mod adopted it, and
+    // arming refused ever after with no way back except the panel.
+    //
+    // So a populated list always beats an empty one, whichever side holds it.
+    if (merged.characterAllowlist.length === 0 && cached.characterAllowlist.length > 0) {
+      merged.characterAllowlist = cached.characterAllowlist;
+      this.log.warn(
+        'runtime',
+        'the service returned an empty character allowlist; keeping the local one rather than disarming',
+      );
+    }
+
+    return merged;
   }
 
   /**
