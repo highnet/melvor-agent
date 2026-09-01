@@ -130,6 +130,11 @@ export function increaseTownHealth(
       precondition: () => {
         if (!township.townData.townCreated) return 'the town has not been created yet';
         if (township.townData.healthPercent >= 100) return 'town health is already full';
+        // Refused with a reason rather than performed as a silent no-op: the
+        // game only accepts herbs or potions here.
+        if (!HEALTH_RESOURCE_IDS.includes(resourceId)) {
+          return `town health can only be restored with Herbs or Potions, not ${resourceId}`;
+        }
         const cost = township.getIncreaseHealthCost(resource);
         if (resource.amount < cost) {
           return `needs ${cost} ${resourceId}, town has ${resource.amount}`;
@@ -143,6 +148,22 @@ export function increaseTownHealth(
   );
 }
 
+/**
+ * The only resources the game will accept for town health.
+ *
+ * `increaseHealthOptions` is documented as "the quantities that health may be
+ * increased by using herbs/potions", and that is literal: passing Food, Wood,
+ * Stone or Ore makes `increaseHealth` a no-op. The reader offered all of them
+ * because `getIncreaseHealthCost` returns a number for any resource, so seven
+ * impossible candidates sat on the list and each one burned five retries before
+ * the failure limit gave up on it.
+ *
+ * Ids as literals because `TownshipResourceTypeID` is an ambient const enum,
+ * which cannot be referenced under `verbatimModuleSyntax` — the same constraint
+ * as the realm ids.
+ */
+const HEALTH_RESOURCE_IDS = ['melvorF:Herbs', 'melvorF:Potions'];
+
 /** Town health worth restoring, when the town can pay for it. */
 export function readTownHealthCandidates(): Candidate[] {
   const township = game.township;
@@ -153,6 +174,7 @@ export function readTownHealthCandidates(): Candidate[] {
 
   for (const resource of township.resources.allObjects) {
     try {
+      if (!HEALTH_RESOURCE_IDS.includes(resource.id)) continue;
       const cost = township.getIncreaseHealthCost(resource);
       if (cost <= 0 || resource.amount < cost) continue;
 
