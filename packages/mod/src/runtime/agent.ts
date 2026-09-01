@@ -167,6 +167,14 @@ import type { Transport } from './transport.js';
 const POLICY_INTERVAL_MS = 3000;
 /** Minimum gap between reflex passes, throttling the per-tick hook. */
 const REFLEX_THROTTLE_MS = 1000;
+/**
+ * How long a reflex stays quiet after a call that changed nothing.
+ *
+ * Long enough that an unchanging refusal is a line a minute rather than one a
+ * second, short enough that a genuinely stuck agent still says so while anyone
+ * is reading. The reflex keeps running; only the complaining pauses.
+ */
+const REFLEX_BACKOFF_MS = 60_000;
 /** How often a quality sample is taken for the progress-per-hour metric. */
 const QUALITY_SAMPLE_INTERVAL_MS = 60_000;
 /** Flat progress for this long with automation on means we are stuck. */
@@ -286,6 +294,12 @@ export class Agent {
   private objectiveStartedAt = Date.now();
   private deathsSinceStart = 0;
   private quality: QualitySample[] = [];
+  /**
+   * When a reflex that changed nothing may complain again, keyed by name and
+   * detail. See runReflexes: an unchanging refusal repeated every tick is how a
+   * real warning gets buried.
+   */
+  private readonly reflexBackoff = new Map<string, number>();
   private lastProgressAt = Date.now();
   private lastProgressMarker = -1;
   private replanPending: string | null = null;
@@ -694,10 +708,31 @@ export class Agent {
     for (const outcome of outcomes) {
       if (outcome === null) continue;
       if (outcome.result.ok) {
+        this.reflexBackoff.delete(outcome.name);
         this.log.info('reflex', `${outcome.name} fired`);
-      } else {
-        this.log.warn('reflex', `${outcome.name}: ${outcome.result.detail}`);
+        continue;
       }
+
+      // A reflex whose call changed nothing will be handed the same state next
+      // tick and make the same call, forever. Seen twice today: refillFood
+      // topping up a slot that would not grow, once a second for hours, and
+      // again at four-second intervals with eight Beef equipped. Nothing was
+      // ever done wrong — every attempt was refused by a precondition — but the
+      // noise buried the one warning that mattered, which was Thieving refusing
+      // to release the action slot.
+      //
+      // Backing off is not a fix for the underlying refusal; it is a refusal to
+      // shout about it. The reflex resumes as soon as anything changes, because
+      // success clears the entry and the detail is part of the key.
+      if (outcome.result.reason === 'no_state_change') {
+        const key = `${outcome.name}:${outcome.result.detail}`;
+        const until = this.reflexBackoff.get(key) ?? 0;
+        const now = Date.now();
+        if (now < until) continue;
+        this.reflexBackoff.set(key, now + REFLEX_BACKOFF_MS);
+      }
+
+      this.log.warn('reflex', `${outcome.name}: ${outcome.result.detail}`);
     }
   }
 
