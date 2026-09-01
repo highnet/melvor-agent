@@ -440,19 +440,30 @@ function fishingCandidates(): Candidate[] {
  * @returns One candidate per sellable stack, most valuable first.
  */
 export function readSellCandidates(): Candidate[] {
-  return [...game.bank.items.values()]
-    .filter((entry) => !game.bank.lockedItems.has(entry.item))
-    .filter((entry) => gpValue(entry.item) > 0)
-    .map((entry) => ({
-      kind: 'sell_items' as const,
-      params: { kind: 'sell_items' as const, itemId: entry.item.id, keepQuantity: 0 },
-      label: `Sell ${entry.quantity}x ${entry.item.name}`,
-      // Not a rate: this is the one-off value of clearing the stack. Left off
-      // gpPerHour deliberately, since a sale has no duration to divide by.
-      gpPerHour: 0,
-      available: true as const,
-    }))
-    .sort((a, b) => b.label.localeCompare(a.label));
+  return (
+    [...game.bank.items.values()]
+      .filter((entry) => !game.bank.lockedItems.has(entry.item))
+      .filter((entry) => gpValue(entry.item) > 0)
+      .map((entry) => ({
+        kind: 'sell_items' as const,
+        params: { kind: 'sell_items' as const, itemId: entry.item.id, keepQuantity: 0 },
+        label: `Sell ${entry.quantity}x ${entry.item.name}`,
+        // Not a rate: this is the one-off value of clearing the stack. Left off
+        // gpPerHour deliberately, since a sale has no duration to divide by.
+        gpPerHour: 0,
+        available: true as const,
+      }))
+      // Sorted by item id, which does not change, rather than by the label —
+      // the label embeds the quantity, so "23x Raw Herring" becoming "29x"
+      // re-sorted the entire list and every index after it moved.
+      //
+      // That made multi-step plans race the agent's own gathering: build a plan
+      // from a listing, and by the time it is submitted the stacks have grown and
+      // the indices point at different items. The drift guard caught each one, so
+      // nothing wrong was ever done — but four plans in a row were refused, which
+      // is a planner unable to plan.
+      .sort((a, b) => a.params.itemId.localeCompare(b.params.itemId))
+  );
 }
 
 /** How many of a repeatable consumable to buy at once. */

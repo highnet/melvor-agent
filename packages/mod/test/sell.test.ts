@@ -193,3 +193,53 @@ describe('sellItems policy', () => {
     expect(sellItems(context({ snapshot: rich }))).toMatchObject({ kind: 'complete' });
   });
 });
+
+describe('sell candidate ordering', () => {
+  it('orders by a key that does not move when stacks grow', () => {
+    // The list was sorted by label, and a label embeds the quantity — so a
+    // stack going from 23 to 29 re-sorted everything after it and every index
+    // shifted. Plans built from a listing then raced the agent's own
+    // gathering: four in a row were refused by the drift guard, which is a
+    // planner that cannot plan.
+    //
+    // Sorting by item id is stable under exactly that change.
+    const entries = [
+      { itemId: 'melvorD:Raw_Herring', quantity: 23 },
+      { itemId: 'melvorD:Coal_Ore', quantity: 9 },
+      { itemId: 'melvorD:Teak_Logs', quantity: 31 },
+    ];
+
+    const order = (rows: typeof entries) =>
+      [...rows].sort((a, b) => a.itemId.localeCompare(b.itemId)).map((row) => row.itemId);
+
+    const before = order(entries);
+    const after = order(entries.map((row) => ({ ...row, quantity: row.quantity + 6 })));
+
+    expect(after).toEqual(before);
+  });
+
+  it('would have reordered under the old label sort', () => {
+    // Proves the bug was real rather than theoretical. The old sort compared
+    // labels as strings, so the quantity was compared digit by digit: "4x"
+    // sorts above "32x" because '4' > '3'. A stack shrinking from 31 to 4 —
+    // an ordinary sale — moved it past everything in the thirties, and every
+    // index after it shifted.
+    const label = (id: string, qty: number) => `Sell ${qty}x ${id}`;
+    const byLabel = (rows: { id: string; qty: number }[]) =>
+      [...rows]
+        .sort((a, b) => label(b.id, b.qty).localeCompare(label(a.id, a.qty)))
+        .map((row) => row.id);
+
+    const before = byLabel([
+      { id: 'Ancient Corn Seeds', qty: 32 },
+      { id: 'Teak Logs', qty: 31 },
+    ]);
+    const after = byLabel([
+      { id: 'Ancient Corn Seeds', qty: 32 },
+      { id: 'Teak Logs', qty: 4 },
+    ]);
+
+    expect(before).toEqual(['Ancient Corn Seeds', 'Teak Logs']);
+    expect(after).toEqual(['Teak Logs', 'Ancient Corn Seeds']);
+  });
+});
