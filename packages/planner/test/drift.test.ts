@@ -55,3 +55,31 @@ describe('the drift guard', () => {
     expect(resolved).toEqual({ index: 0, moved: false });
   });
 });
+
+describe('an unverifiable index', () => {
+  it('refuses when nothing was listed, instead of acting blindly', () => {
+    // The hole this closes. Saving any planner file reloads the service and
+    // empties the remembered listing; the guard then had nothing to compare
+    // against and fell through to acting on the raw index. Twice in a row that
+    // resolved a chosen fight to a different monster entirely — once a Seagull,
+    // once the Lair of the Spider Queen — while the guard appeared to be on.
+    const store = new Store('.');
+
+    const resolved = store.resolveChoice(3, [
+      candidate('fight', 'Golbin'),
+      candidate('fight', 'Seagull'),
+      candidate('fight', 'Cow'),
+      candidate('fight', 'Spider'),
+    ]);
+
+    expect(resolved).toHaveProperty('error');
+    expect((resolved as { error: string }).error).toMatch(/no candidate listing is remembered/);
+  });
+
+  it('works normally once a listing has been recorded', () => {
+    const shown = [candidate('fight', 'Golbin')];
+    const store = storeShowing(shown);
+
+    expect(store.resolveChoice(0, shown)).toEqual({ index: 0, moved: false });
+  });
+});

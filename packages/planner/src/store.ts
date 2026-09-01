@@ -105,9 +105,24 @@ export class Store {
   ): { index: number; moved: boolean } | { error: string } {
     const shown = this.lastShownCandidates[index];
     const atIndex = current[index];
-    // Nothing remembered, or nothing there: the caller's own range check owns
-    // this case.
-    if (shown === undefined || atIndex === undefined) return { index, moved: false };
+    if (atIndex === undefined) return { index, moved: false };
+
+    // Nothing remembered for this index means there is nothing to check
+    // against, and an unverified index is precisely the thing this guard
+    // exists to refuse. The old behaviour was to fall through and act on it.
+    //
+    // That is not a hypothetical. Saving any planner file reloads the service
+    // and empties this memory, so every save silently disarmed the guard while
+    // leaving it apparently in place — and twice in a row a chosen index was
+    // resolved to a completely different fight, once to a Seagull and once to
+    // the Lair of the Spider Queen. The reply named what it had queued, which
+    // is the only reason it was caught at all.
+    if (shown === undefined) {
+      return {
+        error: `no candidate listing is remembered for index ${index} — the planner service restarts with an empty memory, so an index from before a restart cannot be verified. Call list_candidates first`,
+      };
+    }
+
     if (shown.key === identityOf(atIndex)) return { index, moved: false };
 
     const relocated = current.findIndex((candidate) => identityOf(candidate) === shown.key);
@@ -116,6 +131,18 @@ export class Store {
     return {
       error: `candidate ${index} was "${shown.label}" when you listed it, and that choice is no longer available at all (position ${index} now holds "${atIndex.label}")`,
     };
+  }
+
+  /**
+   * The label this index carried when it was last listed.
+   *
+   * Exists so a reply can name what was asked for alongside what was queued.
+   * A resolution that silently disagrees with the caller's intent is the one
+   * failure this whole mechanism is meant to make impossible, and it can only
+   * be caught if both halves are visible in the same sentence.
+   */
+  shownLabel(index: number): string | null {
+    return this.lastShownCandidates[index]?.label ?? null;
   }
 
   /** Queues a command for the next report. */
