@@ -354,7 +354,20 @@ export function stopGathering(
       observe: skill.project,
       precondition: () => {
         if (!skill.instance.isActive) return `${skillId} is not active`;
-        if (!skill.instance.canStop) return `${skillId} reports it cannot stop right now`;
+        // Transient, not a refusal. Thieving cannot stop while the character is
+        // stunned from a failed pickpocket, which lasts seconds — but it was
+        // reported as a plain precondition, so the policy tier abandoned the
+        // objective outright.
+        //
+        // That cost a whole Magic objective. The plan was food, then Magic,
+        // then Thieving; Thieving happened to be running, refused to release
+        // the action slot for the length of one stun, and the Magic step was
+        // moved to the back of the plan and never came round again. The agent
+        // looked like it had silently skipped a step, and the third combat
+        // objective in a row appeared to fail for reasons of its own.
+        if (!skill.instance.canStop) {
+          return { wait: `${skillId} cannot stop yet — it is mid-action or stunned` };
+        }
         return null;
       },
       perform: () => skill.instance.stop(),

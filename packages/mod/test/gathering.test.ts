@@ -309,13 +309,23 @@ describe('stopGathering', () => {
     }
   });
 
-  it('refuses when the skill reports it cannot stop', () => {
+  it('waits, rather than refusing, when the skill cannot stop yet', () => {
+    // This test previously asserted 'precondition', which is what the adapter
+    // returned and what the policy tier treats as "give up on this objective".
+    // The premise was wrong: "cannot stop" is a moment, not a verdict —
+    // mid-action, or stunned from a failed pickpocket, which lasts seconds.
+    //
+    // It cost a whole Magic objective. A plan of food, then Magic, then
+    // Thieving hit one stun while Thieving held the action slot; the Magic step
+    // was moved to the back of the plan and never came round again. From
+    // outside it read as the third combat objective in a row failing on its own
+    // merits, which sent me looking at spells, runes and gear instead.
     startGathering(WOODCUTTING, TREE.id, never);
     woodcutting.canStop = false;
     const result = stopGathering(WOODCUTTING, never);
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.reason).toBe('precondition');
+    expect(result.reason).toBe('not_yet');
     expect(woodcutting.isActive).toBe(true);
   });
 });

@@ -206,7 +206,13 @@ export function stopArtisan(
       observe: () => project(skill),
       precondition: () => {
         if (!skill.isActive) return `${skillId} is not active`;
-        if (!skill.canStop) return `${skillId} reports it cannot stop right now`;
+        // A wait, not a refusal — see the same check in the gathering adapter.
+        // "Cannot stop" is a moment (mid-action, or stunned), and reporting it
+        // as a precondition made the policy tier abandon whatever was queued
+        // behind it.
+        if (!skill.canStop) {
+          return { wait: `${skillId} cannot stop yet — it is mid-action or stunned` };
+        }
         return null;
       },
       perform: () => skill.stop(),
