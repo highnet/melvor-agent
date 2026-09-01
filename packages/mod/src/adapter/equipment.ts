@@ -353,3 +353,38 @@ export function eatFood(
     isSuspended,
   );
 }
+
+/**
+ * Equipment sets worth switching to.
+ *
+ * Only offered when another set actually holds something: an empty set is a
+ * worse version of the current one, and switching to it would strip the
+ * character mid-run. Most characters have one populated set, so this is
+ * usually silent — which is correct, not a gap.
+ */
+export function readEquipmentSetCandidates(): Candidate[] {
+  const player = game.combat.player;
+  const candidates: Candidate[] = [];
+
+  player.equipmentSets.forEach((set, index) => {
+    try {
+      if (index === player.selectedEquipmentSet) return;
+
+      const equipped = set.equipment.equippedArray.filter(
+        (slot) => slot.item !== slot.emptyItem,
+      ).length;
+      if (equipped === 0) return;
+
+      candidates.push({
+        kind: 'change_equipment_set',
+        params: { kind: 'change_equipment_set', setIndex: index },
+        label: `Switch to equipment set ${index + 1} (${equipped} item(s) equipped)`,
+        available: true,
+      });
+    } catch {
+      // A set that cannot be inspected is not a candidate.
+    }
+  });
+
+  return candidates;
+}

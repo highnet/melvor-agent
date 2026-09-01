@@ -346,3 +346,79 @@ export function readSlayerCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Prayers worth turning on, and potions worth drinking.
+ *
+ * Both existed as capabilities that nothing offered. The character finished the
+ * day with 506 prayer points and no way for the planner to spend them, which is
+ * the same shape as bones sitting in the bank before burying existed.
+ *
+ * Prayers are only offered when there are points to pay for them and a fight to
+ * spend them on: an active prayer drains points whether or not anything is
+ * being fought, and points cost bones.
+ */
+export function readCombatSetupCandidates(): Candidate[] {
+  const player = game.combat.player;
+  const candidates: Candidate[] = [];
+
+  if (player.prayerPoints > 0) {
+    for (const prayer of game.prayers.allObjects) {
+      try {
+        if (player.activePrayers.has(prayer)) continue;
+        if (isRefusedRealm(prayer.realm.id)) continue;
+        // ActivePrayer has no requirements array; it gates on Prayer level.
+        const prayerLevel = game.skills.getObjectByID('melvorD:Prayer')?.level ?? 1;
+        if (prayer.level > prayerLevel) continue;
+
+        candidates.push({
+          kind: 'toggle_prayer',
+          params: { kind: 'toggle_prayer', prayerId: prayer.id },
+          label: `Activate ${prayer.name} — ${player.prayerPoints} prayer points held, and points drain only while it is on`,
+          available: true,
+        });
+      } catch {
+        // A prayer that cannot state its requirements is not a candidate.
+      }
+    }
+  }
+
+  for (const potion of game.items.potions.allObjects) {
+    try {
+      if (game.bank.getQty(potion) <= 0) continue;
+
+      candidates.push({
+        kind: 'use_potion',
+        params: { kind: 'use_potion', itemId: potion.id },
+        label: `Drink ${potion.name} — ${game.bank.getQty(potion)} held, and a potion left in the bank does nothing`,
+        available: true,
+      });
+    } catch {
+      // A potion that cannot be counted is not a candidate.
+    }
+  }
+
+  // Attack styles decide which combat skill receives the XP, so leaving the
+  // default silently funnels everything into one. Offered only out of combat,
+  // which is also the only time the game allows the change.
+  if (!game.combat.isActive) {
+    const current = player.attackStyle?.id;
+    for (const style of game.attackStyles.allObjects) {
+      try {
+        if (style.id === current) continue;
+        if (style.attackType !== 'melee') continue;
+
+        candidates.push({
+          kind: 'set_attack_style',
+          params: { kind: 'set_attack_style', attackTypeId: 'melee', styleId: style.id },
+          label: `Fight with ${style.name} — decides which combat skill the XP goes to`,
+          available: true,
+        });
+      } catch {
+        // A style that cannot describe itself is not a candidate.
+      }
+    }
+  }
+
+  return candidates;
+}

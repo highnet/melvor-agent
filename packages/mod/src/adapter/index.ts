@@ -41,6 +41,7 @@ export {
   compostFarmPlot,
   harvestFarmPlot,
   readCompostCandidates,
+  readFarmCandidates,
   plantFarmPlot,
   readFarmPlots,
   readPlantableSeeds,
@@ -52,12 +53,14 @@ export {
   equipItem,
   changeEquipmentSet,
   readEquipCandidates,
+  readEquipmentSetCandidates,
   readSynergyCandidates,
   type EquipProjection,
 } from './equipment.js';
 export {
   newSlayerTask,
   readMasteryCandidates,
+  readCombatSetupCandidates,
   readSlayerCandidates,
   setAttackStyle,
   spendMasteryPool,

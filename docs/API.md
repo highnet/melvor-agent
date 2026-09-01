@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-149 exports.
+152 exports.
 
 ## `act`
 
@@ -999,6 +999,24 @@ readCharacterName: () => string
 readCombatGateInputs: (targetId: string, intendedSessionMinutes: number) => { ok: true; inputs: CombatGateInputs; } | { ok: false; detail: string; }
 ```
 
+## `readCombatSetupCandidates`
+
+`function`
+
+Prayers worth turning on, and potions worth drinking.
+
+Both existed as capabilities that nothing offered. The character finished the
+day with 506 prayer points and no way for the planner to spend them, which is
+the same shape as bones sitting in the bank before burying existed.
+
+Prayers are only offered when there are points to pay for them and a fight to
+spend them on: an active prayer drains points whether or not anything is
+being fought, and points cost bones.
+
+```ts
+readCombatSetupCandidates: () => Candidate[]
+```
+
 ## `readCombatTargets`
 
 `function`
@@ -1083,6 +1101,21 @@ and combat outright.
 readEquipCandidates: () => Candidate[]
 ```
 
+## `readEquipmentSetCandidates`
+
+`function`
+
+Equipment sets worth switching to.
+
+Only offered when another set actually holds something: an empty set is a
+worse version of the current one, and switching to it would strip the
+character mid-run. Most characters have one populated set, so this is
+usually silent — which is correct, not a gap.
+
+```ts
+readEquipmentSetCandidates: () => Candidate[]
+```
+
 ## `readEventCandidates`
 
 `function`
@@ -1108,6 +1141,24 @@ list of hexes would be worse than no list.
 
 ```ts
 readExplorationCandidates: () => Candidate[]
+```
+
+## `readFarmCandidates`
+
+`function`
+
+Farming work that is ready now.
+
+Farming is the clearest "transitions, not uptime" skill in the game: a plot
+is planted, ignored for twenty minutes, and then must be harvested and
+replanted or it simply sits there. The capability existed and nothing offered
+it, so the agent grew nothing all day.
+
+Grown and dead plots come first — a dead plot is a wasted cycle either way,
+and clearing it is what allows the next planting.
+
+```ts
+readFarmCandidates: () => Candidate[]
 ```
 
 ## `readFarmPlots`

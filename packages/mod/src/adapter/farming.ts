@@ -291,3 +291,50 @@ export function readCompostCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Farming work that is ready now.
+ *
+ * Farming is the clearest "transitions, not uptime" skill in the game: a plot
+ * is planted, ignored for twenty minutes, and then must be harvested and
+ * replanted or it simply sits there. The capability existed and nothing offered
+ * it, so the agent grew nothing all day.
+ *
+ * Grown and dead plots come first — a dead plot is a wasted cycle either way,
+ * and clearing it is what allows the next planting.
+ */
+export function readFarmCandidates(): Candidate[] {
+  const candidates: Candidate[] = [];
+
+  let plots: FarmPlotState[];
+  try {
+    plots = readFarmPlots();
+  } catch {
+    return [];
+  }
+
+  const ready = plots.filter((plot) => plot.state === 'grown' || plot.state === 'dead');
+  if (ready.length > 0) {
+    candidates.push({
+      kind: 'tend_farm',
+      params: { kind: 'tend_farm' },
+      label: `Tend the farm — ${ready.length} plot(s) ready to harvest or clear, and a plot left standing grows nothing`,
+      available: true,
+    });
+    return candidates;
+  }
+
+  const empty = plots.filter((plot) => plot.state === 'empty');
+  if (empty.length === 0) return [];
+
+  for (const seed of readPlantableSeeds().slice(0, 3)) {
+    candidates.push({
+      kind: 'tend_farm',
+      params: { kind: 'tend_farm', seedRecipeId: seed.recipeId },
+      label: `Plant ${seed.name} in ${empty.length} empty plot(s) — ${seed.seedsHeld} seeds held`,
+      available: true,
+    });
+  }
+
+  return candidates;
+}
