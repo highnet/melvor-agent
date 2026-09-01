@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-141 exports.
+142 exports.
 
 ## `act`
 
@@ -1310,6 +1310,26 @@ blocks the next task from arriving, so it costs more than its own reward.
 
 ```ts
 readTaskCandidates: () => Candidate[]
+```
+
+## `readTaskOpportunities`
+
+`function`
+
+What the unfinished Township tasks are asking for.
+
+Claiming finished tasks is only half of playing them. The tasks are also the
+game's own advice about what to do next: they pay GP, items and Township XP
+for spreading across skills — "earn 5,000 Fishing XP", "defeat 25 Chickens",
+"give 25 Beef to your town" — which is exactly the breadth a single-skill
+grinder never develops.
+
+Without this the agent could only ever notice a task after it had accidentally
+completed one. Reported as opportunities rather than candidates because a
+task is not an action: it is a reason to choose among the actions there are.
+
+```ts
+readTaskOpportunities: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readTotalLevel`

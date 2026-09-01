@@ -585,3 +585,74 @@ function describeModifiers(modifiers: readonly ModifierValue[]): string[] {
 
   return described;
 }
+
+/** How many unfinished tasks to describe. Enough to plan around, not a dump. */
+const TASK_OPPORTUNITY_LIMIT = 6;
+
+/**
+ * What the unfinished Township tasks are asking for.
+ *
+ * Claiming finished tasks is only half of playing them. The tasks are also the
+ * game's own advice about what to do next: they pay GP, items and Township XP
+ * for spreading across skills — "earn 5,000 Fishing XP", "defeat 25 Chickens",
+ * "give 25 Beef to your town" — which is exactly the breadth a single-skill
+ * grinder never develops.
+ *
+ * Without this the agent could only ever notice a task after it had accidentally
+ * completed one. Reported as opportunities rather than candidates because a
+ * task is not an action: it is a reason to choose among the actions there are.
+ */
+export function readTaskOpportunities(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  const township = game.township;
+  if (!township.townData.townCreated) return [];
+
+  const opportunities: ReturnType<typeof readTaskOpportunities> = [];
+
+  for (const task of township.tasks.tasks.allObjects) {
+    if (opportunities.length >= TASK_OPPORTUNITY_LIMIT) break;
+
+    try {
+      if (township.tasks.completedTasks.has(task)) continue;
+      if (task.goals.checkIfMet()) continue;
+
+      const unmet = task.goals.allGoals
+        .filter((goal) => !goal.checkIfMet())
+        .map((goal) => describeGoal(goal));
+
+      if (unmet.length === 0) continue;
+
+      opportunities.push({
+        label: `Township task ${task.name} wants: ${unmet.join(', ')} — pays GP, items and Township XP`,
+        xpPerHour: 0,
+        missing: [],
+      });
+    } catch {
+      // A task that cannot describe itself is not an opportunity.
+    }
+  }
+
+  return opportunities;
+}
+
+/**
+ * One goal, in plain words.
+ *
+ * `getDescriptionHTML` is the game's own text and covers every goal type, so it
+ * is used rather than re-deriving descriptions per subclass — but it is HTML
+ * aimed at a browser, and the planner reads text.
+ */
+function describeGoal(goal: { getDescriptionHTML(): string }): string {
+  try {
+    return goal
+      .getDescriptionHTML()
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  } catch {
+    return 'an unreadable goal';
+  }
+}

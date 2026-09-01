@@ -62,6 +62,7 @@ import {
   readSpellCandidates,
   readSynergyCandidates,
   readTaskCandidates,
+  readTaskOpportunities,
   readTownHealthCandidates,
   readTownshipCandidates,
   readTraderCandidates,
@@ -1086,7 +1087,12 @@ export class Agent {
    */
   private safeBlocked(): ReturnType<typeof readBlockedOpportunities> {
     try {
-      return [...readBankPressure(), ...readBlockedOpportunities(), ...this.blockedCombat()];
+      return [
+        ...readBankPressure(),
+        ...readTaskOpportunities(),
+        ...readBlockedOpportunities(),
+        ...this.blockedCombat(),
+      ];
     } catch {
       return [];
     }

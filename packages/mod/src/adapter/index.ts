@@ -93,6 +93,7 @@ export {
   claimCasualTask,
   claimTownshipTask,
   readTaskCandidates,
+  readTaskOpportunities,
   readTownshipCandidates,
   readWorshipCandidates,
   selectTownshipWorship,
