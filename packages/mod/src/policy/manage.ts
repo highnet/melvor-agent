@@ -219,6 +219,17 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         'answering the event passive choice',
       );
 
+    case 'convert_from_township':
+      return act(
+        {
+          type: 'convert_from_township',
+          resourceId: params.resourceId,
+          itemId: params.itemId,
+          quantity: params.quantity,
+        },
+        `trading ${params.resourceId} to the bank for ${params.quantity}x ${params.itemId}`,
+      );
+
     case 'convert_to_township':
       return act(
         {

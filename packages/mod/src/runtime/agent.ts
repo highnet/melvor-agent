@@ -25,6 +25,7 @@ import {
   collectLoot,
   compostFarmPlot,
   convertItemToTownship,
+  convertTownshipToItem,
   disengageCombat,
   dumpRegistries,
   eatFood,
@@ -82,6 +83,7 @@ import {
   readTaskOpportunities,
   readTownHealthCandidates,
   readTownshipCandidates,
+  readTownshipGoodsCandidates,
   readTraderCandidates,
   readTravelCandidates,
   readUpgradeCandidates,
@@ -1061,6 +1063,13 @@ export class Agent {
         return startCombatEvent(action.eventId, isSuspended);
       case 'choose_event_passive':
         return chooseEventPassive(action.passiveId, isSuspended);
+      case 'convert_from_township':
+        return convertTownshipToItem(
+          action.resourceId,
+          action.itemId,
+          action.quantity,
+          isSuspended,
+        );
       case 'convert_to_township':
         return convertItemToTownship(
           action.itemId,
@@ -1329,6 +1338,7 @@ export class Agent {
       ['slayer', readSlayerCandidates],
       ['farm', readFarmCandidates],
       ['travel', readTravelCandidates],
+      ['townGoods', readTownshipGoodsCandidates],
       ['combat setup', readCombatSetupCandidates],
       ['equipment sets', readEquipmentSetCandidates],
       ['spell', readSpellCandidates],

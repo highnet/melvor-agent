@@ -64,6 +64,7 @@ export type PolicyAction =
   | { type: 'start_combat_event'; eventId: string }
   | { type: 'choose_event_passive'; passiveId?: string }
   | { type: 'convert_to_township'; itemId: string; resourceId: string; quantity: number }
+  | { type: 'convert_from_township'; resourceId: string; itemId: string; quantity: number }
   | { type: 'bury_bones'; itemId: string; quantity: number }
   | { type: 'open_item'; itemId: string; quantity: number }
   | { type: 'toggle_curse'; curseId: string }

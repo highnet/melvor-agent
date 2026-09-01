@@ -52,6 +52,7 @@ export const objectiveKindSchema = z.enum([
   'start_combat_event',
   'choose_event_passive',
   'convert_to_township',
+  'convert_from_township',
   'bury_bones',
   'open_item',
 ]);
@@ -278,6 +279,19 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('convert_to_township'),
     itemId: gameIdSchema,
     resourceId: gameIdSchema,
+    quantity: z.number().int().positive(),
+  }),
+  z.object({
+    /**
+     * Town resources back into bank items.
+     *
+     * For goods the town alone can make — Herb Boxes above all, which carry
+     * the herbs Herblore needs and which no skill the character has can
+     * otherwise produce.
+     */
+    kind: z.literal('convert_from_township'),
+    resourceId: gameIdSchema,
+    itemId: gameIdSchema,
     quantity: z.number().int().positive(),
   }),
   z.object({

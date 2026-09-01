@@ -109,9 +109,12 @@ export function convertItemToTownship(
 /**
  * Trades the town's resources back for items.
  *
- * The reverse direction is rarely the right move — the town needs its resources
- * far more than the bank needs another log — so it exists for completeness and
- * is not offered as a candidate. A planner that wants it can ask.
+ * Long treated as rarely worth doing — the town needs its resources more than
+ * the bank needs another log — and so left unoffered. That reasoning holds for
+ * logs and fails badly for anything the town alone can make: `Herbs → Herb Box`
+ * yields finished herbs, which is Herblore's input and the only route to it
+ * that does not run through Farming. A capability nothing offers is a
+ * capability that does not exist, which is how Herblore stayed unreachable.
  */
 export function convertTownshipToItem(
   resourceId: string,
@@ -212,6 +215,52 @@ export function readTraderCandidates(): Candidate[] {
             quantity: held,
           },
           label: `Trade ${held}x ${item.name} to the town for ${resource.name} (town has ${Math.round(resource.amount)}) — a town with no resources can build nothing`,
+          available: true,
+        });
+      }
+    } catch {
+      // A resource that cannot report its conversions is not a candidate.
+    }
+  }
+
+  return candidates;
+}
+
+/** The town must hold at least this much before anything is traded away. */
+const TRADE_BACK_SURPLUS = 200;
+
+/**
+ * Goods only the town can make.
+ *
+ * Offered from a surplus, never from a town that needs the resource itself, and
+ * only for items the bank does not already hold a pile of. The point is the
+ * things with no other source — Herb Boxes above all, which carry the herbs
+ * Herblore needs and which no skill the character has can otherwise produce.
+ */
+export function readTownshipGoodsCandidates(): Candidate[] {
+  const township = game.township;
+  if (!township.townData.townCreated) return [];
+
+  const candidates: Candidate[] = [];
+
+  for (const resource of township.resources.allObjects) {
+    try {
+      if (resource.amount < TRADE_BACK_SURPLUS) continue;
+
+      for (const conversion of township.getResourceItemConversionsFromTownship(resource)) {
+        const item = conversion.item;
+        // A stack already held is not the bottleneck this exists to clear.
+        if (game.bank.getQty(item) > 0) continue;
+
+        candidates.push({
+          kind: 'convert_from_township',
+          params: {
+            kind: 'convert_from_township',
+            resourceId: resource.id,
+            itemId: item.id,
+            quantity: 1,
+          },
+          label: `Trade ${resource.name} (town has ${Math.round(resource.amount)}) for ${item.name} — the town is the only source of this`,
           available: true,
         });
       }

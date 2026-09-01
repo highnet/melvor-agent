@@ -44,6 +44,39 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // What the town will trade back for its resources.
+    //
+    // `readTraderCandidates` deliberately offers only the bank-to-town
+    // direction, on the grounds that a town needs its resources more than the
+    // bank needs another log. That is right for logs and wrong for anything the
+    // town can produce that nothing else can — and Herb Boxes, which hold
+    // finished herbs, decide whether Herblore is reachable without Farming.
+    townshipTradesFromTown: (() => {
+      try {
+        return game.township.resources.allObjects.flatMap((resource) =>
+          game.township.getResourceItemConversionsFromTownship(resource).map((conversion) => ({
+            resourceId: resource.id,
+            resourceName: resource.name,
+            itemId: conversion.item.id,
+            itemName: conversion.item.name,
+          })),
+        );
+      } catch {
+        // A save with no town reports nothing rather than failing the dump.
+        return [];
+      }
+    })(),
+    // What is actually inside a container. Herblore is the last untrained skill
+    // in scope and needs a herb seed; every guess so far about where those come
+    // from has been wrong, and a drop table settles it in one read instead of
+    // hours of farming toward a source that may not exist.
+    openableItems: game.items.allObjects
+      .filter((item): item is OpenableItem => item instanceof OpenableItem)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        contents: item.dropTable.drops.map((drop) => drop.item.name),
+      })),
     // Thieving NPCs carry the level gates that decide whether a whole skill
     // chain is reachable. Herblore waits on herb seeds, herb seeds come off a
     // specific NPC, and with only the *nearest* locked action reported there

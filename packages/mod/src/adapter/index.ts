@@ -131,6 +131,7 @@ export {
   convertTownshipToItem,
   readTraderCandidates,
   type ConversionProjection,
+  readTownshipGoodsCandidates,
 } from './trader.js';
 export {
   chooseEventPassive,

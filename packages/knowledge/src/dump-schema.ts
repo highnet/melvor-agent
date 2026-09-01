@@ -49,6 +49,31 @@ export const knowledgeDumpSchema = z.object({
    * NPC. With only the *nearest* locked action reported anywhere, how far away
    * that NPC sat could not be seen without grinding toward it and watching.
    */
+  /** Items the Township will trade back for its resources. */
+  townshipTradesFromTown: z.array(
+    z.object({
+      resourceId: z.string(),
+      resourceName: z.string(),
+      itemId: z.string(),
+      itemName: z.string(),
+    }),
+  ),
+
+  /**
+   * Containers and what they can yield.
+   *
+   * The bird nest is the only candidate source of herb seeds left once the
+   * Thieving tables were checked and found to hold none, so what a nest can
+   * actually drop decides whether Herblore is reachable at all.
+   */
+  openableItems: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      contents: z.array(z.string()),
+    }),
+  ),
+
   thievingNpcs: z.array(
     z.object({
       id: z.string(),

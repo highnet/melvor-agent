@@ -63,6 +63,8 @@ const DESCRIPTIONS: Record<string, string> = {
   make_paper: 'Make Cartography paper, which is what maps are made from',
   start_combat_event: 'Enter a combat event — the end-game gauntlet ending in a final boss',
   choose_event_passive: 'Answer the passive choice an event freezes on between stages',
+  convert_from_township:
+    'Trade town resources back for goods only the town can make, such as Herb Boxes',
   convert_to_township: 'Trade bank items to the town for resources it can build with',
   bury_bones: 'Bury bones for Prayer XP and the points prayers spend',
   open_item: 'Open bird nests and chests, the only source of some items',
