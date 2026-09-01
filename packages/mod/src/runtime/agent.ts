@@ -136,6 +136,7 @@ import {
   usePotion,
 } from '../adapter/index.js';
 import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
+import { progressMarker } from '../policy/criteria.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
 import type { PolicyAction } from '../policy/types.js';
@@ -1479,7 +1480,7 @@ export class Agent {
     // Total level and GP are what the *current objective* is supposed to move.
     // Completion is what the character accumulates by existing, and mixing the
     // two makes the check unable to tell working from merely running.
-    const marker = snapshot.totalLevel * 1e9 + gp;
+    const marker = progressMarker(snapshot.totalLevel, gp);
 
     if (marker !== this.lastProgressMarker) {
       this.lastProgressMarker = marker;

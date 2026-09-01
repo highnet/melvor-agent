@@ -1,6 +1,11 @@
 import { stateSnapshotSchema } from '@melvor-agent/shared';
 import { describe, expect, it } from 'vitest';
-import { checkAbort, elapsedMinutes, isObjectiveComplete } from '../src/policy/criteria.js';
+import {
+  checkAbort,
+  elapsedMinutes,
+  isObjectiveComplete,
+  progressMarker,
+} from '../src/policy/criteria.js';
 import { gatherResource } from '../src/policy/gather.js';
 import { executorFor, isSupportedKind, supportedKinds } from '../src/policy/index.js';
 import type { PolicyContext } from '../src/policy/types.js';
@@ -415,5 +420,31 @@ describe('the emergency hitpoints floor', () => {
     });
 
     expect(checkAbort(hurt, noAbort, 1, 0).abort).toBe(false);
+  });
+});
+
+describe('the progress marker', () => {
+  // This exists because the marker was wrong for a day and nothing caught it.
+  // It included completionPercent; Township ticks in the background and nudges
+  // completion on its own, so a Golbin fight that killed nothing for seventeen
+  // minutes — GP frozen at exactly 30,816, total level at 391 — kept resetting
+  // the stuck detector's clock and was never reported.
+  it('moves when total level moves', () => {
+    expect(progressMarker(391, 30_816)).not.toBe(progressMarker(392, 30_816));
+  });
+
+  it('moves when GP moves', () => {
+    expect(progressMarker(391, 30_816)).not.toBe(progressMarker(391, 30_990));
+  });
+
+  it('is unchanged by anything else, which is the whole point', () => {
+    // The live case: seventeen minutes of a dead fight, identical on both
+    // counters that matter. Completion drifting underneath must not hide it.
+    expect(progressMarker(391, 30_816)).toBe(progressMarker(391, 30_816));
+  });
+
+  it('keeps level and GP from colliding', () => {
+    // A level is worth 1e9 so no plausible GP total can imitate one.
+    expect(progressMarker(1, 0)).toBeGreaterThan(progressMarker(0, 999_999_999));
   });
 });

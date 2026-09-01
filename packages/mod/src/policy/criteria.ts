@@ -155,3 +155,23 @@ export function checkAbort(
 export function elapsedMinutes(now: number, startedAt: number): number {
   return Math.max(0, (now - startedAt) / 60_000);
 }
+
+/**
+ * The single number that says whether an objective is producing anything.
+ *
+ * Pure and exported so the decision inside it is pinned by a test rather than
+ * living in a private method where it was silently wrong for a day.
+ *
+ * Total level and GP only. `completionPercent` was in this marker and is
+ * precisely why the stuck detector never fired on a dead objective: Township
+ * ticks in the background and nudges completion on its own, so a fight that
+ * killed nothing for seventeen minutes — GP frozen at exactly 30,816, total
+ * level at 391 — still looked like progress and reset the clock every time
+ * completion drifted a hundredth of a percent.
+ *
+ * The distinction the marker has to draw is between *the objective working* and
+ * *the character existing*. Completion measures the second.
+ */
+export function progressMarker(totalLevel: number, gp: number): number {
+  return totalLevel * 1e9 + gp;
+}
