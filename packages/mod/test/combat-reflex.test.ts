@@ -429,10 +429,19 @@ describe('expandBankWhenFull', () => {
     expect(expandBankWhenFull({ freeSlots: 1, expansion: slot }, () => ok())).toBeNull();
   });
 
-  it('will not spend a large fraction of savings on a slot', () => {
-    // Auto Eat is a 1,000,000 GP goal. A reflex that drains the pot to store
-    // more logs would quietly undo the planner's work.
-    const poor = { ...slot, held: 20_000 };
+  it('buys even when the slot is a sizeable slice of what is held', () => {
+    // The live case that moved this line: 52/52 with 55,678 GP against a
+    // 15,885 slot. At a quarter-cap the guard sat and watched items be
+    // discarded to protect a balance, which is the wrong trade — a full bank
+    // loses continuously, savings are a stock.
+    const pricey = { purchaseId: 'melvorD:Extra_Bank_Slot', gpCost: 15_885, held: 55_678 };
+
+    expect(expandBankWhenFull({ freeSlots: 0, expansion: pricey }, () => ok())).not.toBeNull();
+  });
+
+  it('still refuses when the slot would take most of what is left', () => {
+    // The cap survives for the near-broke case it was really for.
+    const poor = { ...slot, held: 12_000 };
 
     expect(expandBankWhenFull({ freeSlots: 0, expansion: poor }, () => ok())).toBeNull();
   });

@@ -305,12 +305,18 @@ export function plantEmptyPlots(
 /**
  * Fraction of held GP a single automatic bank slot may cost.
  *
- * The agent saves for large purchases — Auto Eat is a 1,000,000 GP goal — and a
- * reflex that drains the pot to store more logs would be quietly undoing the
- * planner's work. Scaling the limit means it buys freely when rich and stops on
- * its own when the savings matter more than the slot.
+ * Set at a quarter first, to protect the Auto Eat fund from a reflex buying
+ * space for more logs. That was the wrong shape of caution: slot prices climb
+ * with each purchase, and the bank hit 52/52 holding 55,678 GP against a 15,885
+ * slot — 28.5%, just over the line — so the guard sat and watched items be
+ * discarded in order to protect a balance.
+ *
+ * A full bank is a *continuous* loss; savings are a stock. Paying once to stop
+ * the loss beats defending the stock, and each purchase permanently adds a slot
+ * so the situation recurs more slowly rather than looping. The cap still exists
+ * to stop a near-broke character spending its last GP here.
  */
-const BANK_SLOT_GP_FRACTION = 0.25;
+const BANK_SLOT_GP_FRACTION = 0.5;
 
 /**
  * Buys a bank slot when the bank is completely full.
