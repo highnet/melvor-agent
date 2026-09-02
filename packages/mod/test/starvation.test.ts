@@ -73,8 +73,26 @@ describe('stopping when there is nothing left to eat', () => {
     expect(stopWhenStarving(starving(140), () => ok())).toBeNull();
   });
 
-  it('does not stop while food remains', () => {
-    expect(stopWhenStarving(starving(37, 5), () => ok())).toBeNull();
+  it('does not stop at half health while food remains', () => {
+    // Dipping under half with meals available is ordinary play.
+    expect(stopWhenStarving(starving(70, 5), () => ok())).toBeNull();
+  });
+
+  it('stops at critical health even though food remains', () => {
+    // This assertion used to read `toBeNull()` at 37 HP, encoding the belief
+    // that banked food means safety. It does not. Eating happens from the
+    // equipped slot, so a meal count is only a claim about what eatWhenLow
+    // should have been able to do -- and health this far down is the
+    // observation that it did not. The character died at Thieving holding 99
+    // cooked Seahorse, with this guard returning early on `meals > 0` the
+    // whole way down.
+    const stopped: string[] = [];
+    stopWhenStarving(starving(37, 5), (skillId) => {
+      stopped.push(skillId);
+      return ok();
+    });
+
+    expect(stopped).toEqual(['melvorD:Thieving']);
   });
 
   it('leaves non-damaging work running', () => {

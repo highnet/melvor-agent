@@ -14,6 +14,7 @@ import {
   plantEmptyPlots,
   refillFood,
   repairDegradedBuildings,
+  stopWhenStarving,
   unlockAffordablePlots,
 } from '../src/runtime/combat-reflex.js';
 
@@ -743,5 +744,63 @@ describe('repairDegradedBuildings', () => {
 
     expect(outcome).toBeNull();
     expect(repaired).toEqual([]);
+  });
+});
+
+describe('stopWhenStarving with food in the bank', () => {
+  const ok = () => ({ ok: true }) as never;
+  const base = {
+    hasAutoEat: false,
+    maxHitpoints: 150,
+    damagingSkillId: 'melvorD:Thieving',
+  };
+
+  it('stops at critical health even though meals are banked', () => {
+    // The death this reflex exists to prevent, and the one it allowed: the
+    // guard returned early on `meals > 0`, so it could never fire while any
+    // food existed anywhere. Eating happens from the equipped slot, so 99
+    // banked Seahorse proved nothing about whether the character could eat.
+    const stopped: string[] = [];
+    stopWhenStarving({ ...base, meals: 99, hitpoints: 30 }, (skillId) => {
+      stopped.push(skillId);
+      return ok();
+    });
+
+    expect(stopped).toEqual(['melvorD:Thieving']);
+  });
+
+  it('does not stop at half health when meals are banked', () => {
+    // Dipping under half with food available is ordinary play. Stopping there
+    // would cost the run for nothing, which is why the two thresholds differ.
+    const stopped: string[] = [];
+    const outcome = stopWhenStarving({ ...base, meals: 99, hitpoints: 100 }, (skillId) => {
+      stopped.push(skillId);
+      return ok();
+    });
+
+    expect(outcome).toBeNull();
+    expect(stopped).toEqual([]);
+  });
+
+  it('still stops at half health when there is no food at all', () => {
+    // The original behaviour, which must survive the fix above.
+    const stopped: string[] = [];
+    stopWhenStarving({ ...base, meals: 0, hitpoints: 70 }, (skillId) => {
+      stopped.push(skillId);
+      return ok();
+    });
+
+    expect(stopped).toEqual(['melvorD:Thieving']);
+  });
+
+  it('leaves a non-damaging skill alone however low health is', () => {
+    // Runecrafting does not cost health, so stopping it would strand the plan
+    // for a danger that is not coming from the action slot.
+    const outcome = stopWhenStarving(
+      { ...base, damagingSkillId: null, meals: 0, hitpoints: 1 },
+      () => ok(),
+    );
+
+    expect(outcome).toBeNull();
   });
 });

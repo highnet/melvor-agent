@@ -724,20 +724,48 @@ export function stopWhenStarving(
   stop: (skillId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   if (state.hasAutoEat) return null;
-  if (state.meals > 0) return null;
   if (state.damagingSkillId === null) return null;
   if (state.maxHitpoints <= 0) return null;
+
+  const fraction = state.hitpoints / state.maxHitpoints;
 
   // Only once health has actually started falling. A full-health character with
   // no food is not in danger yet, and stopping it would cost the run for
   // nothing.
-  if (state.hitpoints > state.maxHitpoints * STARVING_HP_FRACTION) return null;
+  if (state.meals <= 0) {
+    return fraction > STARVING_HP_FRACTION
+      ? null
+      : { name: 'reflex.stopStarving', result: stop(state.damagingSkillId) };
+  }
 
-  return { name: 'reflex.stopStarving', result: stop(state.damagingSkillId) };
+  // Meals in the bank are not the same as health restored, and this guard used
+  // to treat them as interchangeable: `meals > 0` returned early, so the last
+  // line of defence could never fire while any food existed anywhere. The
+  // character died holding 99 cooked Seahorse.
+  //
+  // Eating happens from the *equipped* food slot, so banked food is only ever a
+  // claim about what eatWhenLow should have been able to do. Health this far
+  // down is the observation that it did not -- the slot was empty, the refill
+  // was refused, the meals were the wrong item. Whatever the reason, the number
+  // in the bank has already been contradicted by the character's actual health,
+  // and at that point the reading to trust is the health.
+  return fraction > CRITICAL_HP_FRACTION
+    ? null
+    : { name: 'reflex.stopStarving', result: stop(state.damagingSkillId) };
 }
 
 /** Health below which, with no food at all, a damaging activity is stopped. */
 const STARVING_HP_FRACTION = 0.5;
+
+/**
+ * Health below which a damaging activity is stopped even though food is banked.
+ *
+ * Lower than the no-food threshold on purpose: dipping under half health with
+ * meals available is normal play, and stopping there would cost the run. Under
+ * a quarter is not normal -- it means the eating is not working, whatever the
+ * bank says.
+ */
+const CRITICAL_HP_FRACTION = 0.25;
 
 /**
  * Sells one cheap stack when the bank is full and no slot can be bought.
