@@ -289,6 +289,41 @@ function alchemyGpPerCast(skill: AnySkill, recipe: RecipeLike): number | null {
 }
 
 /**
+ * The share of actions that actually produce the recipe's product.
+ *
+ * One for skills whose every action lands. Cooking reports a success chance per
+ * recipe; Fishing splits each action between the fish, a special table and
+ * junk, and only the fish share is the product being priced.
+ *
+ * Fails to 1 rather than to 0, because a skill that cannot report its odds
+ * should read as ordinary rather than vanish from the board.
+ */
+function productChanceFor(skill: AnySkill, recipe: RecipeLike): number {
+  try {
+    const cooking = skill as AnySkill & {
+      getRecipeSuccessChance?: (r: object) => number;
+    };
+    if (typeof cooking.getRecipeSuccessChance === 'function') {
+      const percent = cooking.getRecipeSuccessChance(recipe);
+      return Number.isFinite(percent) && percent > 0 ? Math.min(1, percent / 100) : 1;
+    }
+
+    const fishing = skill as AnySkill & {
+      getAreaChances?: (area: object) => { fish: number };
+    };
+    const area = (recipe as { area?: object }).area;
+    if (typeof fishing.getAreaChances === 'function' && area !== undefined) {
+      const share = fishing.getAreaChances(area).fish;
+      return Number.isFinite(share) && share > 0 ? Math.min(1, share / 100) : 1;
+    }
+
+    return 1;
+  } catch {
+    return 1;
+  }
+}
+
+/**
  * Net GP of the best bar Superheat can currently smelt.
  *
  * Superheat consumes a Smithing recipe's ingredients and produces its bar
@@ -709,16 +744,29 @@ function miningCandidates(): Candidate[] {
  */
 function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: number): number {
   try {
+    // A failed action still costs the time and the inputs, and yields nothing.
+    //
+    // Cooking burns at a base 70% success (cooking.d.ts:159), and Fishing rolls
+    // between the fish, junk and a special table (fishing.d.ts:126, 168-171) --
+    // so both were priced as though every action landed its product. Cooking
+    // was overstated by up to a third and Fishing by whatever share of an area
+    // is junk.
+    //
+    // Applied to yield rather than to XP: whether a burn or a junk catch still
+    // pays experience is not stated in the typings, and guessing it would move
+    // the number in a direction measurement could not later correct.
+    const landed = productChanceFor(skill, recipe);
     const withYield = skill as AnySkill & {
       modifyPrimaryProductQuantity?: (item: object, quantity: number, action: object) => number;
     };
     const product = recipe.product;
     if (withYield.modifyPrimaryProductQuantity === undefined || product === undefined) {
-      return baseQuantity;
+      return baseQuantity * landed;
     }
 
     const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
-    return Number.isFinite(yielded) && yielded > 0 ? yielded : baseQuantity;
+    const modified = Number.isFinite(yielded) && yielded > 0 ? yielded : baseQuantity;
+    return modified * landed;
   } catch {
     return baseQuantity;
   }

@@ -120,16 +120,16 @@ Township summary reported 0% health while the repair reflex correctly computed
       `masteryIntervalFor` has no Firemaking entry, so ranking degenerates to
       base XP and systematically picks the slowest logs.
       `FiremakingLog.baseInterval` (firemakingTicks.d.ts:35).
-- [ ] **Fishing assumes every action lands the fish**, and offers fish whose area
+- [x] **Fishing assumes every action lands the fish**, and offers fish whose area
       needs an unequipped item — S. `getAreaChances` splits fish/junk/special.
       Whether a junk roll still pays XP is not stated in the typings.
-- [ ] **Cooking ignores a ~30% base failure rate** — S. `getRecipeSuccessChance`,
+- [x] **Cooking ignores a ~30% base failure rate** — S. `getRecipeSuccessChance`,
       `baseSuccessChance = 70`.
 - [ ] **Harvesting has no vein-decay charge** — S. Structurally identical to the
       mining respawn trap, and still unfixed.
 - [ ] **Mining applies no interval modifiers at all** — M. The only skill using a
       raw constant, and it ignores all three gem-chance getters besides.
-- [ ] **Agility's lap rate is built from base constants** — S. The fix for a 3.5×
+- [x] **Agility's lap rate is built from base constants** — S. The fix for a 3.5×
       overstatement reintroduced mastery blindness for the same skill; it also
       sums every built obstacle rather than the contiguous course.
 - [ ] **Woodcutting cuts one tree when `treeCutLimit` allows several** — M. The

@@ -143,16 +143,42 @@ export function readAgilityLapRate(): number | null {
     const built = [...game.agility.activeCourse.builtObstacles.values()];
     if (built.length === 0) return null;
 
+    // The modifier-aware getters, not the base constants.
+    //
+    // Fixing the lap-versus-obstacle error left this summing `baseExperience`
+    // and `baseInterval`, which is the mastery blindness corrected everywhere
+    // else in the candidate list: it prices an invested course at its
+    // uninvested rate forever, and Agility is a skill whose whole design is
+    // long uninterrupted running. Correcting a 3.5x overstatement by
+    // introducing a systematic understatement is not an improvement, it is a
+    // different wrong number.
+    //
+    // `getObstacleInterval` (agility.d.ts:210) and `getXPModifier`
+    // (agility.d.ts:211) both take the obstacle, so neither depends on what is
+    // currently selected -- the failure that makes `actionInterval` unusable
+    // during enumeration.
+    const skill = game.agility;
     let experience = 0;
     let intervalMs = 0;
     for (const obstacle of built) {
-      experience += obstacle.baseExperience;
-      intervalMs += obstacle.baseInterval;
+      const xpPercent = safeNumber(() => skill.getXPModifier(obstacle), 0);
+      experience += obstacle.baseExperience * Math.max(0, 1 + xpPercent / 100);
+      intervalMs += safeNumber(() => skill.getObstacleInterval(obstacle), obstacle.baseInterval);
     }
 
     if (intervalMs <= 0 || experience <= 0) return null;
     return (experience / intervalMs) * 3_600_000;
   } catch {
     return null;
+  }
+}
+
+/** Reads a modifier getter that may throw, falling back rather than propagating. */
+function safeNumber(read: () => number, fallback: number): number {
+  try {
+    const value = read();
+    return Number.isFinite(value) && value !== 0 ? value : fallback;
+  } catch {
+    return fallback;
   }
 }
