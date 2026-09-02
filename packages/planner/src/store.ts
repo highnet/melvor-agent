@@ -6,6 +6,7 @@ import type {
   JournalDigest,
   JournalEntry,
   LogRecord,
+  QualitySample,
 } from '@melvor-agent/shared';
 
 /**
@@ -53,6 +54,21 @@ export class Store {
 
     if (report.logs.length > 0) {
       await this.appendLogs(report.logs);
+    }
+
+    // Quality samples live in the mod and die with a reload.
+    //
+    // The mod keeps 48 hours of them and ships the last 120, so after every
+    // reload the window restarts at zero -- measureProgress returns null, the
+    // "not enough samples yet" line appears, and the diagnosis that would have
+    // caught a bad rate is suppressed for the next half hour. With reloads
+    // running every few minutes while the mod is being changed, the metric was
+    // effectively never available.
+    //
+    // Persisting them here makes the series continuous across reloads, and the
+    // merge is keyed on `at` so re-sent samples are recorded once.
+    if (report.quality.length > 0) {
+      await this.appendQuality(report.quality);
     }
 
     const commands = this.pendingCommands;
@@ -163,6 +179,44 @@ export class Store {
     const day = new Date().toISOString().slice(0, 10);
     const lines = records.map((record) => JSON.stringify(record)).join('\n');
     await appendFile(join(this.dataDir, 'logs', `${day}.jsonl`), `${lines}\n`, 'utf8');
+  }
+
+  /** Appends quality samples, skipping any timestamp already recorded. */
+  private async appendQuality(samples: readonly QualitySample[]): Promise<void> {
+    const known = new Set((await this.readQuality()).map((sample) => sample.at));
+    const fresh = samples.filter((sample) => !known.has(sample.at));
+    if (fresh.length === 0) return;
+
+    const lines = fresh.map((sample) => JSON.stringify(sample)).join(String.fromCharCode(10));
+    await appendFile(
+      join(this.dataDir, 'quality.jsonl'),
+      `${lines}${String.fromCharCode(10)}`,
+      'utf8',
+    );
+  }
+
+  /**
+   * Every quality sample recorded, oldest first.
+   *
+   * Read back into the progress measurement so a reload does not reset the one
+   * metric the run is judged by.
+   */
+  async readQuality(): Promise<QualitySample[]> {
+    try {
+      const raw = await readFile(join(this.dataDir, 'quality.jsonl'), 'utf8');
+      const out: QualitySample[] = [];
+      for (const line of raw.split(String.fromCharCode(10))) {
+        if (line.trim() === '') continue;
+        try {
+          out.push(JSON.parse(line) as QualitySample);
+        } catch {
+          // A truncated final line is normal for an append-only file.
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
   }
 
   /**

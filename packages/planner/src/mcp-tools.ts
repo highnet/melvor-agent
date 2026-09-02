@@ -66,8 +66,22 @@ export const TOOLS: Record<string, ToolHandler> = {
 
     // The project's one quality metric: is this better than leaving a single
     // skill running? Reported wherever state is read, so it cannot quietly rot.
+    // Disk plus live, so a reload does not restart the window. The mod ships
+    // only its last 120 samples and loses all of them on reload; the persisted
+    // series is what makes the metric continuous.
+    const persistedQuality = await store.readQuality();
+    const quality =
+      persistedQuality.length > 0
+        ? [
+            ...persistedQuality,
+            ...report.quality.filter(
+              (sample) => !persistedQuality.some((seen) => seen.at === sample.at),
+            ),
+          ].sort((a, b) => a.at - b.at)
+        : report.quality;
+
     const progress = measureProgress(
-      report.quality,
+      quality,
       controlRate(
         report.candidates,
         new Map(s.skills.map((skill) => [skill.id, skill.xp] as const)),
@@ -91,7 +105,7 @@ export const TOOLS: Record<string, ToolHandler> = {
           report.candidates.find((c) => (c.params as { skillId?: string }).skillId === skillId)
             ?.xpPerHour ?? null;
 
-        const measured = measureAgainstClaim(report.quality, skillId, claimed);
+        const measured = measureAgainstClaim(quality, skillId, claimed);
         if (measured === null) return [];
 
         const ratio =

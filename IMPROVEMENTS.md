@@ -188,7 +188,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [ ] **The journal is never written** *(4×)* — M. `addJournalEntry` has exactly
       one caller, a test. `get_journal` can only ever say "Nothing attempted yet",
       so the planner cannot see what it already abandoned.
-- [ ] **Quality samples do not survive a reload** — M. The one metric restarts at
+- [x] **Quality samples do not survive a reload** — M. The one metric restarts at
       zero, and diagnosis is then suppressed for the next thirty minutes.
 - [ ] **The blocked list is `slice(0, 12)` with no severity** — M. A food
       countdown competes with "Yew unlocks at 60" on position alone.
