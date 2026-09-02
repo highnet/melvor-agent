@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-192 exports.
+193 exports.
 
 ## `act`
 
@@ -1645,6 +1645,28 @@ monster is the same as no note at all.
 
 ```ts
 readMonsterDropsOfInterest: (monsterId: string, wanted: ReadonlySet<string>) => string[]
+```
+
+## `readMostValuableExpendableStack`
+
+`function`
+
+The most valuable stack the agent may safely sell.
+
+The counterpart to {@link readCheapestExpendableStack}, and the difference in
+direction is the difference in purpose. That one exists to escape a full
+bank, where the goal is to free a slot while destroying as little value as
+possible. This one exists to *earn*, so it takes the stack worth the most.
+
+Both draw from the same `readSellCandidates` filter, which is what makes an
+automatic sale defensible at all: task items, scarce ingredients, every
+farming seed, spell runes, mastery tokens, bank-locked items, food while the
+larder is thin, and ammunition are all already excluded by construction. The
+reflex inherits every one of those guards rather than restating them, so a
+guard added for the planner's benefit protects the reflex too.
+
+```ts
+readMostValuableExpendableStack: () => { itemId: string; name: string; value: number; } | null
 ```
 
 ## `readNextContainer`

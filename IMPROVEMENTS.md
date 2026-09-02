@@ -167,7 +167,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Autonomy
 
-- [ ] **No autonomous selling** *(3×)* — M. Every guard already exists; only the
+- [x] **No autonomous selling** *(3×)* — M. Every guard already exists; only the
       reflex is missing. This is why GP freezes while the bank fills and an
       operator has to sell by hand every forty minutes.
 - [ ] **Character-select auto-load is one-shot against a hardcoded URL** — S. If

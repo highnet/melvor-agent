@@ -938,3 +938,59 @@ export function collectStockpiledFood(
 
   return { name: 'reflex.collectStockpile', result: collect(fullest.categoryId) };
 }
+
+/**
+ * Sells the most valuable surplus stack once the bank starts filling.
+ *
+ * Gathering candidates advertise their worth "if sold, not GP earned", and
+ * nothing sold. So the bank filled while GP stood still, and the only automatic
+ * response was `sellToEscapeFullBank`, which fires at zero free slots and sells
+ * the *cheapest* stack -- freeing a slot while realising as little value as
+ * possible.
+ *
+ * The cost of that gap is measurable rather than theoretical. In one afternoon
+ * the expansion reflex bought two bank slots at escalating prices, about 75,000
+ * GP, because the bank kept reaching zero free slots; an operator was
+ * separately selling stacks by hand every forty minutes to keep GP moving at
+ * all. Paying an escalating price for space while holding sellable stock is a
+ * bad trade made repeatedly.
+ *
+ * Acting on pressure rather than at zero is the point: at zero the loss has
+ * already started, and the choice is between a discarded drop and a fire sale.
+ * A slot or two of headroom means the sale can be the profitable one.
+ *
+ * Every guard comes from the reader (see readMostValuableExpendableStack), so
+ * this cannot reach food, ammunition, seeds, spell runes, mastery tokens or
+ * anything a task wants. One stack per pass, and only above a floor -- a
+ * handful of low-value items is not worth an irreversible action.
+ */
+export function liquidateSurplus(
+  state: {
+    freeSlots: number;
+    /** The most valuable stack that survives every sell guard, if any. */
+    best: { itemId: string; name: string; value: number } | null;
+  },
+  sell: (itemId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.freeSlots > LIQUIDATE_FREE_SLOTS) return null;
+  if (state.best === null) return null;
+  if (state.best.value < LIQUIDATE_MIN_VALUE) return null;
+
+  return { name: 'reflex.liquidateSurplus', result: sell(state.best.itemId) };
+}
+
+/**
+ * Free slots at or below which surplus is sold.
+ *
+ * Deliberately above zero. At zero the bank is already discarding drops, and
+ * the only sale available is whichever stack is cheapest to lose.
+ */
+const LIQUIDATE_FREE_SLOTS = 2;
+
+/**
+ * Stack value below which selling is not worth an irreversible action.
+ *
+ * Selling is the one thing here that cannot be undone, so it should not fire
+ * for pocket change.
+ */
+const LIQUIDATE_MIN_VALUE = 5_000;

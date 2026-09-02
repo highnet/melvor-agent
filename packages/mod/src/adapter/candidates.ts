@@ -961,6 +961,15 @@ function fishingCandidates(): Candidate[] {
  */
 const FOOD_SELL_FLOOR = 40;
 
+/** Whether an item is ammunition, and so must not be liquidated. */
+function isAmmunition(item: AnyItem): boolean {
+  try {
+    return item instanceof EquipmentItem && item.ammoType !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 export function readSellCandidates(): Candidate[] {
   // Never offer to sell what an open Township task is asking for. Selling one
   // of those throws away a whole task cycle, and task cycles are the fastest
@@ -1010,6 +1019,15 @@ export function readSellCandidates(): Candidate[] {
       .filter((entry) => !masteryTokens.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
       .filter((entry) => !(foodIsScarce && entry.item instanceof FoodItem))
+      // And never ammunition.
+      //
+      // The same omission as food, with the same automatic path selecting it:
+      // an empty quiver makes every ranged fight refuse outright, and Ranged 20
+      // is a stated goal fed by 1,259 self-made arrows. Identified by
+      // `ammoType`, which item.d.ts:210 documents as "property exclusive to
+      // ammo" -- a structural test rather than a match on the word "arrow",
+      // which would miss bolts and javelins entirely.
+      .filter((entry) => !isAmmunition(entry.item))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({
         kind: 'sell_items' as const,
@@ -1524,4 +1542,45 @@ export function readUnstockedSkills(): {
   }
 
   return out;
+}
+
+/**
+ * The most valuable stack the agent may safely sell.
+ *
+ * The counterpart to {@link readCheapestExpendableStack}, and the difference in
+ * direction is the difference in purpose. That one exists to escape a full
+ * bank, where the goal is to free a slot while destroying as little value as
+ * possible. This one exists to *earn*, so it takes the stack worth the most.
+ *
+ * Both draw from the same `readSellCandidates` filter, which is what makes an
+ * automatic sale defensible at all: task items, scarce ingredients, every
+ * farming seed, spell runes, mastery tokens, bank-locked items, food while the
+ * larder is thin, and ammunition are all already excluded by construction. The
+ * reflex inherits every one of those guards rather than restating them, so a
+ * guard added for the planner's benefit protects the reflex too.
+ */
+export function readMostValuableExpendableStack(): {
+  itemId: string;
+  name: string;
+  value: number;
+} | null {
+  try {
+    let best: { itemId: string; name: string; value: number } | null = null;
+
+    for (const option of readSellCandidates()) {
+      const itemId = String((option.params as { itemId?: unknown }).itemId ?? '');
+      const item = game.items.getObjectByID(itemId);
+      if (item === undefined) continue;
+
+      const value = gpValue(item) * game.bank.getQty(item);
+      if (value <= 0) continue;
+      if (best === null || value > best.value) {
+        best = { itemId, name: item.name, value };
+      }
+    }
+
+    return best;
+  } catch {
+    return null;
+  }
 }

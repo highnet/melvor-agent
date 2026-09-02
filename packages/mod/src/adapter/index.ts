@@ -104,6 +104,7 @@ export {
   readLockedActions,
   readGatherCandidates,
   readCheapestExpendableStack,
+  readMostValuableExpendableStack,
   readSellCandidates,
   readShopObjectiveCandidates,
 } from './candidates.js';

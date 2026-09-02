@@ -81,6 +81,7 @@ import {
   readMasteryTokenCandidates,
   readMealCount,
   readMonsterDropsOfInterest,
+  readMostValuableExpendableStack,
   readNextContainer,
   readOpenableCandidates,
   readPaperCandidates,
@@ -161,6 +162,7 @@ import {
   expandBankWhenFull,
   fillEmptySlots,
   harvestReadyPlots,
+  liquidateSurplus,
   openPendingContainers,
   plantEmptyPlots,
   refillFood,
@@ -686,6 +688,17 @@ export class Agent {
           expansion: readBankExpansion(),
         },
         (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
+      ),
+      // Before the last-resort sale below, and above zero free slots: selling
+      // the most valuable surplus while there is still headroom is the
+      // profitable trade, where selling the cheapest stack at zero is only
+      // damage control. See liquidateSurplus.
+      liquidateSurplus(
+        {
+          freeSlots: snapshot.bank.slotsMax - snapshot.bank.slotsUsed,
+          best: readMostValuableExpendableStack(),
+        },
+        (itemId) => sellItem(itemId, readBankQuantity(itemId), isSuspended),
       ),
       // Last resort, after the slot purchase above has had its chance: a full
       // bank with no affordable slot is a permanent stop, and one cheap stack
