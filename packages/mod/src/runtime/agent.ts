@@ -1593,8 +1593,22 @@ export class Agent {
         // untrained skill in scope, which makes these the most actionable lines
         // the agent produces.
         ...readTaskOpportunities(),
-        ...readLockedActions(),
+        // Diagnostics above locked actions, for the same reason task needs were
+        // moved above them and more so.
+        //
+        // `readLockedActions` emits one line per skill, around twenty, and only
+        // the first twelve of this whole list ever reach a planning session. Six
+        // task needs plus six unlock facts filled the window exactly, so every
+        // diagnostic below was written, shipped, and never once read: the food
+        // reserve running out, a better recipe unlocked in the running skill,
+        // Thieving's rates being unmeasurable rather than zero, a seed
+        // shortfall. Four things built today to be seen, none of which were.
+        //
+        // The ordering follows what a line is for. "Yew unlocks at level 60" is
+        // a fact to notice in passing and will still be true in an hour.
+        // "Food is down to 11 meals and there is no Auto Eat" is a countdown.
         ...readBlockedOpportunities(),
+        ...readLockedActions(),
         ...this.blockedCombat(),
       ];
     } catch {
