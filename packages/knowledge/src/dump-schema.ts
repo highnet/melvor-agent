@@ -272,6 +272,12 @@ export const knowledgeDumpSchema = z.object({
       itemCosts: z.array(
         z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }),
       ),
+      runeCosts: z
+        .array(z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }))
+        .default([]),
+      fixedItemCosts: z
+        .array(z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }))
+        .default([]),
       productId: z.string(),
       productName: z.string(),
       baseQuantity: z.number(),

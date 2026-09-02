@@ -482,6 +482,8 @@ function dumpSkillRecipes(): {
   level: number;
   baseExperience: number;
   itemCosts: { itemId: string; name: string; quantity: number }[];
+  runeCosts: { itemId: string; name: string; quantity: number }[];
+  fixedItemCosts: { itemId: string; name: string; quantity: number }[];
   productId: string;
   productName: string;
   baseQuantity: number;
@@ -512,6 +514,8 @@ function dumpSkillRecipes(): {
         level?: number;
         baseExperience?: number;
         itemCosts?: { item: { id: string; name: string }; quantity: number }[];
+        runesRequired?: { item: { id: string; name: string }; quantity: number }[];
+        fixedItemCosts?: { item: { id: string; name: string }; quantity: number }[];
         product?: {
           id: string;
           name: string;
@@ -532,6 +536,14 @@ function dumpSkillRecipes(): {
           level: safeNumber(() => recipe.level ?? 0, 0),
           baseExperience: safeNumber(() => recipe.baseExperience ?? 0, 0),
           itemCosts: dumpItemCosts(recipe.itemCosts),
+          // Alt Magic prices its casts in runes, not itemCosts, so a spell
+          // dumped without them looks free -- and when the candidate list then
+          // withheld every spell, the dump could not say whether the cause was
+          // a missing rune or a bug. `runesRequired` is on BaseSpell
+          // (spells.d.ts:24); `fixedItemCosts` is the Alt Magic equivalent of
+          // itemCosts (altMagic.d.ts:57).
+          runeCosts: dumpItemCosts(recipe.runesRequired),
+          fixedItemCosts: dumpItemCosts(recipe.fixedItemCosts),
           productId: safeText(() => recipe.product?.id ?? ''),
           productName: safeText(() => recipe.product?.name ?? ''),
           baseQuantity: safeNumber(() => recipe.baseQuantity ?? 1, 1),
