@@ -165,6 +165,43 @@ export class Store {
     await appendFile(join(this.dataDir, 'logs', `${day}.jsonl`), `${lines}\n`, 'utf8');
   }
 
+  /**
+   * Log records from disk, newest last.
+   *
+   * `appendLogs` has written every record to `data/logs/<day>.jsonl` since the
+   * beginning and nothing ever read it back, so `get_recent_activity` answered
+   * from `report.logs` -- whatever the mod happened to drain in the last three
+   * seconds. After any reload that is empty, which is exactly when a
+   * post-mortem is wanted: every investigation of a death or a stall this
+   * session hit "Log is empty" while the evidence sat on disk.
+   *
+   * Today and yesterday, because a stall at midnight is read at nine.
+   */
+  async readRecentLogs(limit: number, level?: LogRecord['level']): Promise<LogRecord[]> {
+    const day = (offset: number): string =>
+      new Date(Date.now() - offset * 86_400_000).toISOString().slice(0, 10);
+
+    const records: LogRecord[] = [];
+    for (const name of [day(1), day(0)]) {
+      try {
+        const raw = await readFile(join(this.dataDir, 'logs', `${name}.jsonl`), 'utf8');
+        for (const line of raw.split(String.fromCharCode(10))) {
+          if (line.trim() === '') continue;
+          try {
+            records.push(JSON.parse(line) as LogRecord);
+          } catch {
+            // A truncated final line is normal for an append-only file.
+          }
+        }
+      } catch {
+        // A day with no log file is not an error.
+      }
+    }
+
+    const filtered = level === undefined ? records : records.filter((r) => r.level === level);
+    return filtered.slice(-limit);
+  }
+
   /** Persists a save export, stamped so exports are never overwritten. */
   async writeSave(save: string, reason: string): Promise<string> {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');

@@ -300,11 +300,20 @@ export const TOOLS: Record<string, ToolHandler> = {
 
   async get_recent_activity(args, { store }) {
     const limit = Number(args.limit ?? 25);
-    const logs = store.report?.logs ?? [];
-    if (logs.length === 0) return 'Log is empty — the mod drains it on each report.';
+
+    // Disk first, live report second.
+    //
+    // The report holds only what the mod drained in the last three seconds, so
+    // after any reload it is empty -- which is precisely when a post-mortem is
+    // wanted. Every investigation of a death or a stall this session hit "Log
+    // is empty" while the records sat in data/logs, written and never read.
+    const level = args.level === undefined ? undefined : (String(args.level) as 'warn' | 'error');
+    const persisted = await store.readRecentLogs(limit, level);
+    const logs = persisted.length > 0 ? persisted : (store.report?.logs ?? []).slice(-limit);
+
+    if (logs.length === 0) return 'No activity recorded yet.';
 
     return logs
-      .slice(-limit)
       .map((l) => `${new Date(l.at).toLocaleTimeString()} [${l.level}] ${l.source}: ${l.message}`)
       .join('\n');
   },

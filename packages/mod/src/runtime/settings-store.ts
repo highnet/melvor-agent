@@ -82,12 +82,51 @@ export class SettingsStore {
    * preference it will forget.
    */
   async write(settings: AgentSettings): Promise<void> {
+    // Unchanged settings are not written at all.
+    //
+    // The policy tier notifies on every tick, so this ran every three seconds:
+    // a character-storage write plus an HTTP PUT, roughly 9,600 of each across
+    // an eight-hour night, almost all of them saving a value identical to the
+    // last one.
+    const encoded = JSON.stringify(settings);
+    if (encoded === this.lastWritten) return;
+    this.lastWritten = encoded;
+
     const cacheError = this.cache.write(settings);
     if (cacheError !== null) this.log.warn('runtime', `character storage: ${cacheError}`);
 
     const saved = await this.transport.saveSettings(settings);
-    if (!saved) {
+    if (saved) {
+      this.persistFailingSince = null;
+      return;
+    }
+
+    // And the failure is reported once per outage, not once per attempt.
+    //
+    // While the service was down this warning was the only thing in the log --
+    // two lines every three seconds against a 300-record queue, which evicts
+    // every real diagnostic before it can be shipped. The first read of the
+    // durable log after wiring it up returned nothing but this message, which
+    // is the failure demonstrating itself.
+    const now = Date.now();
+    if (this.persistFailingSince === null) {
+      this.persistFailingSince = now;
       this.log.warn('runtime', 'could not persist settings to the service; cached in-game only');
+      return;
+    }
+
+    if (now - this.persistFailingSince >= PERSIST_WARN_INTERVAL_MS) {
+      this.persistFailingSince = now;
+      this.log.warn('runtime', 'still cannot persist settings to the service; cached in-game only');
     }
   }
+
+  /** Serialised copy of the last settings actually written. */
+  private lastWritten: string | null = null;
+
+  /** When the current run of persistence failures began, or null while healthy. */
+  private persistFailingSince: number | null = null;
 }
+
+/** How often to repeat a persistence warning while the service stays down. */
+const PERSIST_WARN_INTERVAL_MS = 300_000;

@@ -174,7 +174,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       the service is a few seconds late, the night is lost anyway.
 - [ ] **The stuck detector hammers a planner that always returns empty** — M.
       Every three seconds, all night, with no escalation path.
-- [ ] **Settings are PUT over HTTP every 3s** — S. ~9,600 writes a night, and when
+- [x] **Settings are PUT over HTTP every 3s** — S. ~9,600 writes a night, and when
       the service is down the warning floods a 300-record queue, evicting every
       real diagnostic before it can ship.
 - [ ] **`suspended` has no timeout and stops reporting entirely** — S.
@@ -182,7 +182,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Observability
 
-- [ ] **`get_recent_activity` reads the last report, not the durable log** *(2×)* —
+- [x] **`get_recent_activity` reads the last report, not the durable log** *(2×)* —
       S. Records *are* written to `data/logs/*.jsonl` and never read back, which
       is why every post-mortem in this session hit "Log is empty".
 - [ ] **The journal is never written** *(4×)* — M. `addJournalEntry` has exactly
