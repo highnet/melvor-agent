@@ -200,3 +200,41 @@ usually the reason that stock level is not reachable.
 
 The test that asserted the old behaviour was not a regression to work around. It
 was the belief that killed the character, written down as an expectation.
+
+## Price the whole chain, not the last step
+
+Asked why the agent kept mining gems instead of smithing platebodies, the honest
+answer was that it could not have compared them: the dump had no smithing,
+mining, crafting, fishing or cooking section at all, and `sellsFor` existed on
+exactly thirty-four items — the woodcutting logs. Chains were not losing the
+comparison. They were absent from it, so every ranking defaulted to whichever
+single action advertised the biggest number.
+
+With every recipe's inputs, output and value dumped, the arithmetic is
+mechanical — and it says a final step's price is close to meaningless on its
+own. Iron Platebody reads 57,600 GP/h as one action and is 4,267 once the five
+bars and the ore beneath them are paid for: a 13.5× overstatement. The rule is
+to divide by the time of *every* step in the tree, and to name the bottleneck,
+which is almost always the gathering at the bottom.
+
+Two traps that only appear once inputs are priced:
+
+- A recipe whose input has no recipe reads as **free**. Leather armour looked
+  like 90,000 GP/h; Leather costs 100 GP in the shop, making it *negative*
+  30,000 GP/h. An input with no source is not a cheap input, it is an unpriced
+  one, and unpriced defaults to zero in exactly the wrong direction.
+- Air Battlestaff tops any naive sort at 1,008,000 GP/h gross and is −675,000
+  net, because its 100 Air Runes are 100 Rune Essence that had to be mined.
+
+## An advertised rate is a hypothesis
+
+Crystal advertised 120,000 GP/h and delivered about 10,800 — rocks deplete and
+respawn, and the rate charged only the swing. Yew advertised 22,500 and
+delivered 22,500, because trees do not deplete.
+
+The difference is not that one number was sloppier. Both were internally
+consistent; one model was missing a term. So the useful habit is not "distrust
+labels" but "check the realised rate against the label once, early" — the
+service already measures GP/h over a window and had been saying *"earning
+heavily... something on the list pays better"* for an hour before anyone read
+it.
