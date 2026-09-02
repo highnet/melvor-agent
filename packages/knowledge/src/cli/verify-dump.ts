@@ -24,13 +24,18 @@ const args = process.argv.slice(2);
 const expectIndex = args.indexOf('--expect');
 const expected = expectIndex === -1 ? null : (args[expectIndex + 1] ?? null);
 const pathArg = args.find((arg) => !arg.startsWith('--') && arg !== expected);
-const path = resolve(pathArg ?? process.env.MELVOR_AGENT_DATA ?? './data', pathArg ? '.' : 'dump.json');
+const path = resolve(
+  pathArg ?? process.env.MELVOR_AGENT_DATA ?? './data',
+  pathArg ? '.' : 'dump.json',
+);
 
 const raw = await readJson(path);
 
 if (raw === null) {
   console.error(`No dump at ${path}`);
-  console.error('Produce one from the in-game panel: "Dump knowledge" (planner service must be running).');
+  console.error(
+    'Produce one from the in-game panel: "Dump knowledge" (planner service must be running).',
+  );
   process.exit(1);
 }
 
@@ -48,7 +53,9 @@ const age = Date.now() - dump.capturedAt;
 
 console.log(`Dump: ${path}`);
 console.log(`  game version   ${dump.gameVersion}`);
-console.log(`  captured       ${new Date(dump.capturedAt).toISOString()} (${Math.round(age / 3_600_000)}h ago)`);
+console.log(
+  `  captured       ${new Date(dump.capturedAt).toISOString()} (${Math.round(age / 3_600_000)}h ago)`,
+);
 console.log(`  gamemode       ${dump.gamemodeId}`);
 console.log(`  realms         ${dump.realms.length}`);
 console.log(`  skills         ${dump.skills.length}`);

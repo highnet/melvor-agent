@@ -1,7 +1,7 @@
 declare let inCharacterSelection: boolean;
-declare const enum SaveViewType {
-    Local = 0,
-    Cloud = 1
+declare enum SaveViewType {
+  Local = 0,
+  Cloud = 1,
 }
 declare let currentSaveView: SaveViewType;
 declare let startingGamemode: undefined | Gamemode;
@@ -12,8 +12,8 @@ declare const localSaveHeaders: (SaveGameHeader | SaveLoadError)[];
 declare const cloudSaveHeaders: (SaveGameHeader | SaveLoadError)[];
 declare function loadCharacterSelection(returnToGame?: boolean): void;
 declare function getCloudInfoInSlot(slotID: number): {
-    cloudInfo: SaveGameHeader | undefined;
-    hasCloud: boolean;
+  cloudInfo: SaveGameHeader | undefined;
+  hasCloud: boolean;
 };
 declare function getLocalInfoInSlot(slotID: number): SaveGameHeader | undefined;
 /** Callback function for when the user refreshes the cloud save selection */
@@ -59,10 +59,10 @@ declare function createLocalSaveOnClick(slotID: number): void;
 /** Callback function. Setup the user account on first load */
 declare function createNewSave(): void;
 interface LatestHCDeath {
-    PlayerName: string;
-    killedBy: string;
-    TotalSkillLevel: number;
-    timestamp: number;
+  PlayerName: string;
+  killedBy: string;
+  TotalSkillLevel: number;
+  timestamp: number;
 }
 declare function createLatestDeathNotification(): string;
 declare function showDiscontinuedModal(title: string): void;
@@ -75,7 +75,9 @@ declare function setNewStartPage(page: CharacterSelectPage): void;
 /** Checks mod manager status, and shows a prompt to the user. Returns true if the current callback function should abort early. */
 declare function showModManagerPrompts(): boolean;
 /** Checks save's mod profile against the currently active mod profile. Returns true if the current callback function should abort early. */
-declare function showModProfilePrompts(profile: Omit<Modding.Profile, 'autoEnable'> | null): Promise<boolean>;
+declare function showModProfilePrompts(
+  profile: Omit<Modding.Profile, 'autoEnable'> | null,
+): Promise<boolean>;
 declare function displayGamemodeSelection(slotID: number): void;
 declare const setStartingGamemode: (gamemode: Gamemode) => void;
 /** Callback function for when the Import Save option is clicked */

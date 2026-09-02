@@ -1,4 +1,4 @@
-declare const CLOUDURL = "";
+declare const CLOUDURL = '';
 declare const ENABLEPLAYFABAUTH = false;
 /** Future function to be used to determine whether or not the correct URL origin is used to access the game */
 declare const gameOriginCheck: () => boolean;
@@ -23,7 +23,10 @@ declare function getPlayFabData(key: string): Promise<unknown>;
  */
 declare function playFabStoreData(key: string, value: string | null): void;
 /** Callback for above store data method */
-declare function playFabStoreDataCallback(result: PlayFabModule.SuccessContainer<PlayFabClientModels.UpdateUserDataResult>, error: PlayFabModule.IPlayFabError): void;
+declare function playFabStoreDataCallback(
+  result: PlayFabModule.SuccessContainer<PlayFabClientModels.UpdateUserDataResult>,
+  error: PlayFabModule.IPlayFabError,
+): void;
 /** Cloud save deleted notification */
 declare function showPlayFabSaveDeletedNotification(): void;
 declare function createPlayFabSaves(): string;

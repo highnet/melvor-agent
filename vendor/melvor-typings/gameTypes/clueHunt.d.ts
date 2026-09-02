@@ -1,6 +1,7 @@
 declare class ClueHunt {
-    ifYouAreReadingThisCodeThenYouAreRuiningTheFunForEveryoneAndYouShouldBeAshamedOfYourself: boolean;
-    clueProgress: ({
+  ifYouAreReadingThisCodeThenYouAreRuiningTheFunForEveryoneAndYouShouldBeAshamedOfYourself: boolean;
+  clueProgress: (
+    | {
         id: string;
         progress: number;
         required: number;
@@ -16,7 +17,8 @@ declare class ClueHunt {
         constellationIDs?: undefined;
         dungeonIDs?: undefined;
         runecraftingIDs?: undefined;
-    } | {
+      }
+    | {
         progress: number;
         required: number;
         complete: boolean;
@@ -32,7 +34,8 @@ declare class ClueHunt {
         constellationIDs?: undefined;
         dungeonIDs?: undefined;
         runecraftingIDs?: undefined;
-    } | {
+      }
+    | {
         progress: number;
         required: number;
         monsterID: string;
@@ -48,7 +51,8 @@ declare class ClueHunt {
         constellationIDs?: undefined;
         dungeonIDs?: undefined;
         runecraftingIDs?: undefined;
-    } | {
+      }
+    | {
         progress: number;
         required: number;
         monsterID: string;
@@ -64,7 +68,8 @@ declare class ClueHunt {
         constellationIDs?: undefined;
         dungeonIDs?: undefined;
         runecraftingIDs?: undefined;
-    } | {
+      }
+    | {
         progress: number;
         required: number;
         skillIDs: string[];
@@ -80,7 +85,8 @@ declare class ClueHunt {
         constellationIDs?: undefined;
         dungeonIDs?: undefined;
         runecraftingIDs?: undefined;
-    } | {
+      }
+    | {
         progress: number;
         required: number;
         monsterIDs: string[];
@@ -96,24 +102,25 @@ declare class ClueHunt {
         equippedItems?: undefined;
         skillIDs?: undefined;
         obstacleIDs?: undefined;
-    })[];
-    currentStep: number;
-    constructor();
-    encode(writer: SaveWriter): SaveWriter;
-    decode(reader: SaveWriter, version: number): void;
-    onLoad(): void;
-    startClueHunt(): void;
-    clueCompletedSwal(): void;
-    clueHuntCompletedSwal(): void;
-    updateClueEventHandlers(): void;
-    giveReward(id: number): void;
-    updateClue1Progress: (event: GameEvent) => void;
-    updateClue2Progress: (event: GameEvent) => void;
-    updateClue3Progress: (event: MonsterKilledEvent) => void;
-    updateClue4Progress: (event: MonsterKilledEvent) => void;
-    updateClue5Progress: (event: GameEvent) => void;
-    resetClue6(): void;
-    updateClue6Progress: (event: GameEvent) => void;
-    render(): void;
-    renderArtwork(): void;
+      }
+  )[];
+  currentStep: number;
+  constructor();
+  encode(writer: SaveWriter): SaveWriter;
+  decode(reader: SaveWriter, version: number): void;
+  onLoad(): void;
+  startClueHunt(): void;
+  clueCompletedSwal(): void;
+  clueHuntCompletedSwal(): void;
+  updateClueEventHandlers(): void;
+  giveReward(id: number): void;
+  updateClue1Progress: (event: GameEvent) => void;
+  updateClue2Progress: (event: GameEvent) => void;
+  updateClue3Progress: (event: MonsterKilledEvent) => void;
+  updateClue4Progress: (event: MonsterKilledEvent) => void;
+  updateClue5Progress: (event: GameEvent) => void;
+  resetClue6(): void;
+  updateClue6Progress: (event: GameEvent) => void;
+  render(): void;
+  renderArtwork(): void;
 }

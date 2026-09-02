@@ -3,24 +3,24 @@ declare let characterSelected: boolean;
 /** @deprecated Unused global that is no longer needed */
 declare let backupSave: string;
 declare let dataDeleted: boolean;
-declare const keyVersion = "A04";
+declare const keyVersion = 'A04';
 declare let key: string;
 declare let currentStartPage: CharacterSelectPage;
 declare let panVal: number;
 declare let GUID: string;
 interface SaveGameHeader {
-    saveVersion: number;
-    characterName: string;
-    currentGamemode: Gamemode;
-    totalSkillLevel: number;
-    gp: number;
-    offlineAction: ActiveAction | undefined;
-    tickTimestamp: number;
-    saveTimestamp: number;
-    /** The un-modded namespaces that were active in the save when it was created. And empty array indicates the save is old and this information is unknown. */
-    activeNamespaces: string[];
-    /** The mod profile assigned to this save. Null for no mods. */
-    modProfile: Omit<Modding.Profile, 'autoEnable'> | null;
+  saveVersion: number;
+  characterName: string;
+  currentGamemode: Gamemode;
+  totalSkillLevel: number;
+  gp: number;
+  offlineAction: ActiveAction | undefined;
+  tickTimestamp: number;
+  saveTimestamp: number;
+  /** The un-modded namespaces that were active in the save when it was created. And empty array indicates the save is old and this information is unknown. */
+  activeNamespaces: string[];
+  /** The mod profile assigned to this save. Null for no mods. */
+  modProfile: Omit<Modding.Profile, 'autoEnable'> | null;
 }
 declare const setSaveGUID: () => void;
 declare let sidebarSwipeTimer: number;
@@ -79,67 +79,71 @@ declare function getSaveStringOld(keyPrefix: string): string;
 declare let loadedIDMap: NumericIDMap | undefined;
 declare function getNumericIDMap(): Promise<NumericIDMap>;
 declare function downloadSave(backup?: boolean, slotID?: number): Promise<boolean>;
-declare function isOldItemStats(itemStats: OldItemStats[] | ItemStat[]): itemStats is OldItemStats[];
-declare function isOldMonsterStats(monsterStats: OldMonsterStat[] | MonsterStat[]): monsterStats is OldMonsterStat[];
+declare function isOldItemStats(
+  itemStats: OldItemStats[] | ItemStat[],
+): itemStats is OldItemStats[];
+declare function isOldMonsterStats(
+  monsterStats: OldMonsterStat[] | MonsterStat[],
+): monsterStats is OldMonsterStat[];
 interface OldItemStats {
-    timesFound: number;
-    timesSold: number;
-    gpFromSale: number;
-    deathCount: number;
-    damageTaken: number;
-    damageDealt: number;
-    missedAttacks: number;
-    timesEaten: number;
-    healedFor: number;
-    totalAttacks: number;
-    amountUsedInCombat: number;
-    timeWaited: number;
-    timesDied: number;
-    timesGrown: number;
-    harvestAmount: number;
-    enemiesKilled: number;
-    timesOpened: number;
+  timesFound: number;
+  timesSold: number;
+  gpFromSale: number;
+  deathCount: number;
+  damageTaken: number;
+  damageDealt: number;
+  missedAttacks: number;
+  timesEaten: number;
+  healedFor: number;
+  totalAttacks: number;
+  amountUsedInCombat: number;
+  timeWaited: number;
+  timesDied: number;
+  timesGrown: number;
+  harvestAmount: number;
+  enemiesKilled: number;
+  timesOpened: number;
 }
 interface ItemStat {
-    /**
-     * 0: timesFound
-     * 1: timesSold
-     * 2: gpFromSale
-     * 3: deathCount
-     * 4: damageTaken
-     * 5: damageDealt
-     * 6: missedAttacks
-     * 7: timesEaten
-     * 8: healedFor
-     * 9: totalAttacks
-     * 10: amountUsedInCombat
-     * 11: timeWaited
-     * 12: timesDied
-     * 13: timesGrown
-     * 14: harvestAmount
-     * 15: enemiesKilled
-     * 16: timesOpened
-     */
-    stats: number[];
-    itemID: number;
+  /**
+   * 0: timesFound
+   * 1: timesSold
+   * 2: gpFromSale
+   * 3: deathCount
+   * 4: damageTaken
+   * 5: damageDealt
+   * 6: missedAttacks
+   * 7: timesEaten
+   * 8: healedFor
+   * 9: totalAttacks
+   * 10: amountUsedInCombat
+   * 11: timeWaited
+   * 12: timesDied
+   * 13: timesGrown
+   * 14: harvestAmount
+   * 15: enemiesKilled
+   * 16: timesOpened
+   */
+  stats: number[];
+  itemID: number;
 }
 /** Converts 1st item stats format stats to the 2nd item stats format */
 declare function convertItemStats(oldItemStats: OldItemStats[]): ItemStat[];
 interface OldMonsterStat {
-    damageDealtToPlayer: number;
-    damageTakenFromPlayer: number;
-    killedByPlayer: number;
-    killedPlayer: number;
-    hitsToPlayer: number;
-    hitsFromPlayer: number;
-    enemyMissed: number;
-    playerMissed: number;
-    seen: number;
-    ranAway: number;
+  damageDealtToPlayer: number;
+  damageTakenFromPlayer: number;
+  killedByPlayer: number;
+  killedPlayer: number;
+  hitsToPlayer: number;
+  hitsFromPlayer: number;
+  enemyMissed: number;
+  playerMissed: number;
+  seen: number;
+  ranAway: number;
 }
 interface MonsterStat {
-    monsterID: number;
-    stats: number[];
+  monsterID: number;
+  stats: number[];
 }
 /** Converts 1st monster stats format to the 2nd monster stats format */
 declare function convertMonsterStats(oldMonsterStats: OldMonsterStat[]): MonsterStat[];
@@ -165,16 +169,16 @@ declare function changePageCharacterSelection(page: CharacterSelectPage): void;
 declare function updateUIForAnnouncements(): void;
 declare function hideUIForAnnouncement(id: number): void;
 declare const maxSaveSlots = 8;
-declare const enum SaveLoadError {
-    Empty = 0,
-    Corrupt = 1,
-    InvalidVersion = 2
+declare enum SaveLoadError {
+  Empty = 0,
+  Corrupt = 1,
+  InvalidVersion = 2,
 }
 declare function updateLocalSaveHeaders(): Promise<void>;
 declare function updateCloudSaveHeaders(): Promise<void>;
-declare const enum SaveLoadErrorMessage {
-    InvalidVersion = "Invalid save version.",
-    CorruptSave = "Corrupt Save."
+declare enum SaveLoadErrorMessage {
+  InvalidVersion = 'Invalid save version.',
+  CorruptSave = 'Corrupt Save.',
 }
 /** If the game is currently trying to load a save file */
 declare let isLoadingSave: boolean;
@@ -184,9 +188,17 @@ declare let isCreatingSave: boolean;
 declare function loadSaveFromString(saveString: string, slotID: number): Promise<void>;
 declare function processSaveLoadError(slotID: number, isCloud: boolean, error: unknown): void;
 declare function showTitleScreenError(error: unknown, title: string): void;
-declare function getTitleScreenErrorLog(error: unknown, title: string, modError: Modding.ModError): string;
+declare function getTitleScreenErrorLog(
+  error: unknown,
+  title: string,
+  modError: Modding.ModError,
+): string;
 /** Attempts to load the local save in the given save slot */
 declare function loadLocalSave(slotID: number): Promise<void>;
 /** Attempts to load the cloud save in the given save slot */
 declare function loadCloudSave(slotID: number): Promise<void>;
-declare function createNewCharacterInSlot(slotID: number, gamemode: Gamemode, characterName: string): Promise<void>;
+declare function createNewCharacterInSlot(
+  slotID: number,
+  gamemode: Gamemode,
+  characterName: string,
+): Promise<void>;

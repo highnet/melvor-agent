@@ -9,7 +9,11 @@ declare function getStdDev(numActions: number, probability: number): number;
 /** Modifies baseStat by modifier
  *   @param type 0 applies a percentage bonus, 1 applies an additive bonus, 2: applies a negative additive bonus, 3: multiplies base number by percentage, 4: same as 3 without flooring
  */
-declare function applyModifier(baseStat: number, modifier: number, type?: 0 | 1 | 2 | 3 | 4): number;
+declare function applyModifier(
+  baseStat: number,
+  modifier: number,
+  type?: 0 | 1 | 2 | 3 | 4,
+): number;
 declare function binomial_distribution(n: number, p: number, epsilon?: number): number[];
 declare function sample_from_binomial(numberTrials: number, chance: number): number;
 /**
@@ -59,13 +63,16 @@ declare function joinAsOrList(list: string[]): string;
 declare function joinAsLineBreakList(list: string[]): string;
 declare const joinAsSuperList: (list: string[]) => string;
 interface StatDescription {
-    text: string;
-    isNegative: boolean;
-    isDisabled: boolean;
+  text: string;
+  isNegative: boolean;
+  isDisabled: boolean;
 }
 /** A function used to format the descriptions of modifiers and effect applicators */
 declare type DescriptionFormatter<T> = (description: StatDescription) => T;
-declare function getStandardDescTextClass(description: StatDescription, fontWeight: boolean): string;
+declare function getStandardDescTextClass(
+  description: StatDescription,
+  fontWeight: boolean,
+): string;
 /** Formats a description, with no HTML syntax. For use in search functionality */
 declare const searchDescriptionFormatter: DescriptionFormatter<string>;
 /** Formats a description, without any positive or negative colours, but with disabled descriptions wrapped in span elements */
@@ -77,7 +84,11 @@ declare const plainDescriptionFormatter: DescriptionFormatter<string>;
  * @param fontWeight If the default font-weight classes should be added to the elements
  * @returns
  */
-declare const getElementHTMLDescriptionFormatter: <T extends keyof HTMLElementTagNameMap>(tagName: T, className?: string, fontWeight?: boolean) => DescriptionFormatter<string>;
+declare const getElementHTMLDescriptionFormatter: <T extends keyof HTMLElementTagNameMap>(
+  tagName: T,
+  className?: string,
+  fontWeight?: boolean,
+) => DescriptionFormatter<string>;
 /** Formats a description as HTML with span elements */
 declare const spanHTMLDescriptionFormatter: DescriptionFormatter<string>;
 /**
@@ -87,12 +98,26 @@ declare const spanHTMLDescriptionFormatter: DescriptionFormatter<string>;
  * @param fontWeight If the default font-weight classes should be added to the elements
  * @returns
  */
-declare const getElementDescriptionFormatter: <T extends keyof HTMLElementTagNameMap>(tagName: T, className?: string, fontWeight?: boolean) => DescriptionFormatter<HTMLElementTagNameMap[T]>;
+declare const getElementDescriptionFormatter: <T extends keyof HTMLElementTagNameMap>(
+  tagName: T,
+  className?: string,
+  fontWeight?: boolean,
+) => DescriptionFormatter<HTMLElementTagNameMap[T]>;
 declare const spanDescriptionFormatter: DescriptionFormatter<HTMLSpanElement>;
-declare function pluralS(number: number): "" | "s";
+declare function pluralS(number: number): '' | 's';
 declare function checkMediaQuery(mediaQuery: string): boolean;
-declare const addMediaQueryListener: (mediaQuery: string, callbackFn: (this: MediaQueryList, ev: MediaQueryListEvent) => void) => void, removeMediaQueryListener: (mediaQuery: string, callbackFn: (this: MediaQueryList, ev: MediaQueryListEvent) => void) => void;
-declare function createElement<T extends keyof HTMLElementTagNameMap>(tagName: T, options?: ElemCreationOptions): HTMLElementTagNameMap[T];
+declare const addMediaQueryListener: (
+    mediaQuery: string,
+    callbackFn: (this: MediaQueryList, ev: MediaQueryListEvent) => void,
+  ) => void,
+  removeMediaQueryListener: (
+    mediaQuery: string,
+    callbackFn: (this: MediaQueryList, ev: MediaQueryListEvent) => void,
+  ) => void;
+declare function createElement<T extends keyof HTMLElementTagNameMap>(
+  tagName: T,
+  options?: ElemCreationOptions,
+): HTMLElementTagNameMap[T];
 declare function hideElement(elem: Element): void;
 declare function showElement(elem: Element): void;
 declare function hideElements(elems: Element[]): void;
@@ -102,22 +127,22 @@ declare function createImage(media: string, imageClass: string): HTMLImageElemen
 declare function toggleDangerSuccess(elem: HTMLElement, success: boolean): void;
 declare function removeElementID(elem: HTMLElement): void;
 declare type ElemCreationOptions = {
-    /** Sets the elements className */
-    className?: string;
-    /** Sets the element classlist, will be added in addition to className if also provided */
-    classList?: string[];
-    /** Appends the child to a parent node */
-    parent?: HTMLElement;
-    /** Appends the children to the element */
-    children?: (string | Node)[];
-    /** Sets the element's text */
-    text?: string;
-    /** List of attributes to set on the element */
-    attributes?: [string, string][];
-    /** Element ID */
-    id?: string;
-    /** Sets the element's innerHTML */
-    innerHTML?: string;
+  /** Sets the elements className */
+  className?: string;
+  /** Sets the element classlist, will be added in addition to className if also provided */
+  classList?: string[];
+  /** Appends the child to a parent node */
+  parent?: HTMLElement;
+  /** Appends the children to the element */
+  children?: (string | Node)[];
+  /** Sets the element's text */
+  text?: string;
+  /** List of attributes to set on the element */
+  attributes?: [string, string][];
+  /** Element ID */
+  id?: string;
+  /** Sets the element's innerHTML */
+  innerHTML?: string;
 };
 declare function fireBottomToast(text: string, duration?: number): void;
 declare function fireTopToast(text: string, duration?: number): void;
@@ -157,7 +182,12 @@ declare function level99Notify(skill: AnySkill): void;
 /** Fires a resource preservation notification */
 declare function notifyPreserve(skill: AnySkill): void;
 /** Fires a generic notification, with the image of the skill specified */
-declare function notifyPlayer(skill: AnySkill | -1, message: string, messageTheme?: StandardTheme, quantity?: number): void;
+declare function notifyPlayer(
+  skill: AnySkill | -1,
+  message: string,
+  messageTheme?: StandardTheme,
+  quantity?: number,
+): void;
 /** Fires a notification that skill gloves have run out of charges */
 declare function notifyItemCharges(item: EquipmentItem): void;
 /** Fires a notification that a tutorial task was completed */
@@ -176,36 +206,36 @@ declare function removePyro(): void;
 declare function startPyroInterval(): void;
 /** Helps queue game notifications */
 declare class NotificationQueue {
-    maxNotifications: number;
-    queue: QueuedNotify[];
-    disableQueueLimit: boolean;
-    constructor(maxNotifications: number);
-    notify(): void;
-    add(notification: QueuedNotify): void;
-    clear(): void;
-    disableMaxQueue(): void;
-    enableMaxQueue(): void;
+  maxNotifications: number;
+  queue: QueuedNotify[];
+  disableQueueLimit: boolean;
+  constructor(maxNotifications: number);
+  notify(): void;
+  add(notification: QueuedNotify): void;
+  clear(): void;
+  disableMaxQueue(): void;
+  enableMaxQueue(): void;
 }
 /** Utility class for computing experience and levels */
 declare class ExperienceCalculator {
-    /** Table of level to xp required */
-    table: number[];
-    xpSum: number;
-    /** Constant used to estimate level */
-    estConstA: number;
-    /** Constant used to estimate level */
-    estConstB: number;
-    constructor();
-    equate(level: number): number;
-    /** Computes the xp required for the next level in the table */
-    computeNextLevelXP(level: number): number;
-    /** Computes an under-estimate of the level corresponding to an amount of XP */
-    estimateXPToLevel(xp: number): number;
-    levelToXP(level: number): number;
-    /** @deprecated Use levelToXP instead */
-    level_to_xp(level: number): number;
-    /** XP To level function utilizing estimate method */
-    xpToLevel(xp: number): number;
+  /** Table of level to xp required */
+  table: number[];
+  xpSum: number;
+  /** Constant used to estimate level */
+  estConstA: number;
+  /** Constant used to estimate level */
+  estConstB: number;
+  constructor();
+  equate(level: number): number;
+  /** Computes the xp required for the next level in the table */
+  computeNextLevelXP(level: number): number;
+  /** Computes an under-estimate of the level corresponding to an amount of XP */
+  estimateXPToLevel(xp: number): number;
+  levelToXP(level: number): number;
+  /** @deprecated Use levelToXP instead */
+  level_to_xp(level: number): number;
+  /** XP To level function utilizing estimate method */
+  xpToLevel(xp: number): number;
 }
 /**
  * New abyssal exp class for testing purposes for a different XP scaling
@@ -213,91 +243,109 @@ declare class ExperienceCalculator {
  * Level 1 -> 2 starts at the difference in XP between level 99 and 100, and continues up from there
  */
 declare class AbyssalExperienceCalculator {
-    exp: ExperienceCalculator;
-    readonly xpOffset: number;
-    readonly levelOffset = 98;
-    levelToXP(level: number): number;
-    xpToLevel(xp: number): number;
+  exp: ExperienceCalculator;
+  readonly xpOffset: number;
+  readonly levelOffset = 98;
+  levelToXP(level: number): number;
+  xpToLevel(xp: number): number;
 }
 /** Old Utility class for computing abyssal experience and levels
  * Leaving this here in case we want to revert back to it
  */
 declare class OldAbyssalExperienceCalculator extends ExperienceCalculator {
-    estConstA: number;
-    estConstB: number;
-    equate(level: number): number;
-    computeNextLevelXP(level: number): number;
-    estimateXPToLevel(xp: number): number;
+  estConstA: number;
+  estConstB: number;
+  equate(level: number): number;
+  computeNextLevelXP(level: number): number;
+  estimateXPToLevel(xp: number): number;
 }
 /** Calculator for experience and levels */
 declare const exp: ExperienceCalculator;
 declare const abyssalExp: AbyssalExperienceCalculator;
 declare function printAbyssalXPTable(upToLevel?: number): void;
 declare function printXPTable(upToLevel?: number): void;
-declare type QueuedNotify = ItemNotify | StunNotify | BankFullNotify | LevelUpNotify | AbyssalLevelUpNotify | PlayerNotify | ItemChargeNotify | MasteryNotify | Mastery99Notify | PreserveNotify | CurrencyNotify | TutorialNotify | SkillXPNotify | AbyssalXPNotify;
+declare type QueuedNotify =
+  | ItemNotify
+  | StunNotify
+  | BankFullNotify
+  | LevelUpNotify
+  | AbyssalLevelUpNotify
+  | PlayerNotify
+  | ItemChargeNotify
+  | MasteryNotify
+  | Mastery99Notify
+  | PreserveNotify
+  | CurrencyNotify
+  | TutorialNotify
+  | SkillXPNotify
+  | AbyssalXPNotify;
 declare type ItemNotify = {
-    type: 'Item';
-    args: Parameters<typeof itemNotify>;
+  type: 'Item';
+  args: Parameters<typeof itemNotify>;
 };
 declare type StunNotify = {
-    type: 'Stun';
-    args: Parameters<typeof stunNotify>;
+  type: 'Stun';
+  args: Parameters<typeof stunNotify>;
 };
 declare type BankFullNotify = {
-    type: 'BankFull';
-    args: Parameters<typeof bankFullNotify>;
+  type: 'BankFull';
+  args: Parameters<typeof bankFullNotify>;
 };
 declare type LevelUpNotify = {
-    type: 'LevelUp';
-    args: Parameters<typeof levelUpNotify>;
+  type: 'LevelUp';
+  args: Parameters<typeof levelUpNotify>;
 };
 declare type AbyssalLevelUpNotify = {
-    type: 'AbyssalLevelUp';
-    args: Parameters<typeof levelUpNotify>;
+  type: 'AbyssalLevelUp';
+  args: Parameters<typeof levelUpNotify>;
 };
 declare type PlayerNotify = {
-    type: 'Player';
-    args: Parameters<typeof notifyPlayer>;
+  type: 'Player';
+  args: Parameters<typeof notifyPlayer>;
 };
 declare type ItemChargeNotify = {
-    type: 'ItemCharges';
-    args: Parameters<typeof notifyItemCharges>;
+  type: 'ItemCharges';
+  args: Parameters<typeof notifyItemCharges>;
 };
 declare type MasteryNotify = {
-    type: 'Mastery';
-    args: Parameters<typeof notifyMasteryLevelUp>;
+  type: 'Mastery';
+  args: Parameters<typeof notifyMasteryLevelUp>;
 };
 declare type Mastery99Notify = {
-    type: 'Mastery99';
-    args: Parameters<typeof notify99ItemMastery>;
+  type: 'Mastery99';
+  args: Parameters<typeof notify99ItemMastery>;
 };
 declare type PreserveNotify = {
-    type: 'Preserve';
-    args: Parameters<typeof notifyPreserve>;
+  type: 'Preserve';
+  args: Parameters<typeof notifyPreserve>;
 };
 declare type CurrencyNotify = {
-    type: 'Currency';
-    args: Parameters<typeof currencyNotify>;
+  type: 'Currency';
+  args: Parameters<typeof currencyNotify>;
 };
 declare type TutorialNotify = {
-    type: 'TutorialTask';
+  type: 'TutorialTask';
 };
 declare type SkillXPNotify = {
-    type: 'SkillXP';
-    args: Parameters<typeof skillXPNotify>;
+  type: 'SkillXP';
+  args: Parameters<typeof skillXPNotify>;
 };
 declare type AbyssalXPNotify = {
-    type: 'AbyssalXP';
-    args: Parameters<typeof abyssalXPNotify>;
+  type: 'AbyssalXP';
+  args: Parameters<typeof abyssalXPNotify>;
 };
 declare function lockedSkillAlert(skill: AnySkill, messageTemplate: string): void;
 declare function showStunnedNotification(): void;
 declare function showSleepNotification(): void;
 declare type NameValuePair = {
-    name: string;
-    value: number;
+  name: string;
+  value: number;
 };
-declare function compareNameValuePairs(currentPairs: NameValuePair[], oldPairs: NameValuePair[], onFirstDiff: string): boolean;
+declare function compareNameValuePairs(
+  currentPairs: NameValuePair[],
+  oldPairs: NameValuePair[],
+  onFirstDiff: string,
+): boolean;
 declare function convertNameValuePairToMap(pairs: NameValuePair[]): Map<string, number>;
 /**
  * Replaces templates in a string with data
@@ -313,14 +361,27 @@ declare function templateString(string: string, templateData: StringDictionary<s
  * @param identifier The identifier for the language string to template
  * @param templateData An object containing replacements strings e.g. {example: "true text"}
  */
-declare function templateLangString(identifier: string, templateData: StringDictionary<string>): string;
+declare function templateLangString(
+  identifier: string,
+  templateData: StringDictionary<string>,
+): string;
 declare function milliToSeconds(ms: number): number;
 declare function multiplyByNumberMultiplier(value: number): number;
 declare function divideByNumberMultiplier(value: number): number;
 declare function animateProgress(div: string, interval: number, stayFull?: boolean): void;
 declare function resetProgressAnimation(div: string): void;
-declare function templateLangStringWithNodes(id: string | number, nodeData: StringDictionary<Node>, textData: StringDictionary<string>, clone?: boolean): (Node | string)[];
-declare function templateStringWithNodes(string: string, nodeData: StringDictionary<Node>, textData: StringDictionary<string>, clone?: boolean): (string | Node)[];
+declare function templateLangStringWithNodes(
+  id: string | number,
+  nodeData: StringDictionary<Node>,
+  textData: StringDictionary<string>,
+  clone?: boolean,
+): (Node | string)[];
+declare function templateStringWithNodes(
+  string: string,
+  nodeData: StringDictionary<Node>,
+  textData: StringDictionary<string>,
+  clone?: boolean,
+): (string | Node)[];
 /** Formats a number in it's ordinal form
  *  @example formatAsOrdinal(1) // '1st'
  *  @example formatAsOrdinal(2) // '2nd'
@@ -353,12 +414,12 @@ declare function formatIntegerAlphabetic(int: number): string;
  */
 declare function getIntegerFromAlphabetic(alpha: string): number;
 declare function getMSAsTime(time: number): {
-    years: number;
-    days: number;
-    hours: number;
-    minutes: number;
-    seconds: number;
-    milliseconds: number;
+  years: number;
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  milliseconds: number;
 };
 /** Locally formats a time period in ms
  * @example formatAsTimePeriod(1000) // '1s'
@@ -367,15 +428,30 @@ declare function formatAsTimePeriod(timeInMs: number): string;
 /** Locally formats a time period in ms using shorthand terminology
  * @example formatAsTimePeriod(1000) // '1s'
  */
-declare function formatAsShorthandTimePeriod(timeInMs: number, roundSeconds?: boolean, showMs?: boolean, padding?: boolean): string;
+declare function formatAsShorthandTimePeriod(
+  timeInMs: number,
+  roundSeconds?: boolean,
+  showMs?: boolean,
+  padding?: boolean,
+): string;
 declare function successSpan(content: string): string;
 declare function getTemplateElement(templateID: string): HTMLTemplateElement;
 declare function getTemplateNode(templateID: string): Node;
-declare function getAnyElementFromFragment(fragment: DocumentFragment, elementID: string): HTMLElement;
-declare function getElementFromFragment<T extends keyof HTMLElementTagNameMap>(fragment: DocumentFragment, elementID: string, tagName: T, preserveID?: boolean): HTMLElementTagNameMap[T];
+declare function getAnyElementFromFragment(
+  fragment: DocumentFragment,
+  elementID: string,
+): HTMLElement;
+declare function getElementFromFragment<T extends keyof HTMLElementTagNameMap>(
+  fragment: DocumentFragment,
+  elementID: string,
+  tagName: T,
+  preserveID?: boolean,
+): HTMLElementTagNameMap[T];
 /** Formats a number to locale sensitive fixed digits */
 declare function formatFixed(num: number, digits: number): string;
-declare function switchToCategory<T extends HasLevels>(tabs: Map<CategoryLike, RecipeSelectionTabElement<T>>): (categoryToShow: CategoryLike) => void;
+declare function switchToCategory<T extends HasLevels>(
+  tabs: Map<CategoryLike, RecipeSelectionTabElement<T>>,
+): (categoryToShow: CategoryLike) => void;
 /**
  * Creates a promise that resolves after delay
  * @param delay Time to delay in [ms]
@@ -387,51 +463,62 @@ declare function delayPromise(delay: number): Promise<void>;
  * @param key The key of the event to wait for
  * @returns A promise that resolves when the event next occurs
  */
-declare function delayUntilGameEvent<Events extends Record<EventType, GameEvent>>(emitter: IGameEventEmitter<Events>, key: keyof Events): Promise<void>;
+declare function delayUntilGameEvent<Events extends Record<EventType, GameEvent>>(
+  emitter: IGameEventEmitter<Events>,
+  key: keyof Events,
+): Promise<void>;
 /** Tells the browser to download a text file */
 declare function downloadTextFile(fileName: string, fileText: string, fileType?: string): void;
 /** Takes the original array, and returns a soft copy without the elements contained in remove */
 declare function removeFromArray<T>(original: T[], remove: T[]): T[];
 /** Returns a function for use in Array.sort, that will sort an array of objects T, in the order corresponding to their property key */
 declare function sortByOrder<T, K extends keyof T>(order: T[K][], key: K): (a: T, b: T) => number;
-declare function sortByCurrencyValue(ascending: boolean, a: CurrencyQuantity, b: CurrencyQuantity): number;
+declare function sortByCurrencyValue(
+  ascending: boolean,
+  a: CurrencyQuantity,
+  b: CurrencyQuantity,
+): number;
 declare function logConsole(message: string): void;
 /** Utility function for throwing errors related to unregistered objects during save game conversion */
 declare const unregisteredMessage: (type: string) => string;
 /** Error type for when the construction of a data object fails */
 declare class DataConstructionError extends Error {
-    inner?: unknown;
-    get name(): string;
-    constructor(className: string, inner?: unknown, id?: string);
+  inner?: unknown;
+  get name(): string;
+  constructor(className: string, inner?: unknown, id?: string);
 }
 /** Error type for when the modification of a data object fails */
 declare class DataModificationError extends Error {
-    inner?: unknown;
-    get name(): string;
-    constructor(className: string, inner?: unknown, id?: string);
+  inner?: unknown;
+  get name(): string;
+  constructor(className: string, inner?: unknown, id?: string);
 }
 /** Returns an error message for failing to construct an object that requires registered data. */
 declare class UnregisteredConstructionError extends Error {
-    constructor(object: Object, unregisteredName: string, id: string);
+  constructor(object: Object, unregisteredName: string, id: string);
 }
 declare class UnregisteredDataModError extends Error {
-    constructor(unregisteredName: string, id: string);
+  constructor(unregisteredName: string, id: string);
 }
 declare class UnregisteredApplyDataModError extends Error {
-    constructor(objectBeingModded: NamespacedObject, unregisteredName: string, unregisteredID: string);
+  constructor(
+    objectBeingModded: NamespacedObject,
+    unregisteredName: string,
+    unregisteredID: string,
+  );
 }
 declare const progressBarAttributes: [string, string][];
 declare type DropTableElement = {
-    item: AnyItem;
-    minQuantity: number;
-    maxQuantity: number;
-    weight: number;
+  item: AnyItem;
+  minQuantity: number;
+  maxQuantity: number;
+  weight: number;
 };
 interface Weighted {
-    weight: number;
+  weight: number;
 }
 interface WeightedResult<T> extends Weighted {
-    result: T;
+  result: T;
 }
 /**
  * Selects a random element from a weighted array
@@ -441,79 +528,79 @@ interface WeightedResult<T> extends Weighted {
  */
 declare function selectFromWeightedArray<T extends Weighted>(array: T[], totalWeight: number): T;
 declare class DropTable {
-    totalWeight: number;
-    drops: DropTableElement[];
-    /** The number of different drops in the table */
-    get size(): number;
-    get weight(): number;
-    get sortedDropsArray(): DropTableElement[];
-    constructor(game: Game, data: DropTableData[]);
-    registerDrops(game: Game, data: DropTableData[]): void;
-    unregisterDrops(data: string[]): void;
-    /** Rolls for a drop on the table */
-    getDrop(): AnyItemQuantity;
-    /** Rolls for a drop on the table and returns raw drop data with quantity */
-    getRawDrop(): RawDrop;
-    /** Gets the average currency value of a drop in this table */
-    getAverageDropValue(): SparseNumericMap<Currency>;
+  totalWeight: number;
+  drops: DropTableElement[];
+  /** The number of different drops in the table */
+  get size(): number;
+  get weight(): number;
+  get sortedDropsArray(): DropTableElement[];
+  constructor(game: Game, data: DropTableData[]);
+  registerDrops(game: Game, data: DropTableData[]): void;
+  unregisterDrops(data: string[]): void;
+  /** Rolls for a drop on the table */
+  getDrop(): AnyItemQuantity;
+  /** Rolls for a drop on the table and returns raw drop data with quantity */
+  getRawDrop(): RawDrop;
+  /** Gets the average currency value of a drop in this table */
+  getAverageDropValue(): SparseNumericMap<Currency>;
 }
 interface RawDrop {
-    drop: DropTableElement;
-    quantity: number;
+  drop: DropTableElement;
+  quantity: number;
 }
 declare type RandomModifierTableElement = {
-    weight: number;
-    modifier: ModifierValue;
-    min: number;
-    max: number;
-    unique: boolean;
+  weight: number;
+  modifier: ModifierValue;
+  min: number;
+  max: number;
+  unique: boolean;
 };
 declare type RandomModifierTableData = ModifierScopeData & {
-    id: string;
-    weight: number;
-    min: number;
-    max: number;
-    unique?: boolean;
+  id: string;
+  weight: number;
+  min: number;
+  max: number;
+  unique?: boolean;
 };
 /** Utility class for selecting random modifiers */
 declare class RandomModifierTable {
-    totalWeight: number;
-    drops: RandomModifierTableElement[];
-    get size(): number;
-    constructor(game: Game, data: RandomModifierTableData[]);
-    /** Registers new modifiers that can be rolled from this table */
-    registerModifiers(game: Game, data: RandomModifierTableData[]): void;
-    /** Gets a single random modifier from this table */
-    getModifier(): ModifierValue;
-    processRoll(roll: RandomModifierTableElement): ModifierValue;
-    getExcludedTable(existing: ModifierValue[]): {
-        excludedWeight: number;
-        excludedDrops: RandomModifierTableElement[];
-    };
-    /** Gets a single random modifier from this table, excluding the modifiers flagged as unique contained in existing */
-    getModifierExcludingUnique(existing: ModifierValue[]): ModifierValue;
-    /** Gets multiple random modifiers from this table, excluding the modifiers flagged as unique contained in existing. More efficient than calling getModifierExludingUnique multiple times due to excluded table caching. */
-    getModifiersExcludingUnique(existing: ModifierValue[], count: number): ModifierValue[];
+  totalWeight: number;
+  drops: RandomModifierTableElement[];
+  get size(): number;
+  constructor(game: Game, data: RandomModifierTableData[]);
+  /** Registers new modifiers that can be rolled from this table */
+  registerModifiers(game: Game, data: RandomModifierTableData[]): void;
+  /** Gets a single random modifier from this table */
+  getModifier(): ModifierValue;
+  processRoll(roll: RandomModifierTableElement): ModifierValue;
+  getExcludedTable(existing: ModifierValue[]): {
+    excludedWeight: number;
+    excludedDrops: RandomModifierTableElement[];
+  };
+  /** Gets a single random modifier from this table, excluding the modifiers flagged as unique contained in existing */
+  getModifierExcludingUnique(existing: ModifierValue[]): ModifierValue;
+  /** Gets multiple random modifiers from this table, excluding the modifiers flagged as unique contained in existing. More efficient than calling getModifierExludingUnique multiple times due to excluded table caching. */
+  getModifiersExcludingUnique(existing: ModifierValue[], count: number): ModifierValue[];
 }
 /** Wrapper for sparse numeric maps */
 declare class SparseNumericMap<T> {
-    data: Map<T, number>;
-    get size(): number;
-    get isEmpty(): boolean;
-    has(key: T): boolean;
-    get(key: T): number;
-    set(key: T, value: number): void;
-    add(key: T, amount: number): void;
-    inc(key: T): void;
-    sub(key: T, amount: number): void;
-    dec(key: T): void;
-    mult(key: T, multiplier: number): void;
-    div(key: T, divisor: number): void;
-    getSum(): number;
-    getSumOfKeys(keys: T[]): number;
-    clear(): void;
-    forEach(callbackfn: (value: number, key: T) => void): void;
-    keys(): IterableIterator<T>;
+  data: Map<T, number>;
+  get size(): number;
+  get isEmpty(): boolean;
+  has(key: T): boolean;
+  get(key: T): number;
+  set(key: T, value: number): void;
+  add(key: T, amount: number): void;
+  inc(key: T): void;
+  sub(key: T, amount: number): void;
+  dec(key: T): void;
+  mult(key: T, multiplier: number): void;
+  div(key: T, divisor: number): void;
+  getSum(): number;
+  getSumOfKeys(keys: T[]): number;
+  clear(): void;
+  forEach(callbackfn: (value: number, key: T) => void): void;
+  keys(): IterableIterator<T>;
 }
 /**
  * Escapes the characters in a string such that they are considered as their literal values in a RegExp
@@ -521,7 +608,7 @@ declare class SparseNumericMap<T> {
  */
 declare function escapeRegExp(string: string): string;
 declare function generateComponentClass(tagName: string): string;
-declare function getRequirementTextClass(met: boolean): "text-success" | "text-danger";
+declare function getRequirementTextClass(met: boolean): 'text-success' | 'text-danger';
 declare function createUnlockElement(costNodes: (string | Node)[], met: boolean): HTMLDivElement;
 declare function printUnlockRequirements(requirements: AnyRequirement[]): HTMLDivElement[];
 declare function printUnlockAllRequirements(requirements: AnyRequirement[]): HTMLDivElement[];
@@ -538,56 +625,62 @@ declare function isRequirementMet(requirements: AnyRequirement[]): boolean;
 declare function createCopyOfObject(obj: any): any;
 declare function formatAsSHTimePeriod(timeInMs: number): string;
 declare function getMAsTime(time: number): {
-    years: number;
-    days: number;
-    hours: number;
-    minutes: number;
-    seconds: number;
-    milliseconds: number;
+  years: number;
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+  milliseconds: number;
 };
 /** Adds a blanket listener to all on-combat skilling actions to perform specified function */
-declare function addAllNonCombatSkillActionEventListeners(game: Game, actionFunction: () => void): void;
+declare function addAllNonCombatSkillActionEventListeners(
+  game: Game,
+  actionFunction: () => void,
+): void;
 /** Removes the blanket listener to all on-combat skilling actions for the specified function */
-declare function removeAllNonCombatSkillActionEventListeners(game: Game, actionFunction: () => void): void;
+declare function removeAllNonCombatSkillActionEventListeners(
+  game: Game,
+  actionFunction: () => void,
+): void;
 declare function reverseCombatTriangle(triangle: CombatTriangle): CombatTriangle;
 declare type ScheduledPushNotifications = ScheduledPushNotificationData[];
 interface ScheduledPushNotificationData {
-    id: string;
-    startDate: number;
-    endDate: number;
-    notificationType: PushNotificationType;
-    platform: string;
+  id: string;
+  startDate: number;
+  endDate: number;
+  notificationType: PushNotificationType;
+  platform: string;
 }
 interface OneSignalInfo {
-    oneSignalUserId?: string;
-    oneSignalPushToken?: string;
-    oneSignalSubscribed?: boolean;
-    oneSignalRequiresUserPrivacyConsent?: boolean;
-    platform?: string;
-    appId?: string;
-    appVersion?: string;
-    distribution?: string;
-    hardware?: string;
-    installationId?: string;
-    language?: string;
-    model?: string;
-    os?: string;
-    osVersion?: string;
-    timeZone?: string;
+  oneSignalUserId?: string;
+  oneSignalPushToken?: string;
+  oneSignalSubscribed?: boolean;
+  oneSignalRequiresUserPrivacyConsent?: boolean;
+  platform?: string;
+  appId?: string;
+  appVersion?: string;
+  distribution?: string;
+  hardware?: string;
+  installationId?: string;
+  language?: string;
+  model?: string;
+  os?: string;
+  osVersion?: string;
+  timeZone?: string;
 }
 declare enum PushNotificationType {
-    Unique = 0,
-    Other = 1
+  Unique = 0,
+  Other = 1,
 }
 interface SteamPurchaseResult {
-    isOwned: boolean;
+  isOwned: boolean;
 }
 declare function generateMonsterStatsCSV(): void;
 declare function generateEquipmentStatsCSV(): void;
 declare function generateLangModifierCustomDescriptionForItem(item: EquipmentItem): void;
 interface UIElementShift {
-    element: string;
-    destination: string;
+  element: string;
+  destination: string;
 }
 declare let isOnMobileLayout: boolean;
 declare const MOBILE_UI_ELEMENT_SHIFTS: UIElementShift[];

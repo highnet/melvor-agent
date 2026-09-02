@@ -272,9 +272,7 @@ export const knowledgeDumpSchema = z.object({
       baseAbyssalExperience: z.number().nonnegative().default(0),
       abyssalLevel: z.number().nonnegative().default(0),
       realmId: z.string().default(''),
-      itemCosts: z.array(
-        z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }),
-      ),
+      itemCosts: z.array(z.object({ itemId: z.string(), name: z.string(), quantity: z.number() })),
       runeCosts: z
         .array(z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }))
         .default([]),

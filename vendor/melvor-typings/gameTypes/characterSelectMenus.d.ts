@@ -1,79 +1,94 @@
 declare class CharacterDisplayElement extends HTMLElement implements CustomElement {
-    _content: DocumentFragment;
-    selectCharacterButton: HTMLButtonElement;
-    gamemodeBackground: HTMLDivElement;
-    gamemodeIcon: HTMLImageElement;
-    saveType: HTMLHeadingElement;
-    characterName: HTMLHeadingElement;
-    totalSkillLevel: HTMLSpanElement;
-    gpAmount: HTMLSpanElement;
-    offlineActionImage: HTMLImageElement;
-    offlineActionName: HTMLSpanElement;
-    offlineActionTime: HTMLSpanElement;
-    saveTimestamp: HTMLSpanElement;
-    timestampComparison: HTMLHeadingElement;
-    modProfileContainer: HTMLHeadingElement;
-    modProfileIcon: HTMLElement;
-    modProfileName: HTMLSpanElement;
-    constructor();
-    connectedCallback(): void;
-    toggleTestWarning(isTest: boolean): void;
-    setLocalSave(slotID: number, localInfo: SaveGameHeader, cloudInfo?: SaveGameHeader, disableCallbacks?: boolean): void;
-    setCloudSave(slotID: number, cloudInfo: SaveGameHeader, localInfo?: SaveGameHeader, disableCallbacks?: boolean): void;
-    setDisabled(): void;
-    disableCallbacks(): void;
-    setCharacter(slotID: number, headerInfo: SaveGameHeader, isCloud: boolean, disableCallbacks?: boolean): void;
-    updateTimestampComparison(viewedInfo: SaveGameHeader, comparedInfo?: SaveGameHeader): void;
+  _content: DocumentFragment;
+  selectCharacterButton: HTMLButtonElement;
+  gamemodeBackground: HTMLDivElement;
+  gamemodeIcon: HTMLImageElement;
+  saveType: HTMLHeadingElement;
+  characterName: HTMLHeadingElement;
+  totalSkillLevel: HTMLSpanElement;
+  gpAmount: HTMLSpanElement;
+  offlineActionImage: HTMLImageElement;
+  offlineActionName: HTMLSpanElement;
+  offlineActionTime: HTMLSpanElement;
+  saveTimestamp: HTMLSpanElement;
+  timestampComparison: HTMLHeadingElement;
+  modProfileContainer: HTMLHeadingElement;
+  modProfileIcon: HTMLElement;
+  modProfileName: HTMLSpanElement;
+  constructor();
+  connectedCallback(): void;
+  toggleTestWarning(isTest: boolean): void;
+  setLocalSave(
+    slotID: number,
+    localInfo: SaveGameHeader,
+    cloudInfo?: SaveGameHeader,
+    disableCallbacks?: boolean,
+  ): void;
+  setCloudSave(
+    slotID: number,
+    cloudInfo: SaveGameHeader,
+    localInfo?: SaveGameHeader,
+    disableCallbacks?: boolean,
+  ): void;
+  setDisabled(): void;
+  disableCallbacks(): void;
+  setCharacter(
+    slotID: number,
+    headerInfo: SaveGameHeader,
+    isCloud: boolean,
+    disableCallbacks?: boolean,
+  ): void;
+  updateTimestampComparison(viewedInfo: SaveGameHeader, comparedInfo?: SaveGameHeader): void;
 }
 declare class SaveSlotDisplayElement extends HTMLElement implements CustomElement {
-    _content: DocumentFragment;
-    slotTitle: HTMLHeadingElement;
-    settingsButton: HTMLButtonElement;
-    importSaveOption: HTMLAnchorElement;
-    forceLoadOption: HTMLAnchorElement;
-    settingsDivider: HTMLDivElement;
-    createSaveLinkOption: HTMLAnchorElement;
-    downloadSaveOption: HTMLAnchorElement;
-    exportSaveOption: HTMLAnchorElement;
-    deleteSettingsDivider: HTMLDivElement;
-    deleteLocalOption: HTMLAnchorElement;
-    deleteCloudOption: HTMLAnchorElement;
-    emptySlotContainer: HTMLDivElement;
-    emptySlotButton: HTMLButtonElement;
-    emptySlotText: HTMLHeadingElement;
-    existingCloudWarning: HTMLHeadingElement;
-    saveLoadingSpinner: HTMLButtonElement;
-    saveLoadingMessage: HTMLSpanElement;
-    characterDisplay: CharacterDisplayElement;
-    constructor();
-    connectedCallback(): void;
-    setSlotID(slotID: number): void;
-    showCloudSettings(forceLoad: boolean): void;
-    showEmptySaveSettings(): void;
-    showLocalSettings(forceLoad: boolean): void;
-    setEmptyOutline(type: 'danger' | 'warning' | 'success'): void;
-    setEmptyLocal(slotID: number, hasCloud: boolean): void;
-    setEmptyCloud(slotID: number): void;
-    setError(slotID: number, message: string, isCloud: boolean): void;
-    setCloudSave(slotID: number, cloudInfo: SaveGameHeader, localInfo?: SaveGameHeader): void;
-    setLocalSave(slotID: number, localInfo: SaveGameHeader, cloudInfo?: SaveGameHeader): void;
-    setSaveLoading(): void;
-    setDisabled(): void;
-    setLoadingMessage(message: string): void;
+  _content: DocumentFragment;
+  slotTitle: HTMLHeadingElement;
+  settingsButton: HTMLButtonElement;
+  importSaveOption: HTMLAnchorElement;
+  forceLoadOption: HTMLAnchorElement;
+  settingsDivider: HTMLDivElement;
+  createSaveLinkOption: HTMLAnchorElement;
+  downloadSaveOption: HTMLAnchorElement;
+  exportSaveOption: HTMLAnchorElement;
+  deleteSettingsDivider: HTMLDivElement;
+  deleteLocalOption: HTMLAnchorElement;
+  deleteCloudOption: HTMLAnchorElement;
+  emptySlotContainer: HTMLDivElement;
+  emptySlotButton: HTMLButtonElement;
+  emptySlotText: HTMLHeadingElement;
+  existingCloudWarning: HTMLHeadingElement;
+  saveLoadingSpinner: HTMLButtonElement;
+  saveLoadingMessage: HTMLSpanElement;
+  characterDisplay: CharacterDisplayElement;
+  constructor();
+  connectedCallback(): void;
+  setSlotID(slotID: number): void;
+  showCloudSettings(forceLoad: boolean): void;
+  showEmptySaveSettings(): void;
+  showLocalSettings(forceLoad: boolean): void;
+  setEmptyOutline(type: 'danger' | 'warning' | 'success'): void;
+  setEmptyLocal(slotID: number, hasCloud: boolean): void;
+  setEmptyCloud(slotID: number): void;
+  setError(slotID: number, message: string, isCloud: boolean): void;
+  setCloudSave(slotID: number, cloudInfo: SaveGameHeader, localInfo?: SaveGameHeader): void;
+  setLocalSave(slotID: number, localInfo: SaveGameHeader, cloudInfo?: SaveGameHeader): void;
+  setSaveLoading(): void;
+  setDisabled(): void;
+  setLoadingMessage(message: string): void;
 }
 declare class GamemodeSelectionElement extends HTMLElement implements CustomElement {
-    _content: DocumentFragment;
-    selectButton: HTMLButtonElement;
-    backgroundDiv: HTMLDivElement;
-    eventNotice: HTMLSpanElement;
-    timeRemaining: HTMLSpanElement;
-    name: HTMLHeadingElement;
-    safety: HTMLHeadingElement;
-    activeNotice: HTMLHeadingElement;
-    description: HTMLHeadingElement;
-    rulesContainer: HTMLUListElement;
-    rules: HTMLLIElement[];
-    constructor();
-    connectedCallback(): void;
-    setGamemode(gamemode: Gamemode): void;
+  _content: DocumentFragment;
+  selectButton: HTMLButtonElement;
+  backgroundDiv: HTMLDivElement;
+  eventNotice: HTMLSpanElement;
+  timeRemaining: HTMLSpanElement;
+  name: HTMLHeadingElement;
+  safety: HTMLHeadingElement;
+  activeNotice: HTMLHeadingElement;
+  description: HTMLHeadingElement;
+  rulesContainer: HTMLUListElement;
+  rules: HTMLLIElement[];
+  constructor();
+  connectedCallback(): void;
+  setGamemode(gamemode: Gamemode): void;
 }

@@ -53,5 +53,5 @@ interface ActiveAction extends Action {
   getOfflineMessages?(): string[];
 }
 interface SkillCategoryObject<CategoryType extends SkillCategory> {
-  categories: NamespaceRegistry<CategoryType>
+  categories: NamespaceRegistry<CategoryType>;
 }

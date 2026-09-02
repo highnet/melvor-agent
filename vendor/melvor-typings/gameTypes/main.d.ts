@@ -1,11 +1,11 @@
 declare const DEBUGENABLED = false;
 declare const releaseDate = 1637258400000;
 declare const DEBUG_REPORTER: string[];
-declare const gameTitle = "Melvor Idle :: v1.3.1";
+declare const gameTitle = 'Melvor Idle :: v1.3.1';
 declare let currentTitleNewsID: string[];
 declare let playFabEventQueue: {
-    eventName: string;
-    args: PlayFabEventBody;
+  eventName: string;
+  args: PlayFabEventBody;
 }[];
 declare let isLoaded: boolean;
 declare let confirmedLoaded: boolean;
@@ -29,7 +29,11 @@ declare function updateWindow(): Promise<void>;
  * @param errorLog The error log that can be copied
  * @param brokenMods Optional. Array of mod information from stack trace analysis
  */
-declare function showGameErrorModal(title: string, errorLog: string, brokenMods?: Modding.ModBasic[]): void;
+declare function showGameErrorModal(
+  title: string,
+  errorLog: string,
+  brokenMods?: Modding.ModBasic[],
+): void;
 /**
  * Handles errors when loading the game. Shows the error modal and removes the loader.
  * @param e Exception from the try catch block

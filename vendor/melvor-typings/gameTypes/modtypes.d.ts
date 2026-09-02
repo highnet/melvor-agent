@@ -315,7 +315,11 @@ declare namespace Modding {
     type RatingNumber = -1 | 0 | 1;
 
     /** Callback method used for receiving a modfile's current download progress */
-    type DownloadProgressCallback = (bytesDownloaded: number, byteTotal: number, bytesPerSecond: number) => void;
+    type DownloadProgressCallback = (
+      bytesDownloaded: number,
+      byteTotal: number,
+      bytesPerSecond: number,
+    ) => void;
   }
 
   namespace Manager {
@@ -636,7 +640,10 @@ declare namespace Modding {
   type SetterPatch<T, P> = (this: T, o: (val: P) => void, val: P) => void;
 
   type AnyFunction = (...args: any) => any;
-  type BeforePatch<T, M extends AnyFunction> = (this: T, ...args: Parameters<M>) => Parameters<M> | void;
+  type BeforePatch<T, M extends AnyFunction> = (
+    this: T,
+    ...args: Parameters<M>
+  ) => Parameters<M> | void;
   type AfterPatch<T, M extends AnyFunction> = (
     this: T,
     returnValue: ReturnType<M>,
@@ -700,7 +707,7 @@ declare namespace Modding {
     api: (endpoints: Record<string, unknown>) => any;
     patch: <T, MorP extends keyof T>(
       _class: Constructor<T>,
-      methodOrPropertyName: MorP
+      methodOrPropertyName: MorP,
     ) => MethodOrPropertyPatch<T, MorP>;
     isPatched: <T>(_class: Constructor<T>, methodOrPropertyName: keyof T) => boolean;
   }
@@ -734,7 +741,11 @@ declare namespace Modding {
 
   type SerializedCharacterStorageData = [string, unknown];
 
-  type SerializedCharacterData = [ModId, Settings.SerializedSection[] | null, SerializedCharacterStorageData[] | null];
+  type SerializedCharacterData = [
+    ModId,
+    Settings.SerializedSection[] | null,
+    SerializedCharacterStorageData[] | null,
+  ];
 
   type SerializedAccountStorageData = [number, [string, any][]];
 
@@ -767,7 +778,10 @@ declare namespace Modding {
   interface GameDataPackageBuilder extends GameDataPackageBuilderProperties {
     skills: {
       add<DataType extends BaseSkillData, T extends Skill<DataType>>(
-        _class: new (namespace: DataNamespace, game: Game) => T & Partial<PassiveAction> & Partial<ActiveAction>
+        _class: new (
+          namespace: DataNamespace,
+          game: Game,
+        ) => T & Partial<PassiveAction> & Partial<ActiveAction>,
       ): void;
     };
   }

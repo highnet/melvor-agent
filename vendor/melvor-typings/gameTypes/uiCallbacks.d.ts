@@ -1,10 +1,10 @@
 declare const equipStatKeys: EquipStatKey[];
 /** Callback function for viewing the contents of an Openable item. Modal will not fire if item is not openable. */
 declare function viewItemContents(item: OpenableItem): void;
-declare const enum DiffType {
-    Negative = 0,
-    Neutral = 1,
-    Positive = 2
+declare enum DiffType {
+  Negative = 0,
+  Neutral = 1,
+  Positive = 2,
 }
 /**
  * Views the stats of an item, and the difference in stats if equipped to the specified set
@@ -19,17 +19,17 @@ declare function viewEquipmentStats(): void;
  * @param respectArea Whether the drops should obey the type of combat area the player is currently in
  */
 declare function viewMonsterDrops(monster: Monster, respectArea: boolean): void;
-declare const enum CombatMenuId {
-    Equipment = 0,
-    Spellbook = 1,
-    Prayer = 2,
-    Runes = 3,
-    PlayerStats = 4,
-    Slayer = 5,
-    Summoning = 6,
-    Corruption = 7,
-    /** This provides the total number of menus, and should always be at the end */
-    Count = 8
+declare enum CombatMenuId {
+  Equipment = 0,
+  Spellbook = 1,
+  Prayer = 2,
+  Runes = 3,
+  PlayerStats = 4,
+  Slayer = 5,
+  Summoning = 6,
+  Corruption = 7,
+  /** This provides the total number of menus, and should always be at the end */
+  Count = 8,
 }
 /** Currently select combat menu */
 declare let selectedCombatMenu: CombatMenuId;
@@ -62,7 +62,13 @@ declare function openExpansion2EpicLink(): void;
 declare function openExpansion3EpicLink(): void;
 declare function openExpandedEditionSteamLink(): void;
 declare function viewMonsterStats(monster: Monster): void;
-declare const changePage: (page: Page, subCategory?: number, skill?: AnySkill, showRaidShop?: boolean, toggleSidebar?: boolean) => void;
+declare const changePage: (
+  page: Page,
+  subCategory?: number,
+  skill?: AnySkill,
+  showRaidShop?: boolean,
+  toggleSidebar?: boolean,
+) => void;
 /** Function for reading an lore entry */
 declare function readLore(loreID: number): void;
 declare function toggleWikiLinkVisibility(): void;
