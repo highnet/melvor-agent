@@ -260,6 +260,25 @@ export const knowledgeDumpSchema = z.object({
     }),
   ),
 
+  skillRecipes: z.array(
+    z.object({
+      skillId: z.string(),
+      skillName: z.string(),
+      baseInterval: z.number().nonnegative(),
+      recipeId: z.string(),
+      name: z.string(),
+      level: z.number().nonnegative(),
+      baseExperience: z.number().nonnegative(),
+      itemCosts: z.array(
+        z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }),
+      ),
+      productId: z.string(),
+      productName: z.string(),
+      baseQuantity: z.number(),
+      productSellsFor: z.number().nonnegative(),
+      productSellsForCurrencyId: z.string(),
+    }),
+  ),
   shopPurchases: z.array(
     z.object({
       id: z.string(),

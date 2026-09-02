@@ -435,6 +435,7 @@ export function dumpRegistries(): KnowledgeDump {
     // want opposite responses. The same silence around realms produced an
     // invented prerequisite an hour earlier. Requirements are flattened the way
     // realm and biome requirements are.
+    skillRecipes: dumpSkillRecipes(),
     shopPurchases: game.shop.purchases.allObjects.map((purchase) => ({
       id: purchase.id,
       name: purchase.name,
@@ -445,4 +446,119 @@ export function dumpRegistries(): KnowledgeDump {
       requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
     })),
   };
+}
+
+/**
+ * Every skill recipe with its inputs, its output and what that output sells for.
+ *
+ * The section that makes a production chain arithmetic rather than a guess.
+ * Asked whether smithing platebodies beats mining gems, this repo could not
+ * answer: the dump had no smithing, mining, crafting, fishing, cooking,
+ * fletching or runecrafting section at all, and `sellsFor` appeared on exactly
+ * thirty-four items -- the woodcutting logs. Not one multi-step chain in the
+ * game could be scored, so every ranking defaulted to the single action with
+ * the biggest advertised number, which is how an inflated Crystal rate went
+ * unchallenged for an afternoon.
+ *
+ * Deliberately one generic pass over `game.skills` rather than nine bespoke
+ * sections. The shapes are already shared -- `BasicSkillRecipe` gives level and
+ * XP, `ArtisanSkillRecipe` adds `itemCosts` (artisanSkill.d.ts:82), and
+ * `SingleProductArtisanSkillRecipe` adds `product` and `baseQuantity`
+ * (:110-111) -- so a per-skill dumper would be nine copies of one function,
+ * and the tenth skill would be forgotten.
+ *
+ * Costs and products are both recorded because a chain needs both ends: the
+ * value of a platebody is meaningless without the five bars it consumes, and
+ * the bars are meaningless without the ore. `baseInterval` is the skill's, not
+ * the recipe's, and is the honest thing available -- see `miningIntervalFor`
+ * for why even that understates the real cost of a depleting resource.
+ */
+function dumpSkillRecipes(): {
+  skillId: string;
+  skillName: string;
+  baseInterval: number;
+  recipeId: string;
+  name: string;
+  level: number;
+  baseExperience: number;
+  itemCosts: { itemId: string; name: string; quantity: number }[];
+  productId: string;
+  productName: string;
+  baseQuantity: number;
+  productSellsFor: number;
+  productSellsForCurrencyId: string;
+}[] {
+  const out: ReturnType<typeof dumpSkillRecipes> = [];
+
+  for (const skill of game.skills.allObjects) {
+    const withActions = skill as unknown as {
+      actions?: { allObjects: unknown[] };
+      baseInterval?: number;
+    };
+
+    let recipes: unknown[];
+    try {
+      recipes = withActions.actions?.allObjects ?? [];
+    } catch {
+      continue;
+    }
+
+    const baseInterval = safeNumber(() => withActions.baseInterval ?? 0, 0);
+
+    for (const raw of recipes) {
+      const recipe = raw as {
+        id?: string;
+        name?: string;
+        level?: number;
+        baseExperience?: number;
+        itemCosts?: { item: { id: string; name: string }; quantity: number }[];
+        product?: {
+          id: string;
+          name: string;
+          sellsFor?: { quantity: number; currency: { id: string } };
+        };
+        baseQuantity?: number;
+      };
+
+      try {
+        if (recipe.id === undefined) continue;
+
+        out.push({
+          skillId: skill.id,
+          skillName: skill.name,
+          baseInterval,
+          recipeId: recipe.id,
+          name: safeText(() => recipe.name ?? ''),
+          level: safeNumber(() => recipe.level ?? 0, 0),
+          baseExperience: safeNumber(() => recipe.baseExperience ?? 0, 0),
+          itemCosts: dumpItemCosts(recipe.itemCosts),
+          productId: safeText(() => recipe.product?.id ?? ''),
+          productName: safeText(() => recipe.product?.name ?? ''),
+          baseQuantity: safeNumber(() => recipe.baseQuantity ?? 1, 1),
+          productSellsFor: safeNumber(() => recipe.product?.sellsFor?.quantity ?? 0, 0),
+          productSellsForCurrencyId: safeText(() => recipe.product?.sellsFor?.currency.id ?? ''),
+        });
+      } catch {
+        // A recipe that will not describe itself is skipped rather than
+        // half-recorded: a partial row reads as a real one downstream.
+      }
+    }
+  }
+
+  return out;
+}
+
+/** Inputs a recipe consumes, empty for a gathering action that consumes none. */
+function dumpItemCosts(
+  costs: { item: { id: string; name: string }; quantity: number }[] | undefined,
+): { itemId: string; name: string; quantity: number }[] {
+  try {
+    return (costs ?? []).map((cost) => ({
+      itemId: cost.item.id,
+      name: cost.item.name,
+      quantity: cost.quantity,
+    }));
+  } catch {
+    return [];
+  }
 }
