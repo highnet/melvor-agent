@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-196 exports.
+212 exports.
 
 ## `act`
 
@@ -49,6 +49,16 @@ changed, so callers verify evidence rather than trusting a return code.
 
 ```ts
 ActionResult: any
+```
+
+## `ActivatablePrayer`
+
+`interface`
+
+A prayer that can be switched on now, and what it costs to run.
+
+```ts
+ActivatablePrayer: any
 ```
 
 ## `ActiveActionState`
@@ -160,6 +170,16 @@ buildAgilityObstacle: (obstacleId: string, isSuspended: () => boolean) => Action
 buildTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
 ```
 
+## `BuriableBones`
+
+`interface`
+
+A bone stack in the bank, with what burying it is worth.
+
+```ts
+BuriableBones: any
+```
+
 ## `buryBones`
 
 `function`
@@ -257,6 +277,16 @@ changeEquipmentSet: (setIndex: number, isSuspended: () => boolean) => ActionResu
 
 ```ts
 CharacterSettings: typeof CharacterSettings
+```
+
+## `ChargedEquipment`
+
+`interface`
+
+A worn item that spends charges, and how many it has left.
+
+```ts
+ChargedEquipment: any
 ```
 
 ## `checkCharacterAllowed`
@@ -739,6 +769,16 @@ Whether a realm is on the hard refusal list.
 isRefusedRealm: (realmId: string) => boolean
 ```
 
+## `LapsingPotion`
+
+`interface`
+
+A potion that will lapse when its charges run out, with a replacement banked.
+
+```ts
+LapsingPotion: any
+```
+
 ## `loadCharacterByName`
 
 `function`
@@ -794,6 +834,16 @@ these would be invented rather than observed.
 
 ```ts
 MISC_SKILL_IDS: readonly ["melvorD:Firemaking", "melvorD:Cooking", "melvorD:Thieving", "melvorD:Astrology", "melvorD:Agility", "melvorD:Magic", "melvorItA:Harvesting"]
+```
+
+## `ModifierGear`
+
+`interface`
+
+Owned gear whose value is in modifiers rather than in equipment stats.
+
+```ts
+ModifierGear: any
 ```
 
 ## `newSlayerTask`
@@ -946,6 +996,50 @@ What a raid action claims to change.
 RaidProjection: any
 ```
 
+## `readActivatablePrayers`
+
+`function`
+
+Prayers the character can switch on right now, cheapest to run first.
+
+Prayer is the one skill in the game with no action of its own. Burying bones
+grants points and no XP — verified live, 52 bones for zero XP — and the XP
+comes only from *spending* those points during a fight. So a prayer being
+active is not a buff decision, it is the entire training method, and Prayer 20
+was unreachable by construction while nothing ever turned one on.
+
+Cheapest first is deliberate and is not about efficiency. The point is to
+spend points steadily for as long as the bones last; an expensive prayer
+empties the bar in a handful of swings and then the reflex that drops
+unpayable prayers switches it off again.
+
+Two exclusions, both from the game's own data rather than from a name:
+
+- `useSoulPoints` prayers (prayer.d.ts:36) spend Soul Points, a different
+  currency with a different source, so a check on prayer points says nothing
+  about whether they can be paid for.
+- `canUseWithDamageType` (prayer.d.ts:39) against the player's own damage type
+  (character.d.ts:100), because a prayer the character cannot use is one the
+  game silently refuses — the same shape as selecting a spell without runes.
+
+```ts
+readActivatablePrayers: () => ActivatablePrayer[]
+```
+
+## `readActivePrayerIds`
+
+`function`
+
+Prayers currently switched on.
+
+Read live rather than from the snapshot, which carries prayer points but not
+the prayers spending them. Both prayer reflexes need it: one to know there is
+something to drop, the other to know there is nothing to add to.
+
+```ts
+readActivePrayerIds: () => string[]
+```
+
 ## `readActiveRecipeIds`
 
 `function`
@@ -1033,16 +1127,24 @@ readBankExpansion: () => { purchaseId: string; gpCost: number; held: number; } |
 
 `function`
 
-Warns when the bank is about to stop the character working.
+Warns when the bank is about to stop the character working, and reports what
+it has already destroyed.
 
 A full bank does not announce itself. Gathering an item type the bank has no
 room for simply produces nothing, while the skill keeps running and the XP
 keeps ticking — so an agent watching only "is the skill active" sees a
 perfectly healthy run that is quietly throwing away every drop.
 
+The loss line is separate from the pressure line and deliberately not gated on
+free slots. A discard that has already happened is a fact whatever the bank
+looks like now — a slot bought since, or a stack sold, does not bring the
+items back — and the two lines answer different questions: one is a countdown,
+the other is a receipt. See {@link readLostItems} for what the receipt covers.
+
 Reported rather than fixed. The remedies are selling something or buying a
 slot, both of which are decisions with costs, and both of which the agent
-already has capabilities for.
+already has capabilities for — and both of which now have a measured number to
+argue with instead of a warning about the future.
 
 ```ts
 readBankPressure: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
@@ -1092,6 +1194,20 @@ consumes them, and Prayer is otherwise untrainable.
 
 ```ts
 readBoneCandidates: () => Candidate[]
+```
+
+## `readBuriableBones`
+
+`function`
+
+Bones held, richest first.
+
+Shared by the candidate list and the burying reflex so the two cannot disagree
+about what is in the bank. Richest first because the reflex takes one stack
+per pass and points are what everything downstream is short of.
+
+```ts
+readBuriableBones: () => BuriableBones[]
 ```
 
 ## `readCharacterName`
@@ -1333,6 +1449,33 @@ and combat outright.
 readEquipCandidates: () => Candidate[]
 ```
 
+## `readEquipmentCharges`
+
+`function`
+
+Worn gear that runs on charges, with the charges it has left.
+
+`game.itemCharges` (game.d.ts:75) appeared nowhere in this mod, which made a
+whole class of equipment silently temporary. A charged item keeps its stats
+listed and its slot filled after the last charge is gone — the gloves are
+still worn, the equipment screen still reads the same — so the gear reflexes
+see a full slot, the planner sees a full loadout, and the bonus everything was
+bought for has simply stopped. It is the same shape as the empty quiver: full
+health, every call succeeding, and nothing happening.
+
+Which items are chargeable is not guessed. `consumesChargesOn`
+(item.d.ts:215) is the game's own marker for an item that spends charges, so
+an item without it is not reported as having zero — it is not reported at all.
+The count itself is `ItemCharges.getCharges` (itemCharges.d.ts:20).
+
+A reader, not a reflex. Replacing a spent Thieving glove means buying another
+from the shop for real GP, and whether that is worth it depends on what the
+run is saving for — a planner decision, unlike topping up a food slot.
+
+```ts
+readEquipmentCharges: () => ChargedEquipment[]
+```
+
 ## `readEquipmentSetCandidates`
 
 `function`
@@ -1539,6 +1682,26 @@ those are a documented part of `GameEvents` and this field is not.
 readIsInOnlineLoop: () => boolean
 ```
 
+## `readLapsingPotions`
+
+`function`
+
+Active potions that will lapse silently, and could be re-used instead.
+
+Deliberately restricted to potions that are *already active*. Turning
+automatic re-use on spends another potion from the bank when the charges run
+out, so this is not free — but it is not a fresh decision either: the planner
+has already chosen this potion for this action, and letting the choice expire
+halfway through the objective it was drunk for is not a decision anyone made.
+
+Restricted again to potions there are more of. Enabling re-use with an empty
+bank changes nothing, and a candidate or reflex that fires on nothing is how
+the reflex tier fills a journal with refusals.
+
+```ts
+readLapsingPotions: () => LapsingPotion[]
+```
+
 ## `readLevelCapCandidates`
 
 `function`
@@ -1583,6 +1746,31 @@ a reason to keep going with one.
 readLockedActions: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
+## `readLostItems`
+
+`function`
+
+What the bank actually threw away, by the game's own count.
+
+`Bank.lostItems` (bank2.d.ts:78) is the game recording every item it tried to
+add and could not fit. Nothing in this mod had ever read it, so the only thing
+said about a full bank was the speculative warning below — "new item types
+*will* start being discarded" — which is a prediction where a measurement was
+sitting one accessor away.
+
+Two honest limits, both stated because they change how the number should be
+read and neither of them makes it a false positive:
+
+- The typings describe the map as being for offline progress, and do not say
+  when the game clears it. So this is a floor on what has been lost since it
+  was last cleared, never a ceiling and never a total for the run.
+- A non-empty map is nonetheless proof. The game only writes to it when an
+  add has already failed, so anything in here is a drop that is gone.
+
+```ts
+readLostItems: () => { name: string; quantity: number; }[]
+```
+
 ## `readMasteryCandidates`
 
 `function`
@@ -1624,6 +1812,53 @@ Meals across the bank and the equipped slot; see readFoodReserve.
 
 ```ts
 readMealCount: () => number
+```
+
+## `readModifierGear`
+
+`function`
+
+Gear held in the bank whose worth {@link statScore} cannot see.
+
+`statScore` sums `equipmentStats` — attack bonuses, defence bonuses, the
+numbers a weapon has. A skilling outfit has none of those. Its entire value
+lives in `modifiers` (item.d.ts:197): the Mining Skillcape's interval
+reduction, a Township outfit's flat XP multiplier. Summed as equipment stats
+they score exactly zero, so every gear reader in this file ranks them level
+with an empty slot and the equip reflex, which only fills empty slots and
+clears a margin, has no reason to ever wear one.
+
+**This is a reader and not a score, deliberately.** Turning a modifier list
+into one comparable number is not arithmetic, it is a judgement about
+relevance: +5% Mining mastery XP is worth a great deal to a character mining
+and nothing at all to one fishing, and the same item's worth changes with the
+objective it is worn for. Every weighting this file could invent would be a
+guess dressed as a measurement — and a wrong stat sum has already cost this
+project twenty minutes of unwinnable fighting, with a Steel Platebody that
+scored *higher* than what it replaced. So the modifiers are surfaced verbatim,
+in the game's own words via `ModifierValue.getDescription` (modifiers.d.ts:117),
+and the choice stays with the planner, which knows what the run is doing.
+
+Restricted to gear not currently worn, because the point is what is being
+missed.
+
+```ts
+readModifierGear: () => ModifierGear[]
+```
+
+## `readModifierGearNotice`
+
+`function`
+
+Reports owned gear that every scorer in this mod values at zero.
+
+Named as a blocked opportunity because that is exactly what it is: the item is
+already owned, the slot may well be empty, and the only thing between the two
+is that nothing here can price a modifier. Saying so plainly is more honest
+than a scoring function that would have to invent the price.
+
+```ts
+readModifierGearNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readMonsterDropsOfInterest`
@@ -1942,6 +2177,36 @@ blocked one reads as a target rather than an absence.
 readSlayerCandidates: () => Candidate[]
 ```
 
+## `readSlayerTaskTarget`
+
+`function`
+
+The monster an accepted Slayer task is asking for.
+
+The missing half of Slayer. `newSlayerTask` takes a task and
+`readSlayerCandidates` then correctly returns nothing while one is active --
+taking another discards the kills already made -- so an accepted task removed
+every Slayer candidate and put none back. The task's own monster
+(slayer.d.ts:106) was the one thing that could have advanced it, and nothing
+read it.
+
+The area is resolved rather than assumed: `SlayerTask` names a monster and not
+a place, while `engageMonster` needs both. Slayer areas are searched first,
+then ordinary combat areas that set `allowSlayerKills` — the game's own flag
+for "kills here count toward a Slayer task" (combatAreas.d.ts:353). Tasks are
+assigned by combat level rather than by area, so a low-level task monster
+genuinely can live outside a Slayer area, and searching only one registry
+would have reproduced the same dead end one level down.
+
+Enterability is checked here, not left to the engage call, because a candidate
+is by definition something the mod has proven it can execute now. A task whose
+area is gated is a real situation and it belongs in the blocked list rather
+than in a candidate that refuses every time it is chosen.
+
+```ts
+readSlayerTaskTarget: () => CombatTarget | null
+```
+
 ## `readSnapshot`
 
 `function`
@@ -1992,6 +2257,22 @@ repeatedly, and selling is the planner's lever for that.
 
 ```ts
 readSpellRuneIds: () => Set<string>
+```
+
+## `readSpentChargesNotice`
+
+`function`
+
+Reports worn gear whose charges are spent or nearly spent.
+
+Surfacing this matters because nothing else can. A spent item produces no
+error, no notification and no observable change: XP and GP simply come in
+slightly slower forever, which is indistinguishable from the advertised rates
+having been optimistic. This is the line that makes the difference visible
+while it can still be acted on.
+
+```ts
+readSpentChargesNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readSynergyCandidates`
@@ -2408,6 +2689,36 @@ deliberately; without this the agent cannot train Defence at all.
 
 ```ts
 setAttackStyle: (attackTypeId: string, styleId: string, isSuspended: () => boolean) => ActionResult<{ styleId: string | undefined; }>
+```
+
+## `setPotionAutoReuse`
+
+`function`
+
+Turns automatic potion re-use on or off for one action.
+
+A potion is a fixed number of charges and then nothing. `usePotion` drinks
+one, the charges tick away against whatever is running, and the buff ends
+without a word — the skill carries on at the un-potioned rate, which looks
+exactly like the potion never having been worth much. Over a long objective
+the drink is a few minutes of benefit and hours of nothing.
+
+**On the polarity, which is the whole trap here.** `PotionManager` holds
+`autoReuseActions: Set<Action>` and documents it as *"Actions for which
+potions should **not** be automatically re-used"* (potionManager.d.ts:11) —
+the set is a blocklist and its name reads like an allowlist. So the set is
+never touched here. The single reading is `autoReusePotionsForAction`
+(potionManager.d.ts:19), whose name asks the question in the same direction
+this function's `enabled` answers it, and the action asserts that accessor's
+own value either side of `toggleAutoReusePotion` (potionManager.d.ts:26).
+
+That framing is what makes a wrong guess cheap rather than silent. If the
+accessor turned out to mean the opposite, this would toggle once, observe the
+value it asked for, and stop — because the caller's precondition is that same
+accessor. One reversible call, not a loop and not a loss.
+
+```ts
+setPotionAutoReuse: (actionId: string, enabled: boolean, isSuspended: () => boolean) => ActionResult<{ actionId: string; autoReuse: boolean; }>
 ```
 
 ## `shouldCollectLoot`

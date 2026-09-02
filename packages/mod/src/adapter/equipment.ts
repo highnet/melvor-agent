@@ -835,3 +835,205 @@ export function readRefillableAmmo(): { itemId: string; quantity: number } | nul
     return null;
   }
 }
+
+/** Owned gear whose value is in modifiers rather than in equipment stats. */
+export interface ModifierGear {
+  itemId: string;
+  name: string;
+  slotId: string;
+  /** The game's own descriptions of what the item does. */
+  effects: string[];
+}
+
+/**
+ * Gear held in the bank whose worth {@link statScore} cannot see.
+ *
+ * `statScore` sums `equipmentStats` — attack bonuses, defence bonuses, the
+ * numbers a weapon has. A skilling outfit has none of those. Its entire value
+ * lives in `modifiers` (item.d.ts:197): the Mining Skillcape's interval
+ * reduction, a Township outfit's flat XP multiplier. Summed as equipment stats
+ * they score exactly zero, so every gear reader in this file ranks them level
+ * with an empty slot and the equip reflex, which only fills empty slots and
+ * clears a margin, has no reason to ever wear one.
+ *
+ * **This is a reader and not a score, deliberately.** Turning a modifier list
+ * into one comparable number is not arithmetic, it is a judgement about
+ * relevance: +5% Mining mastery XP is worth a great deal to a character mining
+ * and nothing at all to one fishing, and the same item's worth changes with the
+ * objective it is worn for. Every weighting this file could invent would be a
+ * guess dressed as a measurement — and a wrong stat sum has already cost this
+ * project twenty minutes of unwinnable fighting, with a Steel Platebody that
+ * scored *higher* than what it replaced. So the modifiers are surfaced verbatim,
+ * in the game's own words via `ModifierValue.getDescription` (modifiers.d.ts:117),
+ * and the choice stays with the planner, which knows what the run is doing.
+ *
+ * Restricted to gear not currently worn, because the point is what is being
+ * missed.
+ *
+ * @returns Unworn modifier-bearing gear, most effects first.
+ */
+export function readModifierGear(): ModifierGear[] {
+  const gear: ModifierGear[] = [];
+
+  try {
+    const equipped = new Set(
+      Object.values(game.combat.player.equipment.equippedItems)
+        .filter((slot) => slot.item !== slot.emptyItem)
+        .map((slot) => slot.item.id),
+    );
+
+    for (const entry of game.bank.items.values()) {
+      const item = entry.item;
+      if (!(item instanceof EquipmentItem)) continue;
+      if (equipped.has(item.id)) continue;
+
+      try {
+        const modifiers = item.modifiers;
+        if (modifiers === undefined || modifiers.length === 0) continue;
+
+        const slot = item.validSlots[0];
+        if (slot === undefined) continue;
+
+        gear.push({
+          itemId: item.id,
+          name: item.name,
+          slotId: slot.id,
+          effects: modifiers.map((modifier) => modifier.getDescription().description),
+        });
+      } catch {
+        // An item whose modifiers cannot describe themselves is left out rather
+        // than reported with a blank effect.
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return gear.sort((a, b) => b.effects.length - a.effects.length);
+}
+
+/** How many modifier-bearing items to name, and how many effects for each. */
+const MODIFIER_GEAR_REPORTED = 3;
+const MODIFIER_EFFECTS_REPORTED = 3;
+
+/**
+ * Reports owned gear that every scorer in this mod values at zero.
+ *
+ * Named as a blocked opportunity because that is exactly what it is: the item is
+ * already owned, the slot may well be empty, and the only thing between the two
+ * is that nothing here can price a modifier. Saying so plainly is more honest
+ * than a scoring function that would have to invent the price.
+ *
+ * @returns Blocked-opportunity entries, or none when nothing is being missed.
+ */
+export function readModifierGearNotice(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  return readModifierGear()
+    .slice(0, MODIFIER_GEAR_REPORTED)
+    .map((item) => {
+      const effects = item.effects.slice(0, MODIFIER_EFFECTS_REPORTED).join('; ');
+      const rest =
+        item.effects.length > MODIFIER_EFFECTS_REPORTED
+          ? ` (+${item.effects.length - MODIFIER_EFFECTS_REPORTED} more)`
+          : '';
+
+      return {
+        label: `${item.name} is in the bank unworn and scores ZERO on equipment stats — its value is in modifiers, which nothing here can price: ${effects}${rest}. Slot ${item.slotId}. Decide whether it is worth wearing for what this run is doing; no reflex will pick it up.`,
+        xpPerHour: 0,
+        missing: [],
+      };
+    });
+}
+
+/** A worn item that spends charges, and how many it has left. */
+export interface ChargedEquipment {
+  itemId: string;
+  name: string;
+  slotId: string;
+  charges: number;
+}
+
+/**
+ * Worn gear that runs on charges, with the charges it has left.
+ *
+ * `game.itemCharges` (game.d.ts:75) appeared nowhere in this mod, which made a
+ * whole class of equipment silently temporary. A charged item keeps its stats
+ * listed and its slot filled after the last charge is gone — the gloves are
+ * still worn, the equipment screen still reads the same — so the gear reflexes
+ * see a full slot, the planner sees a full loadout, and the bonus everything was
+ * bought for has simply stopped. It is the same shape as the empty quiver: full
+ * health, every call succeeding, and nothing happening.
+ *
+ * Which items are chargeable is not guessed. `consumesChargesOn`
+ * (item.d.ts:215) is the game's own marker for an item that spends charges, so
+ * an item without it is not reported as having zero — it is not reported at all.
+ * The count itself is `ItemCharges.getCharges` (itemCharges.d.ts:20).
+ *
+ * A reader, not a reflex. Replacing a spent Thieving glove means buying another
+ * from the shop for real GP, and whether that is worth it depends on what the
+ * run is saving for — a planner decision, unlike topping up a food slot.
+ *
+ * @returns Charged items currently worn, emptiest first.
+ */
+export function readEquipmentCharges(): ChargedEquipment[] {
+  const charged: ChargedEquipment[] = [];
+
+  try {
+    for (const equipped of Object.values(game.combat.player.equipment.equippedItems)) {
+      try {
+        const item = equipped.item;
+        if (item === equipped.emptyItem) continue;
+        if (item.consumesChargesOn === undefined) continue;
+
+        charged.push({
+          itemId: item.id,
+          name: item.name,
+          slotId: equipped.slot.id,
+          charges: game.itemCharges.getCharges(item),
+        });
+      } catch {
+        // One unreadable slot must not cost the report of the others.
+      }
+    }
+  } catch {
+    // An equipment set that cannot be walked reports nothing rather than
+    // claiming nothing is charged.
+    return [];
+  }
+
+  return charged.sort((a, b) => a.charges - b.charges);
+}
+
+/** Charges at or below which a worn item is worth reporting as running out. */
+const LOW_CHARGE_WARNING = 25;
+
+/**
+ * Reports worn gear whose charges are spent or nearly spent.
+ *
+ * Surfacing this matters because nothing else can. A spent item produces no
+ * error, no notification and no observable change: XP and GP simply come in
+ * slightly slower forever, which is indistinguishable from the advertised rates
+ * having been optimistic. This is the line that makes the difference visible
+ * while it can still be acted on.
+ *
+ * @returns Blocked-opportunity entries, or none when nothing worn is running out.
+ */
+export function readSpentChargesNotice(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  return readEquipmentCharges()
+    .filter((entry) => entry.charges <= LOW_CHARGE_WARNING)
+    .map((entry) => ({
+      label:
+        entry.charges <= 0
+          ? `${entry.name} (${entry.slotId}) has NO charges left — it is still worn and still reads as equipped, but its bonus is gone. Replace it or take it off.`
+          : `${entry.name} (${entry.slotId}) has ${entry.charges} charge(s) left — when they run out the item keeps its slot and stops working silently.`,
+      xpPerHour: 0,
+      missing: [],
+    }));
+}
