@@ -175,13 +175,34 @@ function genericSkillCandidates(): Candidate[] {
     const lapXpPerHour = skillId === AGILITY_ID ? readAgilityLapRate() : null;
 
     for (const recipe of recipes) {
+      // The mastery check is separated from the affordability check because a
+      // single try around both conflates two different failures.
+      //
+      // "This action is locked" and "the lock could not be consulted" are not
+      // the same claim, and treating them alike hides whole skills. Alt Magic's
+      // spells are not mastery actions in the way `isMasteryActionUnlocked`
+      // expects, so the call is a candidate for throwing on every spell -- and
+      // a throw here discarded the recipe entirely, producing no candidate and
+      // no blocked entry either. The skill simply was not there, which is the
+      // hardest kind of absence to notice.
+      //
+      // So a mastery check that cannot answer is read as "unlocked". If that is
+      // wrong the action is offered and the game refuses it, which is visible
+      // and recoverable. Silence is neither.
+      let masteryLocked = false;
       try {
-        if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
+        masteryLocked = withActions.isMasteryActionUnlocked?.(recipe) === false;
+      } catch {
+        masteryLocked = false;
+      }
+      if (masteryLocked) continue;
+
+      try {
         if (!isRecipeRealmUnlocked(recipe)) continue;
+        // Affordability is different: a candidate the adapter would then refuse
+        // is a planner trap, so an unanswerable cost check does skip.
         if (!canAfford(withActions, recipe)) continue;
       } catch {
-        // A recipe whose availability cannot be determined is not offered:
-        // a candidate the adapter would then refuse is a planner trap.
         continue;
       }
 
