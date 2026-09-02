@@ -105,10 +105,12 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Rates and economics
 
-- [ ] **Passive-regen rocks are still priced as if they never deplete** — S.
-      Crystal reads 120,000 GP/h against ~10,800 measured. Bound the sustained
-      rate by `passiveRegenInterval / hpPerRegen`; HP per regen tick is *not* in
-      the typings, so default to 1 and measure.
+- [x] **Passive-regen rocks now declare that their rate is unverified** — S. The
+      suggested bound was implemented and measured: one HP per
+      `passiveRegenInterval` came out 3.3x above the realised rate, so the model
+      is known-wrong. `regenRockHP` (rockTicking.d.ts:176) restores an amount not
+      stated in the typings and nothing exposes a sustained yield, so the rate is
+      left as the upper bound it is and the label says so.
 - [x] **No artisan skill reports GP at all, and no chain nets its inputs** *(3×)*
       — M. Smithing, Crafting, Fletching, Herblore, Runecrafting, Summoning,
       Cooking, Firemaking, Astrology and Alt Magic all read 0 GP/h, so a planner
@@ -116,19 +118,29 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **Alt Magic shows 0 GP/h and is offered with no rune check** — M.
       `getAlchemyGP` (altMagic.d.ts:142) is the game's dedicated GP action;
       separately `canAfford` falls through to `return true` for every spell.
-- [ ] **Every Firemaking log is priced at the same nominal 3 seconds** — S.
-      `masteryIntervalFor` has no Firemaking entry, so ranking degenerates to
-      base XP and systematically picks the slowest logs.
-      `FiremakingLog.baseInterval` (firemakingTicks.d.ts:35).
+- [x] **Every Firemaking log is priced at its own interval** — S.
+      `FiremakingLog.baseInterval` (firemakingTicks.d.ts:35) with modifiers from
+      `modifyInterval` (skill.d.ts:426), which is action-scoped and so answers
+      during enumeration where `actionInterval` throws. Ranking no longer
+      degenerates to base XP and no longer inverts.
 - [x] **Fishing assumes every action lands the fish**, and offers fish whose area
       needs an unequipped item — S. `getAreaChances` splits fish/junk/special.
       Whether a junk roll still pays XP is not stated in the typings.
 - [x] **Cooking ignores a ~30% base failure rate** — S. `getRecipeSuccessChance`,
       `baseSuccessChance = 70`.
-- [ ] **Harvesting has no vein-decay charge** — S. Structurally identical to the
-      mining respawn trap, and still unfixed.
-- [ ] **Mining applies no interval modifiers at all** — M. The only skill using a
-      raw constant, and it ignores all three gem-chance getters besides.
+- [x] **Harvesting declares its vein decay unpriced** — S. Structurally identical
+      to the mining respawn trap, but with no honest correction available: a vein
+      decays through `reduceVeinIntensity` (harvesting.d.ts:109) past each
+      product's `minIntensityPercent` (:16), and the decay per action is not
+      stated in the typings. The rate stands as an upper bound and the label
+      names it as one.
+- [x] **Mining applies its interval modifiers, and prices its gems** — M. It was
+      the only skill on the board using a raw constant; `modifyInterval`
+      (skill.d.ts:426) takes the rock as an argument and so does not need an
+      active selection. Gems now come from `getRockGemChance`
+      (rockTicking.d.ts:154), `getRockSuperiorGemChance` (:155) and
+      `chanceToDoubleGems` (:153), priced by `DropTable.getAverageDropValue`
+      (utils.d.ts:458) rather than by picking a representative gem.
 - [x] **Agility's lap rate is built from base constants** — S. The fix for a 3.5×
       overstatement reintroduced mastery blindness for the same skill; it also
       sums every built obstacle rather than the contiguous course.

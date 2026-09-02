@@ -244,7 +244,7 @@ function genericSkillCandidates(): Candidate[] {
               netPerHour > 0
                 ? ` — output worth ${Math.round(netPerHour).toLocaleString()} GP/h net of inputs, if sold`
                 : ''
-            }${describeSustain(recipe, interval)}${masteryNote(skill, recipe)}`,
+            }${describeSustain(recipe, interval)}${masteryNote(skill, recipe)}${veinDecayNote(skillId)}`,
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
         gpPerHour: netPerHour > 0 ? netPerHour : undefined,
         // Alt Magic's alchemy pays currency; every other recipe here produces
@@ -257,6 +257,37 @@ function genericSkillCandidates(): Candidate[] {
   }
 
   return candidates;
+}
+
+/** Harvesting's skill id; see veinDecayNote for why it is called out. */
+const HARVESTING_ID = 'melvorItA:Harvesting';
+
+/**
+ * Names the decay a Harvesting vein suffers while it is worked.
+ *
+ * Structurally the mining respawn trap: a `HarvestingVein` carries
+ * `currentIntensity` and `maxIntensity` (harvesting.d.ts:37-38), the skill runs
+ * a `veinDecayTimer` and a `reduceVeinIntensity()` (harvesting.d.ts:77, 109),
+ * and each product declares a `minIntensityPercent` (harvesting.d.ts:16) below
+ * which it stops dropping. So a vein pays less the longer it is harvested, and
+ * the rate on the board charges none of that.
+ *
+ * Unlike mining's respawn there is no honest correction to apply. How much
+ * intensity one action or one decay tick removes is not stated in the typings,
+ * `passiveRegenInterval` (harvesting.d.ts:66) restores an unstated amount
+ * against it, and nothing exposes a sustained yield. Modelling it would mean
+ * inventing exactly the constant that made Crystal advertise an order of
+ * magnitude above what it paid -- and the same invention was already tried for
+ * mining's passive regen and measured 3.3x high.
+ *
+ * So the rate stands as the upper bound it is, and the label says which
+ * direction it is wrong in. A planner that reads "unverified" can measure; one
+ * that reads a confident number cannot.
+ */
+function veinDecayNote(skillId: string): string {
+  return skillId === HARVESTING_ID
+    ? ' — rate unverified: a vein loses intensity as it is harvested and the decay per action is not stated in the typings, so this is an upper bound'
+    : '';
 }
 
 /**
@@ -454,6 +485,10 @@ function candidate(
   intervalMs: number,
   productGp: number,
   skill?: AnySkill,
+  /** Per-action GP that is not the priced product, e.g. a mining gem roll. */
+  extraGpPerAction = 0,
+  /** Appended to the label; used to name an uncertainty rather than price it. */
+  note = '',
 ): Candidate {
   const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
   const requirement = recipeRequirement(recipe);
@@ -463,7 +498,7 @@ function candidate(
   const yielded =
     skill === undefined ? 1 : productYieldFor(skill, recipe, recipe.baseQuantity ?? 1);
   const xpMultiplier = skill === undefined ? 1 : xpMultiplierFor(skill, recipe);
-  const salePerHour = actionsPerHour * productGp * yielded;
+  const salePerHour = actionsPerHour * (productGp * yielded + extraGpPerAction);
   return {
     kind: 'gather_resource',
     params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
@@ -481,7 +516,9 @@ function candidate(
     label:
       (salePerHour > 0
         ? `${skillName}: ${recipe.name} — output worth ${Math.round(salePerHour).toLocaleString()} GP/h if sold, not GP earned`
-        : `${skillName}: ${recipe.name}`) + (skill === undefined ? '' : masteryNote(skill, recipe)),
+        : `${skillName}: ${recipe.name}`) +
+      (skill === undefined ? '' : masteryNote(skill, recipe)) +
+      note,
     xpPerHour: actionsPerHour * requirement.xp * xpMultiplier,
     gpPerHour: salePerHour,
     requiresLevel: requirement.level,
@@ -745,13 +782,113 @@ function miningCandidates(): Candidate[] {
   return skill.actions.allObjects
     .filter((rock) => skill.canMineOre(rock) && isRecipeRealmUnlocked(rock))
     .map((rock) =>
-      // `baseInterval` is a readonly constant on the skill. The obvious choice,
-      // `actionInterval`, reads `activeRock` and **throws** when no rock is
-      // selected — which is exactly the state candidate enumeration runs in.
-      // So this understates the real rate (it ignores modifiers) but it is
-      // always readable, and a candidate list that throws is worth nothing.
-      candidate(MINING_ID, skill.name, rock, miningIntervalFor(rock), gpValue(rock.product), skill),
+      candidate(
+        MINING_ID,
+        skill.name,
+        rock,
+        miningIntervalFor(rock),
+        gpValue(rock.product),
+        skill,
+        gemGpPerAction(rock),
+        passiveRegenNote(rock),
+      ),
     );
+}
+
+/**
+ * Expected GP from the gem roll a mining action carries, per action.
+ *
+ * Gems are a material share of what Mining pays and they appeared nowhere: the
+ * board priced the ore and nothing else, so a rock whose whole point is its gem
+ * chance read as worth only its ore. That is the same omission as Thieving's
+ * `currencyDrops` -- a reward that does not arrive as the recipe's `product` is
+ * invisible to product arithmetic.
+ *
+ * Every term is read, not modelled. `getRockGemChance` (rockTicking.d.ts:154)
+ * and `getRockSuperiorGemChance` (:155) are the game's own per-rock chances, and
+ * `DropTable.getAverageDropValue` (utils.d.ts:458) is documented as "the average
+ * currency value of a drop in this table" for `game.randomGemTable` /
+ * `game.randomSuperiorGemTable` (game.d.ts:198-199) -- so the gem's price comes
+ * from the table rather than from picking a representative gem, which would have
+ * been a guess dressed as data.
+ *
+ * Three deliberate understatements, all in the recoverable direction:
+ *
+ * - The rolls are gated on `giveGems` / `giveSuperiorGems`
+ *   (rockTicking.d.ts:70-71) rather than trusting the chance getters to return 0
+ *   for a rock that yields no gems, which is not stated.
+ * - The chances are read as percentages, matching every other chance getter this
+ *   file consumes. If they are fractions instead this is a hundredfold
+ *   *under*statement, which measurement corrects; the other way round would put
+ *   a fabricated number at the top of the board.
+ * - `chanceToDoubleGems` (rockTicking.d.ts:153) is applied only to the ordinary
+ *   gem. Whether it also covers superior gems is not stated in the typings.
+ *
+ * Abyssal gems are left out entirely: their rocks are realm-gated and absent
+ * from the board anyway.
+ */
+function gemGpPerAction(rock: MiningRock): number {
+  try {
+    const mining = game.mining;
+    const doubling = 1 + Math.max(0, safeNumber(() => mining.chanceToDoubleGems, 0) / 100);
+
+    let gp = 0;
+
+    if (rock.giveGems === true) {
+      const chance = share(() => mining.getRockGemChance(rock));
+      gp += chance * averageDropGp(game.randomGemTable) * doubling;
+    }
+
+    if (rock.giveSuperiorGems === true) {
+      const chance = share(() => mining.getRockSuperiorGemChance(rock));
+      gp += chance * averageDropGp(game.randomSuperiorGemTable);
+    }
+
+    return Number.isFinite(gp) && gp > 0 ? gp : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** A percentage getter read as a 0..1 share; 0 when it will not answer. */
+function share(read: () => number): number {
+  const percent = safeNumber(read, 0);
+  if (!Number.isFinite(percent) || percent <= 0) return 0;
+  return Math.min(1, percent / 100);
+}
+
+/** The GP a drop table pays on average, ignoring any non-GP currency it holds. */
+function averageDropGp(table: DropTable): number {
+  try {
+    const value = table.getAverageDropValue().get(game.gp);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Names the uncertainty a passively regenerating rock carries.
+ *
+ * {@link miningIntervalFor} charges these rocks the bare interval, because they
+ * refill while being mined and so never spend a respawn. That is an upper bound,
+ * not a rate: `Mining.regenRockHP` (rockTicking.d.ts:176) restores an unstated
+ * amount every `passiveRegenInterval` (:108), so whether regeneration actually
+ * keeps pace with mining cannot be answered from the typings at all.
+ *
+ * The obvious model -- one HP per regen interval -- was tried and measured, and
+ * it overestimated the realised rate by 3.3x. So the number is left as the bound
+ * it is and the label says so, because the whole lesson of Crystal's 120,000
+ * GP/h is that a plausible model in the overstating direction costs an
+ * afternoon, while an acknowledged gap costs a sentence.
+ */
+function passiveRegenNote(rock: MiningRock): string {
+  try {
+    if (rock.hasPassiveRegen !== true) return '';
+    return ' — rate unverified: this rock regenerates while mined and the HP restored per regen tick is not stated in the typings, so this is an upper bound';
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -860,6 +997,38 @@ function xpMultiplierFor(skill: AnySkill, recipe: RecipeLike): number {
  * covers the skill -- so `actionInterval` is already the mastery-modified
  * value for them.
  */
+/**
+ * Firemaking's skill id; see masteryIntervalFor for why it is special-cased.
+ */
+const FIREMAKING_ID = 'melvorD:Firemaking';
+
+/**
+ * A base interval with the skill's own modifiers applied to it.
+ *
+ * `Skill.modifyInterval(interval, action)` (skill.d.ts:426) is the accessor the
+ * per-skill getters -- `getTreeInterval`, `getNPCInterval` and the rest -- are
+ * built on. It takes the action as an argument and reads nothing about what is
+ * currently selected, so unlike `actionInterval` it answers during enumeration,
+ * which is the state this file always runs in.
+ *
+ * Falls back to the unmodified base rather than to nothing: an interval without
+ * modifiers understates a mastered skill, while no interval at all removes the
+ * candidate from the board entirely.
+ */
+function modifiedInterval(skill: AnySkill, base: number, action: object): number {
+  try {
+    const withModifier = skill as AnySkill & {
+      modifyInterval?: (interval: number, action?: object) => number;
+    };
+    const modified = withModifier.modifyInterval?.(base, action);
+    return typeof modified === 'number' && Number.isFinite(modified) && modified > 0
+      ? modified
+      : base;
+  } catch {
+    return base;
+  }
+}
+
 function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): number {
   const getters: Record<string, string> = {
     'melvorD:Woodcutting': 'getTreeInterval',
@@ -887,6 +1056,28 @@ function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): 
         return (min + max) / 2;
       }
       return fallback;
+    }
+
+    // Firemaking is per-log, and the table above had no entry for it.
+    //
+    // `FiremakingLog.baseInterval` (firemakingTicks.d.ts:35) is a field on the
+    // *log*, not on the skill, and it ranges from a couple of seconds to tens of
+    // seconds across the tiers. With no getter registered every log fell through
+    // to the skill-wide fallback -- a nominal 3s, because `actionInterval`
+    // (firemakingTicks.d.ts:89) reads `activeRecipe` and throws while nothing is
+    // selected. Every log therefore advertised the same actions per hour, so
+    // ranking collapsed to base XP alone and picked whichever log paid most per
+    // burn: precisely the slowest ones, whose long interval was the reason they
+    // paid more. The rate was not merely approximate, it was ordered backwards.
+    //
+    // Firemaking exposes no `getLogInterval`, so the modifiers are applied by
+    // the general accessor. `modifyInterval(interval, action)` (skill.d.ts:426)
+    // is action-scoped and reads nothing about what is currently selected, which
+    // is what makes it usable during enumeration.
+    if (skill.id === FIREMAKING_ID) {
+      const base = (recipe as { baseInterval?: number }).baseInterval;
+      if (typeof base !== 'number' || !Number.isFinite(base) || base <= 0) return fallback;
+      return modifiedInterval(skill, base, recipe);
     }
 
     // Alt Magic has no per-spell interval getter: one interval covers the
@@ -960,7 +1151,19 @@ function masteryNote(skill: AnySkill, recipe: { id: string }): string {
 const MASTERY_HEADROOM_LEVEL = 50;
 
 function miningIntervalFor(rock: MiningRock): number {
-  const base = game.mining.baseInterval;
+  // Mining was the last skill in this file reading a raw constant.
+  //
+  // `Mining.baseInterval` (rockTicking.d.ts:106) is a flat readonly 3000, and
+  // the comment at the call site explained only why `actionInterval` could not
+  // be used -- it reads `activeRock` and throws while nothing is selected. That
+  // was true and it was not the whole answer: `modifyInterval` (skill.d.ts:426)
+  // takes the rock as an argument, so it never touches the active selection, and
+  // it is what every per-skill interval getter in the table above is built on.
+  // Until this, Mining was the one skill on the board whose rate ignored gear,
+  // mastery and every interval modifier the character had bought -- so every
+  // investment in mining speed made the advertised rate more wrong, in the
+  // direction of understating exactly the skill being invested in.
+  const base = modifiedInterval(game.mining, game.mining.baseInterval, rock);
 
   try {
     if (rock.hasPassiveRegen === true) return base;
