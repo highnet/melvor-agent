@@ -101,6 +101,15 @@ the better route for scripting:
 curl -s localhost:8787/dashboard
 ```
 
+Its `needsAttention` field is the one thing an unattended check needs to read:
+null while the run is fine, and otherwise a sentence saying why a person is
+needed — the mod has gone silent, it is refusing to arm, or it is running and
+achieving nothing with no planning session attached to tell it otherwise.
+
+```bash
+curl -s localhost:8787/dashboard | jq -r '.needsAttention // "ok"'
+```
+
 ```bash
 curl -s -X POST localhost:8787/command -H 'content-type: application/json' -d '{"type":"arm"}'
 ```

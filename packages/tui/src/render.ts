@@ -78,6 +78,16 @@ function renderStatus(dashboard: Dashboard, width: number): string[] {
 
   const lines = [` ${colour}${C.bold}${state.toUpperCase()}${C.reset}   ${link}`];
 
+  // First, and in red. This is the field that says a person is needed --
+  // stuck with no planner answering, a suspension that never ended, or a mod
+  // gone silent -- and none of those was previously distinguishable from a
+  // healthy run at a glance.
+  if (dashboard.needsAttention != null) {
+    lines.push(
+      ` ${C.red}${C.bold}NEEDS ATTENTION:${C.reset} ${C.red}${truncate(dashboard.needsAttention, width - 20)}${C.reset}`,
+    );
+  }
+
   if (report?.blockedReason != null) {
     lines.push(` ${C.red}refusing to arm: ${truncate(report.blockedReason, width - 20)}${C.reset}`);
   }

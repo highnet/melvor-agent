@@ -1,4 +1,4 @@
-import type { ActionResult, Candidate } from '@melvor-agent/shared';
+import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 
@@ -118,6 +118,7 @@ const BANK_PRESSURE_SLOTS = 2;
 export function readBankPressure(): {
   label: string;
   xpPerHour: number;
+  severity: BlockedSeverity;
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   const used = game.bank.occupiedSlots;
@@ -133,6 +134,10 @@ export function readBankPressure(): {
           ? `Bank is FULL (${used}/${max}) — any new item type is being discarded silently while the skill keeps running. Sell a stack or buy a slot.`
           : `Bank has ${free} slot(s) left (${used}/${max}) — new item types will start being discarded. Sell a stack or buy a slot.`,
       xpPerHour: 0,
+      // A full bank is income at exactly zero with every gathering action
+      // refused, and it took two hours of an agent working perfectly to
+      // notice last time. One slot short of full is a warning, not a stop.
+      severity: free <= 0 ? 'critical' : 'high',
       missing: [],
     },
   ];

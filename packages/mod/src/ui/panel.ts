@@ -384,9 +384,43 @@ function renderNow(agent: Agent): HTMLElement {
  * absent otherwise.
  */
 function warnings(agent: Agent): { text: string; severity: string }[] {
-  const snapshot = agent.snapshot;
-  if (snapshot === null) return [];
   const out: { text: string; severity: string }[] = [];
+
+  // An escalation outranks everything else on this panel: it is the agent
+  // saying it is running and getting nowhere, which nothing else here shows.
+  if (agent.needsAttention !== null) {
+    out.push({ text: `Needs attention: ${agent.needsAttention}`, severity: 'alert-danger' });
+  }
+
+  // The diagnostics the mod already ships, shown to the operator who is
+  // actually looking at the game.
+  //
+  // Every critical blocked opportunity went to the planner and nowhere else, so
+  // "food is down to 11 meals and there is no Auto Eat" -- a countdown to the
+  // failure that has killed this character -- was visible only to a Claude Code
+  // session that may not be attached. The panel shipped it and showed none of
+  // it.
+  for (const item of agent.blockedOpportunities) {
+    if (item.severity !== 'critical') continue;
+    out.push({ text: item.label, severity: 'alert-danger' });
+  }
+
+  // Service health, out from behind a closed disclosure.
+  //
+  // It sat in Diagnostics, which defaults to collapsed, so the row that
+  // explains an absent objective, an absent dump and a silent agent was one
+  // click away from anyone who did not already suspect it. Shown only when
+  // unhealthy: a row reading "connected" on every render is the "Offline loop:
+  // no" line this panel already deleted once.
+  if (agent.serviceError === null && agent.serviceDegraded) {
+    out.push({
+      text: 'Planner service is degraded — reports are failing intermittently.',
+      severity: 'alert-warning',
+    });
+  }
+
+  const snapshot = agent.snapshot;
+  if (snapshot === null) return out;
 
   if (snapshot.isOfflineLoop) {
     out.push({
@@ -502,9 +536,20 @@ function renderDiagnostics(agent: Agent): HTMLElement {
     ['Active skills', activeSkills.length > 0 ? activeSkills.join(', ') : 'none'],
     ['Realm', snapshot.currentRealmId],
     ['Auto Eat', autoEatSummary(snapshot.combat)],
-    ['Service', agent.serviceError === null ? (agent.serviceBase ?? 'connected') : 'UNREACHABLE'],
     ['Transport', agent.transportKind],
   ];
+
+  // The service earns a row only when it is not working. Healthy, it said
+  // "connected" from inside a collapsed disclosure -- a line nobody opened,
+  // costing nothing to anyone who did. Unhealthy, it is promoted to an alert
+  // above the fold as well, because an unreachable service is what an absent
+  // dump, an absent objective and a silent agent all actually look like.
+  if (agent.serviceError !== null || agent.serviceDegraded) {
+    rows.push([
+      'Service',
+      `UNREACHABLE (${agent.serviceBase ?? agent.currentSettings.serviceUrl})`,
+    ]);
+  }
 
   const table = el('table', 'table table-sm table-borderless mb-0 font-size-sm');
   const body = el('tbody', '');

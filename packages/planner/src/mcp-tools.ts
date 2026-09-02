@@ -1,6 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { levelsPerHour } from '@melvor-agent/shared';
+import { describeDropped, levelsPerHour, selectBlocked } from '@melvor-agent/shared';
+import { isNewerBuild, parseBuildInfo, readBuildInfo } from './build-info.js';
 import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import { controlRate, measureAgainstClaim, measureProgress } from './progress.js';
@@ -27,6 +26,13 @@ import type { Store } from './store.js';
  */
 
 const GP = 'melvorD:GP';
+
+/**
+ * How many blocked opportunities a listing shows, criticals aside.
+ *
+ * Twelve, as before. What changed is *which* twelve; see {@link selectBlocked}.
+ */
+const BLOCKED_SHOWN = 12;
 
 /** Named because a literal newline inside a template here is easy to mangle. */
 const NEWLINE = String.fromCharCode(10);
@@ -183,12 +189,26 @@ export const TOOLS: Record<string, ToolHandler> = {
 
     const blocked = store.report?.blockedOpportunities ?? [];
     if (blocked.length > 0) {
+      // Ranked by severity with slots reserved per tier, rather than by the
+      // order the mod happened to concatenate them in. A food-reserve countdown
+      // and "Yew unlocks at level 60" used to compete on position alone, and
+      // the twelve slots went to whichever reader ran first -- which is how
+      // four diagnostics written in one day were shipped, truncated away, and
+      // never once read by a planning session.
+      const { shown, dropped } = selectBlocked(blocked, BLOCKED_SHOWN);
       lines.push('', `Blocked (${blocked.length}) — the best moves often produce one of these:`);
-      for (const item of blocked.slice(0, 12)) {
+      for (const item of shown) {
         const missing = item.missing.map((m) => `${m.name} ${m.have}/${m.need}`).join(', ');
-        lines.push(`- ${item.label}${missing === '' ? '' : ` — needs ${missing}`}`);
+        // Criticals are marked: a countdown reads like every other line once it
+        // is a bullet in a list of twelve.
+        const mark = item.severity === 'critical' ? '[CRITICAL] ' : '';
+        lines.push(`- ${mark}${item.label}${missing === '' ? '' : ` — needs ${missing}`}`);
       }
-      if (blocked.length > 12) lines.push(`- ...and ${blocked.length - 12} more`);
+      // Named, not counted. "...and 14 more" says a cut was made and nothing
+      // about whether it removed trivia or the one line that would have
+      // unblocked the next four hours.
+      const overflow = describeDropped(dropped);
+      if (overflow !== null) lines.push(`- ${overflow}`);
     }
 
     return lines.join('\n');
@@ -538,40 +558,11 @@ function successFor(
 function describeStaleBuild(running: string | null): string {
   if (running === null) return '';
 
-  try {
-    // Walked up from cwd rather than assumed. The service is started from the
-    // repo root by `pnpm planner` but nothing guarantees that, and a hardcoded
-    // join silently produces no warning at all when it is wrong — which is the
-    // same failure mode this warning exists to fix.
-    let dir = process.cwd();
-    let info: string | null = null;
-    for (let depth = 0; depth < 6; depth += 1) {
-      try {
-        info = readFileSync(join(dir, 'packages', 'mod', 'dist-local', 'BUILD_INFO.txt'), 'utf8');
-        break;
-      } catch {
-        const parent = dirname(dir);
-        if (parent === dir) break;
-        dir = parent;
-      }
-    }
-    if (info === null) return '';
-    const built = /built\s+(\S+)/.exec(info)?.[1];
-    if (built === undefined || built === running) return '';
+  const info = readBuildInfo();
+  if (info === null) return '';
 
-    // Compared to the second, not the millisecond.
-    //
-    // The mod stamps itself and the build artifact is written moments apart in
-    // the same build, so the two differ by a few milliseconds even when they
-    // are the same code: 06:22:54.698 running against 06:22:54.705 on disk.
-    // A strict compare reported "newer build waiting" immediately after a
-    // successful reload, which is the precise way a warning becomes noise and
-    // then becomes ignored — the failure this warning exists to prevent.
-    const second = (stamp: string): string => stamp.slice(0, 19);
-    if (second(built) <= second(running)) return '';
+  const built = parseBuildInfo(info);
+  if (!isNewerBuild(built, running)) return '';
 
-    return ` — NEWER BUILD WAITING (${built}); reload to pick it up`;
-  } catch {
-    return '';
-  }
+  return ` — NEWER BUILD WAITING (${built}); reload to pick it up`;
 }

@@ -1045,7 +1045,7 @@ slot, both of which are decisions with costs, and both of which the agent
 already has capabilities for.
 
 ```ts
-readBankPressure: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+readBankPressure: () => { label: string; xpPerHour: number; severity: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readBankQuantity`
@@ -1078,7 +1078,7 @@ choosing by index safe. These are context for the planner: read them, then
 pick a real candidate that produces the missing input.
 
 ```ts
-readBlockedOpportunities: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+readBlockedOpportunities: () => { label: string; xpPerHour: number; severity?: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readBoneCandidates`
@@ -1463,7 +1463,7 @@ session decide, which is the split this codebase already draws between
 oversights and trade-offs.
 
 ```ts
-readFoodReserve: (minimumMeals?: number) => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+readFoodReserve: (minimumMeals?: number) => { label: string; xpPerHour: number; severity: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readGameVersion`

@@ -47,6 +47,7 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
   return {
     connected: true,
     lastReportAgeMs: 500,
+    needsAttention: null,
     report: {
       runState: 'running',
       snapshot,

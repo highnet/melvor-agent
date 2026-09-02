@@ -1,4 +1,4 @@
-import type { ActionResult, Candidate } from '@melvor-agent/shared';
+import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 
@@ -691,6 +691,7 @@ export function readPenalisingGear(): { slotId: string; itemName: string }[] {
 export function readFoodReserve(minimumMeals = 40): {
   label: string;
   xpPerHour: number;
+  severity: BlockedSeverity;
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   try {
@@ -707,6 +708,11 @@ export function readFoodReserve(minimumMeals = 40): {
     const best = banked[0];
     return [
       {
+        // Critical, so it can never be cut. This is a countdown to the
+        // failure that has already killed this character once: it starved
+        // surrounded by raw food, with a warning nobody read because the
+        // blocked list showed twelve lines and this was not one of them.
+        severity: 'critical',
         label: `Food is down to ${meals} meals and there is no Auto Eat — the eat reflex spends one per fire, and Thieving fires it often. Cook or fish before the reserve runs out.`,
         xpPerHour: 0,
         missing: [

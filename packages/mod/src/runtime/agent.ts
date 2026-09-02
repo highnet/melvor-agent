@@ -1,6 +1,7 @@
 import { checkDumpFreshness } from '@melvor-agent/knowledge';
 import type {
   ActionResult,
+  BlockedOpportunity,
   Candidate,
   Command,
   JournalEntry,
@@ -10,7 +11,7 @@ import type {
   RunState,
   StateSnapshot,
 } from '@melvor-agent/shared';
-import { fail, stateSnapshotSchema } from '@melvor-agent/shared';
+import { checkArmHealth, fail, stateSnapshotSchema } from '@melvor-agent/shared';
 import {
   Subscriptions,
   THIEVING_ID,
@@ -180,6 +181,7 @@ import {
 } from './combat-reflex.js';
 import type { Logger } from './logger.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
+import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
 import type { Transport } from './transport.js';
 
 /** How often the policy tier evaluates the objective. */
@@ -209,6 +211,21 @@ const REFLEX_BACKOFF_MS = 60_000;
 const QUALITY_SAMPLE_INTERVAL_MS = 60_000;
 /** Flat progress for this long with automation on means we are stuck. */
 const STUCK_AFTER_MS = 15 * 60_000;
+
+/**
+ * How long a suspension may last before the agent forces its way out.
+ *
+ * Offline progress is a bounded calculation -- the game caps it at 24 hours of
+ * simulated time and resolves it in seconds -- so a suspension outlasting this
+ * is not catch-up in progress, it is an `offlineLoopExited` that never arrived.
+ * And that is a total failure: `tickPolicy` returns immediately while
+ * suspended, so all three tiers stop, no report is pushed, and the service sees
+ * only `connected: false` with no reason attached. Nothing recovers on its own.
+ *
+ * Ten minutes is generous against a calculation measured in seconds, and short
+ * enough that an unattended night loses minutes rather than all of it.
+ */
+const SUSPEND_TIMEOUT_MS = 600_000;
 
 /**
  * Consecutive failed actions before an objective is abandoned.
@@ -263,6 +280,17 @@ export interface AgentSettings extends Record<string, unknown> {
    * second entry starts.
    */
   plan: Objective[];
+  /**
+   * The game's lifetime death counter as of the last run, or null on a first
+   * boot.
+   *
+   * Persisted so a death that happened while the mod was not loaded can be
+   * detected at all. Offline progression replays elapsed time before any reflex
+   * exists -- that is how this character died last time, mid-Thieving during a
+   * reload -- and by the time the arming path runs, the only evidence left is
+   * that this number is higher than it was.
+   */
+  lastDeathCount: number | null;
 }
 
 export const DEFAULT_SETTINGS: AgentSettings = {
@@ -272,6 +300,7 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   repoPath: '',
   objective: null,
   plan: [],
+  lastDeathCount: null,
 };
 
 /**
@@ -366,6 +395,21 @@ export class Agent {
   private lastProgressMarker = -1;
   /** Whether the current stuck episode has already been reported; see detectStuck. */
   private stuckReported = false;
+  /** Replans issued for the current stuck episode; drives the backoff. */
+  private stuckEscalations = 0;
+  /** When the next stuck replan may be issued. Zero while nothing is stuck. */
+  private nextStuckReplanAt = 0;
+  /** When the offline loop suspended the agent, or null while it is not suspended. */
+  private suspendedAt: number | null = null;
+  /**
+   * A condition only a human can clear, shipped on every report.
+   *
+   * See the `needsAttention` field on the report schema: the agent has three
+   * ways to end up going nowhere and, before this, two of them were silent.
+   */
+  private attention: string | null = null;
+  /** The blocked opportunities last shipped, so the panel can show the urgent ones. */
+  private lastBlocked: BlockedOpportunity[] = [];
   private replanPending: string | null = null;
   /** Guards against overlapping planner calls while one is in flight. */
   private replanning = false;
@@ -391,6 +435,23 @@ export class Agent {
 
   get blocked(): string | null {
     return this.blockedReason;
+  }
+
+  /** A condition needing a person, or null. See the report's `needsAttention`. */
+  get needsAttention(): string | null {
+    return this.attention;
+  }
+
+  /**
+   * Blocked opportunities from the last report.
+   *
+   * Exposed so the panel can promote the urgent ones instead of shipping them
+   * exclusively to a planning session that may not be attached. Read from the
+   * cache rather than recomputed: enumeration walks every recipe of every
+   * skill, and the panel re-renders on every state change.
+   */
+  get blockedOpportunities(): BlockedOpportunity[] {
+    return this.lastBlocked;
   }
 
   get snapshot(): StateSnapshot | null {
@@ -506,6 +567,10 @@ export class Agent {
         // promoting it; see offlineLoopExited.
         this.stateBeforeSuspend = this.state;
         this.state = 'suspended';
+        // Timed, because nothing else here is. `offlineLoopExited` is the only
+        // way out and it is an event the mod does not control; if it never
+        // fires the agent stays suspended forever with every tier stopped.
+        this.suspendedAt = Date.now();
         this.notify();
       }),
     );
@@ -513,40 +578,81 @@ export class Agent {
     this.subscriptions.add(
       onGameEvent('offlineLoopExited', () => {
         if (this.state !== 'suspended') return;
-        // Hours may have passed. The stored objective's success and abort
-        // conditions are re-validated against a fresh snapshot before resuming;
-        // this is the normal path, not an edge case.
-        // A blocked agent must come back blocked.
-        //
-        // Resuming to `running` on `settings.enabled` alone was a guard that
-        // failed open on a timer. `enabled` stays true when arming fails --
-        // arm() only clears it on success -- so an agent blocked on the wrong
-        // character, a stale dump or an unreachable planner needed only a
-        // sixty-second stall to be promoted straight back to running, with none
-        // of the checks re-run. The character allowlist exists precisely to
-        // stop days of unattended play on the wrong save, and an idle window
-        // defeated it.
-        if (this.stateBeforeSuspend === 'blocked') {
-          this.state = 'blocked';
-          this.stateBeforeSuspend = null;
-          this.log.warn(
-            'runtime',
-            `offline loop exited; still blocked: ${this.blockedReason ?? 'unknown'}`,
-          );
-          this.notify();
-          return;
-        }
-
-        this.stateBeforeSuspend = null;
-        this.log.info('runtime', 'offline loop exited; re-snapshotting and replanning');
-        this.requestReplan('offline_loop_exited');
-        this.state = this.settings.enabled ? 'running' : 'idle';
-        this.tickPolicy();
-        this.notify();
+        this.resumeFromSuspension('offline_loop_exited', 'offline loop exited');
       }),
     );
 
     this.startClocks();
+  }
+
+  /**
+   * Leaves the suspended state, whether the game said so or the clock did.
+   *
+   * A blocked agent must come back blocked.
+   *
+   * Resuming to `running` on `settings.enabled` alone was a guard that failed
+   * open on a timer. `enabled` stays true when arming fails -- arm() only
+   * clears it on success -- so an agent blocked on the wrong character, a stale
+   * dump or an unreachable planner needed only a sixty-second stall to be
+   * promoted straight back to running, with none of the checks re-run. The
+   * character allowlist exists precisely to stop days of unattended play on the
+   * wrong save, and an idle window defeated it.
+   *
+   * @param trigger - Replan trigger; the forced exit uses `stuck_detected`
+   *                  because the resume is a recovery, not a normal catch-up.
+   * @param reason - How the suspension ended, for the log line.
+   */
+  private resumeFromSuspension(trigger: string, reason: string): void {
+    this.suspendedAt = null;
+
+    if (this.stateBeforeSuspend === 'blocked') {
+      this.state = 'blocked';
+      this.stateBeforeSuspend = null;
+      this.log.warn('runtime', `${reason}; still blocked: ${this.blockedReason ?? 'unknown'}`);
+      this.notify();
+      return;
+    }
+
+    this.stateBeforeSuspend = null;
+    // Hours may have passed. The stored objective's success and abort
+    // conditions are re-validated against a fresh snapshot before resuming;
+    // this is the normal path, not an edge case.
+    this.log.info('runtime', `${reason}; re-snapshotting and replanning`);
+    this.requestReplan(trigger);
+    this.state = this.settings.enabled ? 'running' : 'idle';
+    this.tickPolicy();
+    this.notify();
+  }
+
+  /**
+   * The policy tick while suspended: report, and time the suspension out.
+   *
+   * Two failures met in the old early return. Nothing was reported at all, so
+   * the service could only observe `connected: false` -- which is also what a
+   * closed game looks like, and what a dead machine looks like. And nothing
+   * bounded the wait, so a missing `offlineLoopExited` left every tier stopped
+   * with no route back except a person noticing.
+   *
+   * The report is state-only. Reading the game mid catch-up is exactly what
+   * suspension exists to prevent (`readSnapshot` says so), so the snapshot and
+   * both enumerations are omitted rather than being sent stale. Saying "I am
+   * suspended, since 03:11" is the entire point.
+   */
+  private tickSuspended(): void {
+    const since = this.suspendedAt;
+    const elapsed = since === null ? 0 : Date.now() - since;
+
+    if (since !== null && elapsed > SUSPEND_TIMEOUT_MS) {
+      const minutes = Math.round(elapsed / 60_000);
+      this.attention = `offline progress has been resolving for ${minutes}min; the game never signalled that it finished. Forcing the agent back out — check that the game loop is running.`;
+      this.log.error('runtime', this.attention);
+      // `stuck_detected` rather than `offline_loop_exited`: the agent is being
+      // recovered from a stall, and the trigger the planner sees should say so.
+      this.resumeFromSuspension('stuck_detected', `suspension timed out after ${minutes}min`);
+      return;
+    }
+
+    void this.pushReport({ stateOnly: true });
   }
 
   /**
@@ -927,13 +1033,13 @@ export class Agent {
    * planner would reason over numbers that no longer describe the game, and the
    * wrong character means days of unattended play on a save that matters.
    */
-  async arm(): Promise<void> {
+  async arm(options: { auto?: boolean } = {}): Promise<void> {
     if (this.state === 'killed') {
       this.log.warn('runtime', 'kill switch is latched; reload the game to arm again');
       return;
     }
 
-    const reason = await this.checkGuards();
+    const reason = await this.checkGuards(options.auto === true);
     if (reason !== null) {
       this.state = 'blocked';
       this.blockedReason = reason;
@@ -944,7 +1050,10 @@ export class Agent {
 
     this.blockedReason = null;
     this.state = 'running';
-    this.settings = { ...this.settings, enabled: true };
+    // The baseline every later boot is compared against. Recorded on the way
+    // in rather than on the way out, because there is no clean way out: a
+    // browser tab closing runs no shutdown path.
+    this.settings = { ...this.settings, enabled: true, lastDeathCount: readDeathCount() };
     this.objectiveStartedAt = Date.now();
     this.objectiveStartMetrics = this.captureMetrics();
     this.deathsSinceStart = 0;
@@ -1145,9 +1254,24 @@ export class Agent {
     this.notify();
   }
 
-  private async checkGuards(): Promise<string | null> {
+  private async checkGuards(auto: boolean): Promise<string | null> {
     const realmRefusal = checkRealmAllowed();
     if (realmRefusal !== null) return realmRefusal;
+
+    // What offline progression did, checked before anything acts on it.
+    //
+    // Only for the automatic path. Every other guard here is about
+    // configuration -- the realm, the allowlist, the dump's freshness -- and
+    // none of them looks at the character. But arming on boot happens from
+    // `onInterfaceReady`, which is *after* up to 24 hours have been applied
+    // with no reflex loaded, so the one thing the boot path most needs to know
+    // is the one thing nothing asked: what state did that leave the character
+    // in. An operator arming by hand is present and can judge for themselves;
+    // nobody is present for this path, which is exactly why it needs a floor.
+    if (auto) {
+      const healthRefusal = this.checkAutoArmHealth();
+      if (healthRefusal !== null) return healthRefusal;
+    }
 
     const characterRefusal = checkCharacterAllowed(
       this.lastSnapshot?.characterName ?? readSnapshot().characterName,
@@ -1192,6 +1316,39 @@ export class Agent {
     }
 
     return null;
+  }
+
+  /**
+   * Reads what offline progression left behind, for the automatic arm.
+   *
+   * Every input is read here rather than taken from the last snapshot, because
+   * on the boot path there is no last snapshot: `install()` has only just run
+   * and the first policy tick has not happened. Reading directly is also the
+   * honest thing to do for a check whose whole purpose is to observe the
+   * character as it is *now*, immediately after the game changed it.
+   *
+   * @returns A refusal to report as `blockedReason`, or null when it looks safe.
+   */
+  private checkAutoArmHealth(): string | null {
+    try {
+      const { hitpoints, maxHitpoints } = readPlayerHitpoints();
+      const refusal = checkArmHealth({
+        hpFraction: maxHitpoints > 0 ? hitpoints / maxHitpoints : 1,
+        meals: readMealCount(),
+        hasAutoEat: hasAutoEat(),
+        deathCount: readDeathCount(),
+        deathCountBefore: this.settings.lastDeathCount,
+      });
+
+      return refusal === null ? null : `${refusal} Arm from the panel once it is dealt with.`;
+    } catch (error) {
+      // An unreadable character is not evidence of a healthy one, but refusing
+      // on a failed read would make every reader change a silent no-arm. The
+      // policy tier's HP and food floors still run, so this degrades to the
+      // behaviour that existed before the check.
+      this.log.warn('runtime', `auto-arm health check could not read the character: ${error}`);
+      return null;
+    }
   }
 
   /**
@@ -1290,7 +1447,10 @@ export class Agent {
       `character died (${died} since last check, ${this.deathsSinceStart} this run); clearing the objective`,
     );
 
-    this.settings = { ...this.settings, objective: null };
+    // The baseline moves with it. A death the agent has already seen, reported
+    // and replanned around must not also block the next boot's automatic arm —
+    // that check exists for the deaths nobody was there for.
+    this.settings = { ...this.settings, objective: null, lastDeathCount: deaths };
     this.objectiveStartedAt = Date.now();
     this.objectiveStartMetrics = this.captureMetrics();
     this.requestReplan('death');
@@ -1299,7 +1459,11 @@ export class Agent {
 
   /** The policy tier. Takes a snapshot, evaluates, and performs intents. */
   private tickPolicy(): void {
-    if (this.state === 'killed' || this.state === 'suspended') return;
+    if (this.state === 'killed') return;
+    if (this.state === 'suspended') {
+      this.tickSuspended();
+      return;
+    }
 
     const snapshot = this.takeSnapshot();
     if (snapshot === null) return;
@@ -1836,21 +2000,56 @@ export class Agent {
       this.lastProgressMarker = marker;
       this.lastProgressAt = now;
       this.stuckReported = false;
+      // The episode is over, so the next one starts asking promptly again.
+      this.stuckEscalations = 0;
+      this.nextStuckReplanAt = 0;
+      if (this.attention !== null) {
+        this.log.info('runtime', 'progress resumed; clearing the escalation');
+        this.attention = null;
+      }
       return;
     }
 
-    if (now - this.lastProgressAt > STUCK_AFTER_MS && this.replanPending === null) {
-      // Once per episode. This warning fired 1,237 times today at three-second
-      // intervals — the same drown-the-signal failure the reflex backoff was
-      // written for, in the one place whose entire job is to be noticed.
-      if (!this.stuckReported) {
-        this.stuckReported = true;
-        this.log.warn(
-          'reflex',
-          `no total level or GP movement for 15min while running "${this.settings.objective?.rationale ?? 'no objective'}"; escalating`,
-        );
-      }
-      this.requestReplan('stuck_detected');
+    const stuckFor = now - this.lastProgressAt;
+    if (stuckFor <= STUCK_AFTER_MS || this.replanPending !== null) return;
+
+    // Once per episode. This warning fired 1,237 times in a day at
+    // three-second intervals — the same drown-the-signal failure the reflex
+    // backoff was written for, in the one place whose entire job is to be
+    // noticed.
+    if (!this.stuckReported) {
+      this.stuckReported = true;
+      this.log.warn(
+        'reflex',
+        `no total level or GP movement for 15min while running "${this.settings.objective?.rationale ?? 'no objective'}"; escalating`,
+      );
+    }
+
+    // Backed off, because the answer is empty by construction until a session
+    // attaches. `plan()` returns no objectives unconditionally — planning
+    // happens in a Claude Code session or it does not happen — so replanning on
+    // every tick was an HTTP round trip every three seconds, all night, for a
+    // response that could not change. Retrying is still right; a session may
+    // attach at any moment and the first request after it does is the one that
+    // ends the stall. The rate was the mistake, not the retry.
+    if (now < this.nextStuckReplanAt) return;
+
+    this.nextStuckReplanAt = now + stuckReplanDelayMs(this.stuckEscalations);
+    this.stuckEscalations += 1;
+    this.requestReplan('stuck_detected');
+
+    // And once asking has demonstrably stopped helping, say so somewhere a
+    // check outside the game can see it. An agent that is running, reporting
+    // healthily and achieving nothing is the one failure this project has no
+    // other signal for.
+    const escalation = describeStuckAttention(
+      this.stuckEscalations,
+      stuckFor,
+      this.settings.objective?.rationale ?? null,
+    );
+    if (escalation !== null && this.attention !== escalation) {
+      this.attention = escalation;
+      this.log.error('runtime', escalation);
     }
   }
 
@@ -1908,24 +2107,31 @@ export class Agent {
     });
   }
 
-  /** Ships state to the service and applies any commands it returns. */
-  private async pushReport(): Promise<void> {
+  /**
+   * Ships state to the service and applies any commands it returns.
+   *
+   * @param options - `stateOnly` omits the snapshot and both enumerations, for
+   *                  the suspended path where reading the game is unsafe.
+   */
+  private async pushReport(options: { stateOnly?: boolean } = {}): Promise<void> {
     const logs = this.log.drain();
     const journalEntries = this.pendingJournal;
     this.pendingJournal = [];
+    const quiet = options.stateOnly === true || this.state === 'killed';
 
     const reply = await this.transport.report({
       runState: this.state,
-      snapshot: this.lastSnapshot,
+      snapshot: options.stateOnly === true ? null : this.lastSnapshot,
       objective: this.settings.objective,
       planRemaining: this.settings.plan.length,
-      candidates: this.state === 'killed' ? [] : this.safeCandidates(),
-      blockedOpportunities: this.state === 'killed' ? [] : this.safeBlocked(),
+      candidates: quiet ? [] : this.safeCandidates(),
+      blockedOpportunities: quiet ? [] : this.safeBlocked(),
       buildStamp: readBuildStamp(),
       logs,
       quality: this.quality.slice(-120),
       journalEntries,
       blockedReason: this.blockedReason,
+      needsAttention: this.attention,
     });
 
     if (reply === null) {
@@ -1956,56 +2162,66 @@ export class Agent {
    * Never fatal: this is planning context, and losing it should not cost the
    * agent its report.
    */
-  private safeBlocked(): ReturnType<typeof readBlockedOpportunities> {
+  private safeBlocked(): BlockedOpportunity[] {
     try {
       const refusal = this.lastRefusal;
       // Ten minutes: long enough to reach the next planning call, short enough
       // that a refusal the character has since grown out of stops being advice.
       const recent = refusal !== null && Date.now() - refusal.at < 600_000;
 
-      return [
+      // Order here no longer decides what a planning session sees: every entry
+      // carries a severity and the renderer ranks by it, with slots reserved
+      // per tier. That ordering had been rewritten twice -- once to lift
+      // Township task needs above locked actions, once to lift the diagnostics
+      // above them too -- because a `push` position was the only lever anyone
+      // had, and twelve slots were filled by whichever reader ran first.
+      const blocked: ReturnType<typeof readBlockedOpportunities> = [
         ...(recent && refusal !== null
           ? [
               {
                 label: `Last refusal: ${refusal.action} — ${refusal.detail}. It was offered as a candidate and the game refused it, so do not simply re-choose it.`,
                 xpPerHour: 0,
+                // The action the game has just refused is the one thing a
+                // planner must not re-choose, and it expires in ten minutes.
+                severity: 'high' as const,
                 missing: [],
               },
             ]
           : []),
         ...readBankPressure(),
-        // Task needs before locked actions, deliberately. Only the first twelve
-        // of these ever reach a planning session, and `readLockedActions`
-        // emits one per skill — around twenty — so it filled every slot and
-        // task needs were never once seen in a whole session's planning.
-        //
-        // The ordering reflects what each is for. "Yew unlocks at level 60" is
-        // a fact to notice in passing; "this task wants 5,000 Fishing XP, and
-        // pays Township XP for it" is a job that can be started now, in a skill
-        // the character already has. Township level is the gate on the last
-        // untrained skill in scope, which makes these the most actionable lines
-        // the agent produces.
+        // Ordinary severity, and that is the point of the field: "this task
+        // wants 5,000 Fishing XP, and pays the Township XP the last untrained
+        // skill in scope is gated behind" is a job that can be started now, so
+        // it outranks a locked-action fact without anyone having to keep it
+        // above one in this array.
         ...readTaskOpportunities(),
-        // Diagnostics above locked actions, for the same reason task needs were
-        // moved above them and more so.
-        //
-        // `readLockedActions` emits one line per skill, around twenty, and only
-        // the first twelve of this whole list ever reach a planning session. Six
-        // task needs plus six unlock facts filled the window exactly, so every
-        // diagnostic below was written, shipped, and never once read: the food
-        // reserve running out, a better recipe unlocked in the running skill,
-        // Thieving's rates being unmeasurable rather than zero, a seed
-        // shortfall. Four things built today to be seen, none of which were.
-        //
-        // The ordering follows what a line is for. "Yew unlocks at level 60" is
-        // a fact to notice in passing and will still be true in an hour.
-        // "Food is down to 11 meals and there is no Auto Eat" is a countdown.
         ...readUnsellableNotice(),
         ...readShopGoalNotice(),
         ...readBlockedOpportunities(),
-        ...readLockedActions(),
-        ...this.blockedCombat(),
+        // A level requirement is the least urgent thing on this list and there
+        // are around twenty of them, one per skill. Marked low rather than
+        // moved: they used to fill every slot from wherever they sat in this
+        // array, and six task needs plus six unlock facts once filled the
+        // window exactly -- so the food reserve running out, a better recipe
+        // unlocking in the running skill and a seed shortfall were all
+        // written, shipped, and never once read.
+        ...readLockedActions().map((entry) => ({ ...entry, severity: 'low' as const })),
+        // "You cannot fight this yet, and here is why" is progression context,
+        // not a countdown.
+        ...this.blockedCombat().map((entry) => ({ ...entry, severity: 'low' as const })),
       ];
+
+      // Severity is filled in here rather than left to the schema's default, so
+      // the panel and the report rank the same list. The default only applies
+      // at the service, which is one hop too late for anything in the game.
+      const ranked = blocked.map((entry) => ({
+        ...entry,
+        severity: entry.severity ?? ('normal' as const),
+      }));
+
+      // Cached for the panel, which must not recompute this on every render.
+      this.lastBlocked = ranked;
+      return ranked;
     } catch {
       return [];
     }
