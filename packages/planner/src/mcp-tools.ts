@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { levelsPerHour } from '@melvor-agent/shared';
 import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
@@ -92,7 +94,7 @@ export const TOOLS: Record<string, ToolHandler> = {
       // The mod only reloads with the game, so a fix committed minutes ago may
       // not be the code that is running. Saying which build is live turns "is
       // that live yet?" from a guess into a fact.
-      `Running mod build: ${store.report?.buildStamp ?? 'unknown (older mod, or not reported)'}`,
+      `Running mod build: ${store.report?.buildStamp ?? 'unknown (older mod, or not reported)'}${describeStaleBuild(store.report?.buildStamp ?? null)}`,
       `Doing: ${s.activeAction === null ? 'nothing' : s.activeAction.name}`,
       `Skills above 1: ${levelled || '(none)'}`,
       `Bank: ${s.bank.slotsUsed}/${s.bank.slotsMax} slots — ${topStacks(s.bank.items)}`,
@@ -450,4 +452,42 @@ function successFor(
   // acted. No criterion at all is the honest answer: the executor knows when a
   // one-shot transition is done, and nothing else does.
   return [];
+}
+
+/**
+ * Says when a newer mod has been built but not loaded.
+ *
+ * The build stamp answers "what is running". It does not answer "is there
+ * something better sitting on disk", and that second question is the one that
+ * cost the most time today: a bank-deadlock fix, an Agility course fix and a
+ * change making a Staff of Air visible to the equip reader all sat built and
+ * unloaded for hours while the agent was steered around them by hand.
+ *
+ * Read from the build artifact rather than from git, because what matters is
+ * what `pnpm build` produced — a commit that was never built is not waiting to
+ * be loaded, it is waiting to be built, and conflating the two would produce a
+ * nag that is wrong exactly when someone is mid-edit.
+ *
+ * Silent when the two agree, when nothing has been built, or when either stamp
+ * cannot be read. A staleness warning that fires on its own uncertainty is
+ * noise, and this list already learned what noise costs.
+ */
+function describeStaleBuild(running: string | null): string {
+  if (running === null) return '';
+
+  try {
+    const info = readFileSync(
+      join(process.cwd(), 'packages', 'mod', 'dist-local', 'BUILD_INFO.txt'),
+      'utf8',
+    );
+    const built = /built\s+(\S+)/.exec(info)?.[1];
+    if (built === undefined || built === running) return '';
+
+    // String compare is enough: both are ISO-8601 UTC from the same builder.
+    if (built <= running) return '';
+
+    return ` — NEWER BUILD WAITING (${built}); reload to pick it up`;
+  } catch {
+    return '';
+  }
 }
