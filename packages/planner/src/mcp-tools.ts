@@ -496,8 +496,16 @@ function describeStaleBuild(running: string | null): string {
     const built = /built\s+(\S+)/.exec(info)?.[1];
     if (built === undefined || built === running) return '';
 
-    // String compare is enough: both are ISO-8601 UTC from the same builder.
-    if (built <= running) return '';
+    // Compared to the second, not the millisecond.
+    //
+    // The mod stamps itself and the build artifact is written moments apart in
+    // the same build, so the two differ by a few milliseconds even when they
+    // are the same code: 06:22:54.698 running against 06:22:54.705 on disk.
+    // A strict compare reported "newer build waiting" immediately after a
+    // successful reload, which is the precise way a warning becomes noise and
+    // then becomes ignored — the failure this warning exists to prevent.
+    const second = (stamp: string): string => stamp.slice(0, 19);
+    if (second(built) <= second(running)) return '';
 
     return ` — NEWER BUILD WAITING (${built}); reload to pick it up`;
   } catch {
