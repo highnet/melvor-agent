@@ -160,3 +160,43 @@ lets you choose:
 
 The general form: a wrong ontology produces code that is locally correct
 everywhere and globally broken, and it will often pass by luck first.
+
+## A reload is not a pause
+
+The character died at Thieving *during* a reload, holding 99 cooked Seahorse.
+
+Melvor computes offline progression from the save. A save taken mid-Thieving
+tells the next session to replay every second of elapsed time — landing all the
+hits — while the mod is not yet loaded, so none of the reflexes that answer
+damage are running. The death happens during the load, before anything that
+could have prevented it exists. And the gap is unbounded on the other side: the
+reload lands on the character-select screen and nothing resumes until a human
+picks a character.
+
+So "stop the dangerous thing before saving" is not politeness, it is the only
+moment the stop can still be made. `reloadGame` now stops combat or Thieving
+first and saves the stopped state.
+
+The general shape: **an operation that suspends the agent does not suspend the
+game.** Anything the agent was doing keeps costing whatever it costs, with the
+agent's judgement removed. Ask of every such operation what runs while nothing
+is watching.
+
+## A count in the bank is a claim, not an observation
+
+The same death had a second cause. `stopWhenStarving` — the last line of defence
+— returned early on `meals > 0`, so while any food existed anywhere it could not
+fire however low health went.
+
+But eating happens from the *equipped* food slot. A bank count is only a claim
+about what `eatWhenLow` should have been able to do; an empty slot, a refused
+refill or the wrong item makes the claim false. Health at 20% is the observation
+that it *is* false — and at that point the reading to trust is the health, not
+the inventory.
+
+Prefer the measurement over the ledger. When a guard's precondition is a stock
+level and its purpose is to catch a failure, the failure it is catching is
+usually the reason that stock level is not reachable.
+
+The test that asserted the old behaviour was not a regression to work around. It
+was the belief that killed the character, written down as an expectation.
