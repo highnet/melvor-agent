@@ -181,11 +181,10 @@ function genericSkillCandidates(): Candidate[] {
     // half and overstated Summoning by two thirds, in opposite directions, from
     // a number that was never read off anything.
     //
-    // The nominal three seconds is no longer a third source in this chain, it
-    // is what `firstPositive` returns when the chain runs out — which is what
-    // makes reaching it countable. Same number, same behaviour, now visible.
-    const skillInterval = firstPositive(
-      `candidates.skillInterval:${skillId}`,
+    // Undefined rather than a number when neither answers, because for a skill
+    // with a per-recipe getter that is not a failure — it is a backstop that
+    // will never be reached. See `resolveInterval`, which owns the one report.
+    const skillInterval = firstUsableInterval(
       () => withActions.actionInterval,
       () => withActions.baseInterval,
     );
@@ -234,7 +233,12 @@ function genericSkillCandidates(): Candidate[] {
 
       // Per recipe, not per skill: mastery is earned on the individual action,
       // so two recipes in one skill do not share an interval.
-      const interval = masteryIntervalFor(skill, recipe, skillInterval);
+      const interval = resolveInterval(
+        `candidates.skillInterval:${skillId}`,
+        skill,
+        recipe,
+        skillInterval,
+      );
       const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
       // Interval was only one axis. Mastery also raises what an action yields
@@ -754,38 +758,73 @@ function canAfford(
 }
 
 /**
- * The first reading that is a usable interval.
+ * The first reading that is a usable interval, or nothing.
  *
  * Positivity matters more than presence here: a getter returning 0 would
  * otherwise pass straight through, and a zero interval divides into an infinite
  * rate, which would put that recipe at the top of the board and keep it there.
  * An interval of zero is not a very fast action, it is an unreadable one.
  *
- * Only the *last* source is counted as a failure, deliberately. Falling through
- * from `actionInterval` to `baseInterval` is the designed path and happens on
- * every enumeration; counting it would bury the reads that genuinely broke
- * under noise. Reaching the end of the chain is the event worth seeing.
+ * Reports nothing at all, deliberately. It used to record `no source reported a
+ * usable interval` when the chain ran out, and that was wrong for the same
+ * reason its own comment gave for not recording every throw: for a skill with a
+ * per-recipe getter this chain is not the answer, it is a *backstop the answer
+ * never needs*. Cooking has no skill-wide interval to report — `actionInterval`
+ * (cooking.d.ts:71) reads the selected recipe and throws, and `baseInterval`
+ * lives on `CookingRecipe` (cooking.d.ts:15), not on the skill — yet
+ * `getRecipeCookingInterval` (cooking.d.ts:100) answers for every recipe. Same
+ * for Agility: no skill-wide `baseInterval`, `baseInterval` on
+ * `AgilityObstacle` (agility.d.ts:77), and `getObstacleInterval`
+ * (agility.d.ts:223) answering fine. Both skills reported a failure on every
+ * pass while every rate they produced was correct — 276 entries of a skill
+ * being shaped the way it is shaped.
+ *
+ * The single report now lives at the end of {@link resolveInterval}, where
+ * "nothing at all could price this action" is actually true.
  */
-function firstPositive(site: string, ...reads: (() => number | undefined)[]): number {
-  for (const [index, read] of reads.entries()) {
+function firstUsableInterval(...reads: (() => number | undefined)[]): number | undefined {
+  for (const read of reads) {
     try {
       const value = read();
       if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
-    } catch (error) {
-      // Only a throw with nothing left to fall back to is worth recording.
-      //
-      // The comment above already said so and the code did not: it noted every
-      // throw in the chain, and `actionInterval` throwing during enumeration is
-      // the designed path, not a fault. The first live report showed
-      // `candidates.firstPositive x432` from Harvesting alone -- 432 entries
-      // describing the system working as intended, which is exactly the noise
-      // that buries the read that genuinely broke.
-      if (index === reads.length - 1) noteSwallowed(site, error);
-      // Try the next source.
+    } catch {
+      // `actionInterval` throwing during enumeration is the designed path, not
+      // a fault: nothing is selected, which is the state this file always runs
+      // in. Try the next source.
     }
   }
 
-  recordFallback(site, 'no source reported a usable interval');
+  return undefined;
+}
+
+/**
+ * What one action of `recipe` costs in milliseconds, from the best source there is.
+ *
+ * Three sources, narrowest first, because that is the order of authority:
+ *
+ * 1. The skill's per-recipe getter ({@link masteryIntervalFor}) — mastery-,
+ *    gear- and modifier-aware, and action-scoped so it answers while nothing is
+ *    selected.
+ * 2. The skill-wide interval, for the artisan skills where one interval really
+ *    does cover every recipe.
+ * 3. {@link NOMINAL_INTERVAL_MS}, which is not read off anything.
+ *
+ * Only reaching (3) is recorded. The previous arrangement had it backwards: it
+ * resolved (2) first and reported *its* exhaustion, so a skill that prices every
+ * recipe correctly through (1) still filed a failure per pass, and the four
+ * loudest entries in `adapterFailures` described skills that were working.
+ */
+function resolveInterval(
+  site: string,
+  skill: AnySkill,
+  recipe: object,
+  skillInterval: number | undefined,
+): number {
+  const perRecipe = perRecipeInterval(skill, recipe);
+  if (perRecipe !== undefined) return perRecipe;
+  if (skillInterval !== undefined) return skillInterval;
+
+  recordFallback(site, 'neither the recipe nor the skill reported a usable interval');
   return NOMINAL_INTERVAL_MS;
 }
 
@@ -794,20 +833,44 @@ const NOMINAL_INTERVAL_MS = 3000;
 
 function miningCandidates(): Candidate[] {
   const skill = game.mining;
-  return skill.actions.allObjects
-    .filter((rock) => skill.canMineOre(rock) && isRecipeRealmUnlocked(rock))
-    .map((rock) =>
-      candidate(
-        MINING_ID,
-        skill.name,
-        rock,
-        miningIntervalFor(rock),
-        gpValue(rock.product),
-        skill,
-        gemGpPerAction(rock),
-        passiveRegenNote(rock),
-      ),
+  const rocks = skill.actions.allObjects.filter(
+    (rock) => skill.canMineOre(rock) && isRecipeRealmUnlocked(rock),
+  );
+
+  // One report for the whole pass, not one per rock.
+  //
+  // `gemGpPerAction` recorded a failure for every gem-bearing rock it priced,
+  // and the live report read `candidates.share1 x1104` -- 1,104 being exactly
+  // 138 enumeration passes times the 8 rocks that carry `giveGems`, i.e. one
+  // per rock per pass, none of which said anything the first one had not. That
+  // is the failure mode `safe.ts` exists to avoid: `adapterFailures` is read to
+  // find the accessor that broke, and a single unanswerable read repeated a
+  // thousand times buries every other entry under itself.
+  //
+  // The count still has to be non-zero -- a silent fallback is the thing this
+  // module was written against -- so the pass records once and says how many
+  // rocks it covers.
+  const priced = rocks.map((rock) => ({ rock, gem: gemGpPerAction(rock) }));
+  const unpriced = priced.filter(({ gem }) => gem.unpriced).length;
+  if (unpriced > 0) {
+    recordFallback(
+      'candidates.rockGemChance',
+      `${unpriced} gem-bearing rock(s) priced without their gem roll: Mining.getRockGemChance refuses while no rock is selected`,
     );
+  }
+
+  return priced.map(({ rock, gem }) =>
+    candidate(
+      MINING_ID,
+      skill.name,
+      rock,
+      miningIntervalFor(rock),
+      gpValue(rock.product),
+      skill,
+      gem.gpPerAction,
+      passiveRegenNote(rock) + gem.note,
+    ),
+  );
 }
 
 /**
@@ -841,8 +904,49 @@ function miningCandidates(): Candidate[] {
  *
  * Abyssal gems are left out entirely: their rocks are realm-gated and absent
  * from the board anyway.
+ *
+ * And one thing that is not an understatement but a hole, named as such.
+ *
+ * `Mining.getRockGemChance(ore)` (rockTicking.d.ts:157) takes the rock as an
+ * argument and yet throws "Tried to get active rock data, but none is selected"
+ * -- the message of `get activeRock()` (rockTicking.d.ts:133) -- so it consults
+ * the selection internally for something its signature does not disclose.
+ * Enumeration runs precisely when nothing is selected, so this call has never
+ * once succeeded: every gem-bearing rock on every board the agent has ever
+ * ranked was priced at its ore alone.
+ *
+ * There is no second source to fall back on. `MiningRock` declares
+ * `superiorGemChance` (rockTicking.d.ts:77) and `abyssalGemChance` (:79) as
+ * data, but *no* field for the primary gem chance; `Mining` declares
+ * `baseInterval`, `baseRockHP` and `passiveRegenInterval` as readonly constants
+ * (:108-110) and no base gem chance among them; and while
+ * `modifiers.miningGemChance` (modifierTable.d.ts:405) exists, it is by its name
+ * the bonus applied to a base this codebase would have to invent. Inventing it
+ * is the Crystal mistake -- a plausible model in the overstating direction cost
+ * an afternoon -- so it is not invented.
+ *
+ * So the gem term is reported as *unknown*, not as zero, and the label says so.
+ * A rock whose whole point is its gem chance must not read as identical to one
+ * that yields none, which is exactly what a silent 0 did.
+ *
+ * `getRockSuperiorGemChance` (:158) is left calling the getter because we have
+ * no evidence it refuses the same way: `share2` never appeared in the failure
+ * report at all, which means it was never reached -- no rock on this character's
+ * board reports `giveSuperiorGems` -- and not that it answered. If a superior
+ * rock ever unlocks, the site below is what will say which of the two it is.
  */
-function gemGpPerAction(rock: MiningRock): number {
+interface GemValue {
+  /** GP per action from gem rolls this code could actually price. */
+  gpPerAction: number;
+  /** True when a roll the rock definitely makes could not be priced at all. */
+  unpriced: boolean;
+  /** Appended to the label, so the reader can tell 0 from unknown. */
+  note: string;
+}
+
+function gemGpPerAction(rock: MiningRock): GemValue {
+  const nothing: GemValue = { gpPerAction: 0, unpriced: false, note: '' };
+
   try {
     const mining = game.mining;
     const doubling =
@@ -853,20 +957,32 @@ function gemGpPerAction(rock: MiningRock): number {
       );
 
     let gp = 0;
+    let unpriced = false;
 
     if (rock.giveGems === true) {
-      const chance = share('candidates.share1', () => mining.getRockGemChance(rock));
-      gp += chance * averageDropGp(game.randomGemTable) * doubling;
+      // Unrecorded here on purpose; `miningCandidates` records once per pass.
+      // See the comment there for why 1,104 identical entries were the bug.
+      const chance = unrecordedShare(() => mining.getRockGemChance(rock));
+      if (chance === undefined) unpriced = true;
+      else gp += chance * averageDropGp(game.randomGemTable) * doubling;
     }
 
     if (rock.giveSuperiorGems === true) {
-      const chance = share('candidates.share2', () => mining.getRockSuperiorGemChance(rock));
+      const chance = share('candidates.rockSuperiorGemChance', () =>
+        mining.getRockSuperiorGemChance(rock),
+      );
       gp += chance * averageDropGp(game.randomSuperiorGemTable);
     }
 
-    return Number.isFinite(gp) && gp > 0 ? gp : 0;
+    return {
+      gpPerAction: Number.isFinite(gp) && gp > 0 ? gp : 0,
+      unpriced,
+      note: unpriced
+        ? ' — gem value unknown, not zero: the game will not report the gem chance of a rock while none is selected, so this figure prices the ore only'
+        : '',
+    };
   } catch {
-    return 0;
+    return nothing;
   }
 }
 
@@ -875,6 +991,23 @@ function share(site: string, read: () => number): number {
   const percent = safeNumber(site, read, 0);
   if (!Number.isFinite(percent) || percent <= 0) return 0;
   return Math.min(1, percent / 100);
+}
+
+/**
+ * The same reading, uncounted, for the one caller that counts for itself.
+ *
+ * `undefined` and 0 are different answers here and the caller acts on the
+ * difference, which is why this does not go through `safeNumber`: that helper
+ * folds "would not answer" into the fallback, and folding it is the whole bug.
+ */
+function unrecordedShare(read: () => number): number | undefined {
+  try {
+    const percent = read();
+    if (typeof percent !== 'number' || !Number.isFinite(percent)) return undefined;
+    return Math.min(1, Math.max(0, percent / 100));
+  } catch {
+    return undefined;
+  }
 }
 
 /** The GP a drop table pays on average, ignoring any non-GP currency it holds. */
@@ -1051,7 +1184,17 @@ function modifiedInterval(skill: AnySkill, base: number, action: object): number
   }
 }
 
-export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): number {
+/**
+ * The per-recipe interval, or nothing when no per-recipe source answered.
+ *
+ * Split out from {@link masteryIntervalFor} so a caller can tell "this skill
+ * prices its recipes individually" from "nothing priced this action at all".
+ * The exported wrapper still takes a fallback and returns a number, because
+ * most callers only want the figure; {@link resolveInterval} needs the
+ * distinction, because it is the one place that decides whether a genuine
+ * failure has occurred and should be recorded.
+ */
+function perRecipeInterval(skill: AnySkill, recipe: object): number | undefined {
   const getters: Record<string, string> = {
     'melvorD:Woodcutting': 'getTreeInterval',
     'melvorD:Cooking': 'getRecipeCookingInterval',
@@ -1077,7 +1220,7 @@ export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: nu
       if (typeof min === 'number' && typeof max === 'number' && min > 0 && max > 0) {
         return (min + max) / 2;
       }
-      return fallback;
+      return undefined;
     }
 
     // Firemaking is per-log, and the table above had no entry for it.
@@ -1098,7 +1241,7 @@ export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: nu
     // is what makes it usable during enumeration.
     if (skill.id === FIREMAKING_ID) {
       const base = (recipe as { baseInterval?: number }).baseInterval;
-      if (typeof base !== 'number' || !Number.isFinite(base) || base <= 0) return fallback;
+      if (typeof base !== 'number' || !Number.isFinite(base) || base <= 0) return undefined;
       return modifiedInterval(skill, base, recipe);
     }
 
@@ -1112,22 +1255,27 @@ export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: nu
       const magic = skill as AnySkill & { baseInterval?: number };
       return typeof magic.baseInterval === 'number' && magic.baseInterval > 0
         ? magic.baseInterval
-        : fallback;
+        : undefined;
     }
 
     const name = getters[skill.id];
-    if (name === undefined) return fallback;
+    if (name === undefined) return undefined;
 
     const withGetter = skill as unknown as Record<string, ((action: object) => number) | undefined>;
     const getter = withGetter[name];
-    if (typeof getter !== 'function') return fallback;
+    if (typeof getter !== 'function') return undefined;
 
     const interval = getter.call(skill, recipe);
-    return Number.isFinite(interval) && interval > 0 ? interval : fallback;
+    return Number.isFinite(interval) && interval > 0 ? interval : undefined;
   } catch (error) {
     noteSwallowed('candidates.masteryIntervalFor', error);
-    return fallback;
+    return undefined;
   }
+}
+
+/** The per-recipe interval, or `fallback` when this skill does not price recipes individually. */
+export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): number {
+  return perRecipeInterval(skill, recipe) ?? fallback;
 }
 
 /**
@@ -1674,19 +1822,49 @@ export function readBlockedOpportunities(): {
 
     // Same chain as the candidate path, and for the same reason: a skill whose
     // `actionInterval` throws during enumeration has not failed, it simply has
-    // nothing selected. Reading it through `firstPositive` means only a skill
-    // that can report no interval at all is recorded -- this site was the
-    // second source of the "x456 Tried to get active vein data" noise, after
-    // the first was fixed.
-    const interval = firstPositive(
-      `candidates.blockedInterval:${skillId}`,
+    // nothing selected. This site was the second source of the "x456 Tried to
+    // get active vein data" noise, after the first was fixed.
+    const skillInterval = firstUsableInterval(
       () => withActions.actionInterval,
       () => withActions.baseInterval,
     );
-    const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
     for (const recipe of recipes) {
       try {
+        // Per recipe, exactly as on the candidate path -- and it was not, which
+        // is why Woodcutting and Fishing reported a failure here while pricing
+        // themselves correctly two hundred lines up.
+        //
+        // This loop covers every startable skill, including the four the
+        // candidate path hands to dedicated enumerators, and it asked only for
+        // a skill-wide interval. Woodcutting and Fishing have none to give:
+        // `Woodcutting.actionInterval` (woodcutting.d.ts:86) and
+        // `Fishing.actionInterval` (fishing.d.ts:100) read the active action and
+        // throw, neither class declares a skill-wide `baseInterval` (it sits on
+        // `WoodcuttingTree` at woodcutting.d.ts:46 and, as a min/max pair, on
+        // `Fish` at fishing.d.ts:13-14), and their real intervals only ever come
+        // from `getTreeInterval` (woodcutting.d.ts:76) and
+        // `getMinFishInterval`/`getMaxFishInterval` (fishing.d.ts:128, :130).
+        //
+        // So every blocked entry for those two was priced at a nominal three
+        // seconds. That is not only a false report, it is a false *ranking*: the
+        // blocked list is sorted by XP/hr and a flat interval sorts it by base
+        // XP alone, which is the same inversion that had Firemaking preferring
+        // its slowest logs. Firemaking is fixed here too, for free, because its
+        // per-log interval also lives on the recipe.
+        //
+        // Read before the level and affordability checks rather than after, so
+        // that an accessor this skill has genuinely lost is still reported on a
+        // pass where nothing turns out to be blocked. A diagnostic that only
+        // fires when there is also something to report is not a diagnostic.
+        const interval = resolveInterval(
+          `candidates.blockedInterval:${skillId}`,
+          skill,
+          recipe,
+          skillInterval,
+        );
+        const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
+
         if (skill.level < recipe.level) continue;
         if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
         // Only the ones we cannot do: the rest are already real candidates.
