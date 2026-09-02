@@ -58,6 +58,7 @@ import {
   readCombatSetupCandidates,
   readCombatTargets,
   readCompostCandidates,
+  readDeathCount,
   readDigSiteSetupCandidates,
   readEquipCandidates,
   readEquipmentSetCandidates,
@@ -173,6 +174,8 @@ import type { Transport } from './transport.js';
 /** How often the policy tier evaluates the objective. */
 const POLICY_INTERVAL_MS = 3000;
 /** Minimum gap between reflex passes, throttling the per-tick hook. */
+const LOOP_STALL_MS = 15_000;
+
 const REFLEX_THROTTLE_MS = 1000;
 /**
  * How long a reflex stays quiet after a call that changed nothing.
@@ -300,6 +303,26 @@ export class Agent {
   } | null = null;
   private objectiveStartedAt = Date.now();
   private deathsSinceStart = 0;
+
+  /**
+   * Last observed value of the game's lifetime death counter.
+   *
+   * `null` until the first reading, so arming does not report the character's
+   * entire history as deaths that just happened.
+   */
+  private lastDeathCount: number | null = null;
+
+  /** Game-loop ticks since load. The only evidence the loop is alive. */
+  private tickCount = 0;
+
+  /** Tick count at the previous policy tick, for the liveness comparison. */
+  private lastSeenTickCount = 0;
+
+  /** When the loop was first seen not to tick, or null while it is healthy. */
+  private loopStalledSince: number | null = null;
+
+  /** Whether the current stall has already been reported. */
+  private loopStalledReported = false;
   private quality: QualitySample[] = [];
   /**
    * When a reflex that changed nothing may complain again, keyed by name and
@@ -477,12 +500,36 @@ export class Agent {
    * involve the planner.
    */
   onGameTick(): void {
+    // Counted before the throttle, and before anything that can throw.
+    //
+    // This is the only proof the game loop is alive. Reporting runs on an
+    // independent setInterval, so when the loop dies the agent goes on shipping
+    // `running` with a snapshot naming the last skill -- indistinguishable from
+    // healthy idling, which is exactly how a crash spent an hour looking like a
+    // working character.
+    this.tickCount += 1;
+
     if (this.state !== 'running') return;
     const now = Date.now();
     if (now - this.lastReflexAt < REFLEX_THROTTLE_MS) return;
     this.lastReflexAt = now;
-    this.detectStuck(now);
-    this.runReflexes();
+
+    // Nothing may escape into the patched Game.loop.
+    //
+    // The doc on runReflexes says failures are logged and swallowed, and that
+    // was only ever true of failures inside act(): the reflex list is built by
+    // calling every reader eagerly, and several of those readers walk the bank
+    // with no guard of their own. So one corrupt entry -- the "ids don't match"
+    // class of crash -- threw before eatWhenLow, stopWhenStarving and
+    // refillFood were even reached, and if the condition persisted the
+    // character had no eating and no starvation stop for the rest of the run
+    // while the policy tier reported a healthy skill.
+    try {
+      this.detectStuck(now);
+      this.runReflexes();
+    } catch (error) {
+      this.log.error('reflex', `reflex tier threw, skipping this tick: ${String(error)}`);
+    }
   }
 
   /**
@@ -1049,12 +1096,117 @@ export class Agent {
     return null;
   }
 
+  /**
+   * Notices that the game loop has stopped ticking.
+   *
+   * Deliberately checked from the policy clock, which is a plain setInterval,
+   * and never from the tick loop itself. The stuck detector already had this
+   * backwards: it rode the very clock whose failure it was meant to catch, so a
+   * dead loop took its own alarm with it.
+   *
+   * The failure this exists for looked perfectly healthy from outside. Reports
+   * kept arriving on the independent timer, `runState` stayed `running`, and
+   * the snapshot went on naming whatever skill was last active -- so the
+   * service, the panel and every MCP reading agreed the character was working
+   * while nothing had happened for an hour.
+   *
+   * Reported rather than acted on. A stalled loop is not something the agent
+   * can fix from inside; what it can do is stop claiming to be fine.
+   */
+  private detectDeadLoop(): void {
+    const ticked = this.tickCount !== this.lastSeenTickCount;
+    this.lastSeenTickCount = this.tickCount;
+
+    if (ticked) {
+      this.loopStalledReported = false;
+      if (this.loopStalledSince !== null) {
+        this.log.info('runtime', 'game loop is ticking again');
+        this.loopStalledSince = null;
+      }
+      return;
+    }
+
+    if (this.state !== 'running') return;
+
+    const now = Date.now();
+    if (this.loopStalledSince === null) {
+      this.loopStalledSince = now;
+      return;
+    }
+
+    // Reported once per stall, not once per tick: an alarm that repeats every
+    // three seconds fills the log queue and evicts the diagnostics that would
+    // explain it.
+    if (this.loopStalledReported) return;
+    if (now - this.loopStalledSince < LOOP_STALL_MS) return;
+
+    this.loopStalledReported = true;
+    this.log.error(
+      'runtime',
+      `game loop has not ticked for ${Math.round(
+        (now - this.loopStalledSince) / 1000,
+      )}s; reflexes are not running, so eating and the starvation stop are both inactive`,
+    );
+  }
+
+  /**
+   * Notices that the character died.
+   *
+   * There was no death detection of any kind. `deathsSinceStart` was only ever
+   * assigned zero, never incremented, so `abortWhen.deathsExceed` could never
+   * fire and the `death` replan trigger was never sent -- and the run that died
+   * overnight went on choosing objectives as though nothing had happened,
+   * because nothing in the agent could tell the two states apart.
+   *
+   * Polling a counter rather than listening for an event is deliberate. There
+   * is no death event to subscribe to, and a counter that only rises also
+   * catches a death that happened while the mod was not loaded at all -- during
+   * offline progression, which is exactly how this character died last time.
+   * An event would have missed the one case that matters most.
+   *
+   * The objective is cleared as well as counted. Whatever was being attempted
+   * was being attempted by a character who could survive it, and that premise
+   * is now known to be false.
+   */
+  private detectDeath(): void {
+    const deaths = readDeathCount();
+
+    // First reading establishes the baseline; a character with a long history
+    // has not just died forty times.
+    if (this.lastDeathCount === null) {
+      this.lastDeathCount = deaths;
+      return;
+    }
+
+    if (deaths <= this.lastDeathCount) {
+      this.lastDeathCount = deaths;
+      return;
+    }
+
+    const died = deaths - this.lastDeathCount;
+    this.lastDeathCount = deaths;
+    this.deathsSinceStart += died;
+
+    this.log.error(
+      'runtime',
+      `character died (${died} since last check, ${this.deathsSinceStart} this run); clearing the objective`,
+    );
+
+    this.settings = { ...this.settings, objective: null };
+    this.objectiveStartedAt = Date.now();
+    this.requestReplan('death');
+    this.notify();
+  }
+
   /** The policy tier. Takes a snapshot, evaluates, and performs intents. */
   private tickPolicy(): void {
     if (this.state === 'killed' || this.state === 'suspended') return;
 
     const snapshot = this.takeSnapshot();
     if (snapshot === null) return;
+
+    this.detectDeath();
+    this.detectDeadLoop();
 
     if (this.state !== 'running') {
       void this.pushReport();

@@ -68,17 +68,17 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Critical — correctness or safety, do next
 
-- [ ] **Death is never detected** *(2×)* — S. `deathsSinceStart` (agent.ts:302) is
+- [x] **Death is never detected** *(2×)* — S. `deathsSinceStart` (agent.ts:302) is
       only ever assigned 0, so `abortWhen.deathsExceed` can never fire and the
       `death` trigger is never sent. Poll
       `game.stats.Combat.get(CombatStats.Deaths)` (statistics.d.ts:420,
       statTracker.d.ts:9) — that route needs no patching assumption.
-- [ ] **One throwing reader disables the whole reflex tier, permanently** *(2×)* —
+- [x] **One throwing reader disables the whole reflex tier, permanently** *(2×)* —
       S. `runReflexes` builds its outcome array by calling every reader eagerly,
       and `onGameTick` has no try/catch, so one corrupt bank entry removes eating,
       the starvation stop and loot collection for the rest of the run while the
       policy tier still reports a healthy skill.
-- [ ] **No game-loop heartbeat** *(2×)* — S/M. The stuck detector runs *on* the
+- [x] **No game-loop heartbeat** *(2×)* — S/M. The stuck detector runs *on* the
       clock that fails. Count ticks before the throttle and compare from the
       independent policy timer.
 - [ ] **Passive cooking fills a stockpile nobody collects** — S. Output does not

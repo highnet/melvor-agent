@@ -135,6 +135,7 @@ export {
   readIsInOnlineLoop,
   readSnapshot,
   readTotalLevel,
+  readDeathCount,
 } from './readers.js';
 export {
   buildTownshipBuilding,

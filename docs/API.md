@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-189 exports.
+190 exports.
 
 ## `act`
 
@@ -1230,6 +1230,34 @@ Amount of a currency by namespaced id, or 0 when it is not registered.
 
 ```ts
 readCurrency: (currencyId: string) => number
+```
+
+## `readDeathCount`
+
+`function`
+
+How many times this character has died, ever.
+
+The agent had no death detection at all. `deathsSinceStart` was only ever
+assigned zero -- never incremented -- so `abortWhen.deathsExceed` could not
+fire, the `death` replan trigger was never sent, and the run that died
+overnight carried on as though nothing had happened. Nothing in the codebase
+knew the difference between a character that was working and one that was
+dead.
+
+Read as a statistic rather than an event because there is no death event in
+`GameEvents` to subscribe to, and patching `Player.processDeath` would be a
+guess about what the mod loader permits. A counter that only ever rises needs
+no such assumption: compare it against the last reading and any increase is a
+death, including one that happened during offline progression while the mod
+was not loaded -- which is precisely how this character died last time.
+
+The literal 4 is `CombatStats.Deaths` (statistics.d.ts:420). It is spelled out
+because that is a plain `declare enum`, so the runtime bundle may carry no
+value for it; citing the line is honest where importing would be fragile.
+
+```ts
+readDeathCount: () => number
 ```
 
 ## `readDigSiteSetupCandidates`
