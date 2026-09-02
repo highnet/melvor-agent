@@ -429,3 +429,58 @@ The general test, before a threshold compares two quantities: **can you state th
 each?** If the answer is "they are both called a level", the comparison is a coincidence of
 naming. And check the extremes of a threshold against real data — one line of arithmetic
 over the dump would have shown this one admitting nothing.
+
+## A getter that takes its subject as an argument can still read the selection
+
+`Mining.getRockGemChance(ore: MiningRock): number` (`rockTicking.d.ts:157`) takes the rock
+as an argument and yet throws *"Tried to get active rock data, but none is selected."* — the
+message of `get activeRock()` (`:133`). The signature discloses a dependency on the argument
+and hides one on the selection, so the call looks safe to make during enumeration and is not.
+It had never once succeeded: every gem-bearing rock the agent has ever ranked was priced at
+its ore alone. The tell in the report was arithmetic — `candidates.share1 x1104` is exactly
+138 enumeration passes times the 8 rocks carrying `giveGems`, i.e. every call, every pass.
+
+There is no second source. `MiningRock` declares `superiorGemChance` (`:77`) and
+`abyssalGemChance` (`:79`) as data and **no** field for the primary gem chance; `Mining`
+declares `baseInterval`, `baseRockHP` and `passiveRegenInterval` as readonly constants
+(`:108-110`) and no base gem chance; `modifiers.miningGemChance` (`modifierTable.d.ts:405`)
+is by its name a bonus applied to a base this codebase would have to invent.
+
+So the term is reported as **unknown**, not as zero, and the candidate label says so. The
+distinction is the whole point: a rock whose value is mostly its gem roll must not read as
+identical to one that yields none.
+
+Unsettled, and deliberately left so: whether `getRockSuperiorGemChance` (`:158`) refuses the
+same way. `share2` never appeared in the failure report at all, which means it was never
+reached — no rock on this character's board reports `giveSuperiorGems` — not that it
+answered. `candidates.rockSuperiorGemChance` is what will say which, the first time a
+superior rock unlocks.
+
+The general move: **`actionInterval`-style refusal is not the only shape.** Before trusting
+an accessor because its signature is action-scoped, check whether the *error text* names a
+different object than the argument does. And when a term genuinely cannot be read, say
+"unknown" in the label rather than letting a 0 stand in — a fallback indistinguishable from a
+real value is the failure `safe.ts` exists to prevent.
+
+## A fallback's absence is not a failure when nothing was going to use it
+
+`adapterFailures` carried five standing entries, four of which described skills that were
+pricing every recipe correctly. The candidate path resolved a *skill-wide* interval first and
+recorded its exhaustion, then handed it to the per-recipe getter as a fallback. But Cooking
+and Agility have no skill-wide interval to give — `actionInterval` (`cooking.d.ts:71`,
+`agility.d.ts:194`) reads the selection and throws, and `baseInterval` lives on the recipe
+(`cooking.d.ts:15`, `agility.d.ts:77`) — while `getRecipeCookingInterval` (`:100`) and
+`getObstacleInterval` (`:223`) answer for every recipe. Two working skills filed a failure
+apiece on every pass.
+
+The same inversion hid a real bug. `readBlockedOpportunities` asked only for a skill-wide
+interval, so Woodcutting and Fishing — which have none, and whose real intervals come from
+`getTreeInterval` (`woodcutting.d.ts:76`) and `getMinFishInterval`/`getMaxFishInterval`
+(`fishing.d.ts:128,:130`) — priced every blocked entry at a nominal 3s. The blocked list is
+*sorted* by XP/hr, so a flat interval sorted it by base XP alone: the same inversion that had
+Firemaking preferring its slowest logs.
+
+**Resolve narrowest-source-first, and record only the last resort.** A chain that reports the
+exhaustion of its *fallback* is reporting on a question nobody asked, and it does so once per
+pass forever — which is how a real regression arrives as a sixth line under a thousand lines
+of noise.
