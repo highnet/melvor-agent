@@ -215,7 +215,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       `getBuildingCountRemainingForLevelUp` turns it into a targeted objective.
 - [ ] **Slayer: an accepted task has no fight candidate** — M. Take a task, block
       every future task behind it, and have nothing that advances it.
-- [ ] **Attack-style candidates never say which skill they train** — S.
+- [x] **Attack-style candidates never say which skill they train** — S.
       `AttackStyle.experienceGain` is the game's own answer, and this is the only
       lever on four combat goals.
 - [ ] **Prayer 20 is structurally unreachable** — M. Burying and activation are

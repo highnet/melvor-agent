@@ -425,7 +425,7 @@ export function readCombatSetupCandidates(): Candidate[] {
             attackTypeId: style.attackType,
             styleId: style.id,
           },
-          label: `Fight with ${style.name} (${style.attackType}) — decides which combat skill the XP goes to`,
+          label: `Fight with ${style.name} (${style.attackType}) — trains ${describeStyleTraining(style)}`,
           available: true,
         });
       } catch {
@@ -480,5 +480,40 @@ export function readSlayerBlockedReason(): string | null {
     return null;
   } catch (error) {
     return `Slayer state could not be read: ${String(error)}`;
+  }
+}
+
+/**
+ * Which skills an attack style actually trains, and in what proportion.
+ *
+ * The label used to say only that the choice "decides which combat skill the XP
+ * goes to", without saying which -- so the planner was told a decision mattered
+ * and given nothing to decide it with. That is the single lever on four of this
+ * run's goals: Hitpoints 40, Defence 20, Ranged 20 and Magic 20 are each
+ * reached, or not, by this selection.
+ *
+ * `AttackStyle.experienceGain` is the game's own answer (attackStyle.d.ts:11-14),
+ * a list of skills with ratios, so nothing has to be inferred from the style's
+ * name. The ratios are included because they are the whole point: a style that
+ * splits between two skills is not the same offer as one that pours everything
+ * into one.
+ */
+function describeStyleTraining(style: {
+  experienceGain: { skill: { name: string }; ratio: number }[];
+}): string {
+  try {
+    const shares = style.experienceGain.filter((gain) => gain.ratio > 0);
+    if (shares.length === 0) return 'no skill the game will name';
+
+    const total = shares.reduce((sum, gain) => sum + gain.ratio, 0);
+    return shares
+      .map((gain) =>
+        total > 0 && shares.length > 1
+          ? `${gain.skill.name} ${Math.round((gain.ratio / total) * 100)}%`
+          : gain.skill.name,
+      )
+      .join(' and ');
+  } catch {
+    return 'a skill it will not name';
   }
 }
