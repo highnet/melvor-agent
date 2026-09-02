@@ -47,6 +47,7 @@ import {
   onGameEvent,
   openItem,
   plantFarmPlot,
+  readActiveRecipeIds,
   readAgilityCandidates,
   readAstrologyCandidates,
   readBankExpansion,
@@ -1809,6 +1810,7 @@ export class Agent {
       // progress happened and not what caused it.
       activeSkillId: snapshot.activeAction?.id,
       activeSkillXp: snapshot.skills.find((skill) => skill.id === snapshot.activeAction?.id)?.xp,
+      activeRecipeId: readActiveRecipeIds()[0],
     });
     // 48h of minute samples is plenty to compare a planner change against the
     // control condition of one skill left running.

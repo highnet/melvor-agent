@@ -102,11 +102,17 @@ export const TOOLS: Record<string, ToolHandler> = {
         const skillId = s.activeAction?.id;
         if (skillId === undefined) return [];
 
+        // The recipe actually running, so the claim compared against is the one
+        // that was chosen rather than the skill's first listed candidate.
+        const recipeId = quality[quality.length - 1]?.activeRecipeId;
         const claimed =
-          report.candidates.find((c) => (c.params as { skillId?: string }).skillId === skillId)
-            ?.xpPerHour ?? null;
+          report.candidates.find((c) => {
+            const params = c.params as { skillId?: string; recipeId?: string };
+            if (params.skillId !== skillId) return false;
+            return recipeId === undefined || params.recipeId === recipeId;
+          })?.xpPerHour ?? null;
 
-        const measured = measureAgainstClaim(quality, skillId, claimed);
+        const measured = measureAgainstClaim(quality, skillId, claimed, recipeId);
         if (measured === null) return [];
 
         const ratio =

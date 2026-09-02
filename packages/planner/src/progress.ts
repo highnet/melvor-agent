@@ -198,9 +198,23 @@ export function measureAgainstClaim(
   samples: readonly QualitySample[],
   skillId: string,
   advertisedXpPerHour: number | null,
+  recipeId?: string,
 ): { realisedXpPerHour: number; ratio: number | null; hours: number } | null {
+  // Recipe as well as skill, when one is known.
+  //
+  // Matching on skill alone compares a realised rate against whichever of that
+  // skill's candidates is listed first. Live, that reported Mining Rune Essence
+  // as "8% of the 111,429 xp/h advertised" when Rune Essence advertises about
+  // 6,000: the measurement was correct and the claim it was held against
+  // belonged to a different recipe. A comparison that indicts the wrong thing
+  // is worse than none, because it invites a fix to something that is working.
   const matching = samples.filter(
-    (sample) => sample.activeSkillId === skillId && sample.activeSkillXp !== undefined,
+    (sample) =>
+      sample.activeSkillId === skillId &&
+      sample.activeSkillXp !== undefined &&
+      (recipeId === undefined ||
+        sample.activeRecipeId === undefined ||
+        sample.activeRecipeId === recipeId),
   );
 
   const first = matching[0];

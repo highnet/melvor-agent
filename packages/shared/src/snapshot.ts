@@ -228,5 +228,15 @@ export const qualitySampleSchema = z.object({
    */
   activeSkillId: z.string().optional(),
   activeSkillXp: z.number().nonnegative().optional(),
+  /**
+   * The recipe being worked, not just the skill.
+   *
+   * Matching a realised rate to a claim on skill alone compares against
+   * whichever of that skill's candidates happens to be listed first. Live, that
+   * reported Mining Rune Essence as "8% of the 111,429 xp/h advertised" when
+   * Rune Essence advertises about 6,000 -- the measurement was right and the
+   * claim it was held against belonged to a different recipe.
+   */
+  activeRecipeId: z.string().optional(),
 });
 export type QualitySample = z.infer<typeof qualitySampleSchema>;
