@@ -131,3 +131,58 @@ describe('per-recipe mastery intervals across skills', () => {
     ).toBe(3_000);
   });
 });
+
+/**
+ * Yield and XP scale with mastery too, and both come from the game's own
+ * accessors rather than a multiplier assembled by this codebase.
+ *
+ * `modifyPrimaryProductQuantity` (skill.d.ts:455) is documented as returning
+ * the modified product quantity, and `getXPModifier` (skill.d.ts:375) as a
+ * percentage XP modifier. Reimplementing either would mean guessing how
+ * mastery, gear, agility bonuses and pet effects combine.
+ */
+const yieldFor = (
+  modify: ((item: object, qty: number, action: object) => number) | undefined,
+  baseQuantity: number,
+): number => {
+  if (modify === undefined) return baseQuantity;
+  const y = modify({}, baseQuantity, {});
+  return Number.isFinite(y) && y > 0 ? y : baseQuantity;
+};
+
+const xpMultiplier = (percent: number | undefined): number =>
+  typeof percent !== 'number' || !Number.isFinite(percent) ? 1 : Math.max(0, 1 + percent / 100);
+
+describe('yield and XP scale with mastery', () => {
+  it('uses the game-modified product quantity', () => {
+    expect(yieldFor((_i, q) => q * 2, 1)).toBe(2);
+  });
+
+  it('falls back to the base quantity when the accessor is absent', () => {
+    // A skill without the accessor must not silently yield zero, which would
+    // sort every one of its recipes off the bottom of the board.
+    expect(yieldFor(undefined, 3)).toBe(3);
+  });
+
+  it('falls back when the accessor returns something unusable', () => {
+    expect(yieldFor(() => 0, 2)).toBe(2);
+    expect(yieldFor(() => Number.NaN, 2)).toBe(2);
+  });
+
+  it('turns a percentage XP modifier into a multiplier', () => {
+    expect(xpMultiplier(0)).toBe(1);
+    expect(xpMultiplier(15)).toBeCloseTo(1.15, 5);
+  });
+
+  it('clamps a modifier that would zero or invert the rate', () => {
+    // -100% would zero the rate and sort the recipe off the board; anything
+    // worse would make it negative and sort it below unavailable work.
+    expect(xpMultiplier(-100)).toBe(0);
+    expect(xpMultiplier(-250)).toBe(0);
+  });
+
+  it('is neutral when the modifier cannot be read', () => {
+    expect(xpMultiplier(undefined)).toBe(1);
+    expect(xpMultiplier(Number.NaN)).toBe(1);
+  });
+});

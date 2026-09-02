@@ -65,6 +65,9 @@ interface RecipeLike {
   baseAbyssalExperience?: number;
   /** MasteryAction extends RealmedObject (mastery2.d.ts:11, realms.d.ts:46). */
   realm?: { id: string; isUnlocked: boolean };
+  /** Present on SingleProductArtisanSkillRecipe and the gathering recipes. */
+  product?: object;
+  baseQuantity?: number;
 }
 
 /**
@@ -187,13 +190,18 @@ function genericSkillCandidates(): Candidate[] {
       const interval = masteryIntervalFor(skill, recipe, skillInterval);
       const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
+      // Interval was only one axis. Mastery also raises what an action yields
+      // and the XP it pays, so a rate built from interval alone still
+      // understates mastered work -- just by less than before.
+      const xpMultiplier = xpMultiplierFor(skill, recipe);
+
       candidates.push({
         kind: 'gather_resource',
         params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
         label: requirement.abyssal
           ? `${skill.name}: ${recipe.name} — Abyssal realm, needs Abyssal lvl ${requirement.level}`
           : `${skill.name}: ${recipe.name}${masteryNote(skill, recipe)}`,
-        xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp,
+        xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
         requiresLevel: requirement.level,
         available: true,
       });
@@ -223,8 +231,14 @@ function candidate(
   skill?: AnySkill,
 ): Candidate {
   const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
-  const salePerHour = actionsPerHour * productGp;
   const requirement = recipeRequirement(recipe);
+
+  // Yield and XP both scale with mastery, and both come from the game's own
+  // accessors rather than a multiplier assembled here.
+  const yielded =
+    skill === undefined ? 1 : productYieldFor(skill, recipe, recipe.baseQuantity ?? 1);
+  const xpMultiplier = skill === undefined ? 1 : xpMultiplierFor(skill, recipe);
+  const salePerHour = actionsPerHour * productGp * yielded;
   return {
     kind: 'gather_resource',
     params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
@@ -243,7 +257,7 @@ function candidate(
       (salePerHour > 0
         ? `${skillName}: ${recipe.name} — output worth ${Math.round(salePerHour).toLocaleString()} GP/h if sold, not GP earned`
         : `${skillName}: ${recipe.name}`) + (skill === undefined ? '' : masteryNote(skill, recipe)),
-    xpPerHour: actionsPerHour * requirement.xp,
+    xpPerHour: actionsPerHour * requirement.xp * xpMultiplier,
     gpPerHour: salePerHour,
     requiresLevel: requirement.level,
     available: true,
@@ -499,6 +513,60 @@ function miningCandidates(): Candidate[] {
  * A rock with passive regen or no recorded HP is charged the bare interval,
  * which is correct for the first and the only safe guess for the second.
  */
+/**
+ * How much product one action actually yields, and how much XP it actually pays.
+ *
+ * Interval was only one of the axes mastery moves. It also raises the quantity
+ * an action produces and the XP it grants, and pricing a rate on interval alone
+ * leaves those out -- so the list still understated mastered work, just less
+ * than before.
+ *
+ * Both figures come from the game's own accessors rather than from a multiplier
+ * assembled here. `modifyPrimaryProductQuantity` (skill.d.ts:455) is documented
+ * as returning the modified product quantity, and `getXPModifier`
+ * (skill.d.ts:375) as a percentage XP modifier. Reimplementing either would
+ * mean guessing how mastery, gear, agility bonuses and pet effects combine,
+ * which is exactly the kind of confident arithmetic that had Crystal
+ * advertising an order of magnitude above what it paid.
+ *
+ * Item doubling is deliberately NOT applied on top. `getDoublingChance`
+ * (skill.d.ts:386) exists, but whether the yield above already accounts for it
+ * is not stated anywhere in the typings, and multiplying by both would
+ * overstate every gathering rate. An unclaimed bonus understates; a
+ * double-counted one is a fabrication.
+ */
+function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: number): number {
+  try {
+    const withYield = skill as AnySkill & {
+      modifyPrimaryProductQuantity?: (item: object, quantity: number, action: object) => number;
+    };
+    const product = recipe.product;
+    if (withYield.modifyPrimaryProductQuantity === undefined || product === undefined) {
+      return baseQuantity;
+    }
+
+    const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
+    return Number.isFinite(yielded) && yielded > 0 ? yielded : baseQuantity;
+  } catch {
+    return baseQuantity;
+  }
+}
+
+/** XP multiplier from the skill's own percentage modifier; 1 when unreadable. */
+function xpMultiplierFor(skill: AnySkill, recipe: RecipeLike): number {
+  try {
+    const withXp = skill as AnySkill & { getXPModifier?: (action?: object) => number };
+    const percent = withXp.getXPModifier?.(recipe);
+    if (typeof percent !== 'number' || !Number.isFinite(percent)) return 1;
+
+    // A modifier of -100% would zero the rate and sort the recipe off the
+    // board; clamp rather than let a hostile value rewrite the ranking.
+    return Math.max(0, 1 + percent / 100);
+  } catch {
+    return 1;
+  }
+}
+
 /**
  * Per-action interval, mastery included, for whichever skill this is.
  *
