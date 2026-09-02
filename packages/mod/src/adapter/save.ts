@@ -63,8 +63,7 @@ export function reloadGame(): ActionResult<{ reloading: boolean }> {
   return {
     ok: true,
     action: 'save.reloadGame',
-    before: { reloading: false },
-    after: { reloading: true },
+    observed: { before: { reloading: false }, after: { reloading: true } },
     detail: 'saved and reloading; the mod will be re-read from disk',
   };
 }
