@@ -104,6 +104,7 @@ export {
   readLockedActions,
   readGatherCandidates,
   readCheapestExpendableStack,
+  readUnsellableNotice,
   readMostValuableExpendableStack,
   readSellCandidates,
   readShopObjectiveCandidates,

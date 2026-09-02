@@ -108,6 +108,7 @@ import {
   readTownshipGoodsCandidates,
   readTraderCandidates,
   readTravelCandidates,
+  readUnsellableNotice,
   readUpgradeCandidates,
   readWorshipCandidates,
   reloadGame,
@@ -1796,6 +1797,7 @@ export class Agent {
         // The ordering follows what a line is for. "Yew unlocks at level 60" is
         // a fact to notice in passing and will still be true in an hour.
         // "Food is down to 11 meals and there is no Auto Eat" is a countdown.
+        ...readUnsellableNotice(),
         ...readBlockedOpportunities(),
         ...readLockedActions(),
         ...this.blockedCombat(),

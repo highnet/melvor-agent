@@ -1057,24 +1057,19 @@ export function readSellCandidates(): Candidate[] {
   // of those throws away a whole task cycle, and task cycles are the fastest
   // Township XP available — 500 Potatoes went for a few hundred GP an hour
   // before a task appeared wanting 100 of them.
-  const wantedByTasks = readTaskWantedItemIds();
   // And never the last of an ingredient. Two Garum Seeds — the only herb seeds
   // of the session and exactly one planting's worth — came within a drift
   // check of being sold in a batch aimed at Oak Logs.
-  const scarceIngredients = readBarelyEnoughIngredientIds();
   // And never a farming seed, at any level. Farming is the prerequisite for the
   // last untrained skill in scope, seeds are worth a few GP against a harvest's
   // XP, and the list was offering 32 Ancient Corn Seeds while Farming sat at 1.
-  const seeds = readAllSeedIds();
   // And never a rune an attack spell in reach actually needs. All 81 Mind Runes
   // were sold as spare change; they were half of every castable spell, and
   // Magic was unreachable for the rest of the session.
-  const spellRunes = readSpellRuneIds();
   // And never a Mastery Token. They are not containers, so the open reader's
   // instanceof check never saw them, while this reader — filtering on nothing
   // of the sort — listed six Woodcutting tokens as a stack to liquidate. A
   // token held does nothing; a token sold is mastery XP set on fire.
-  const masteryTokens = readMasteryTokenIds();
 
   // And never food while the larder is thin.
   //
@@ -1089,18 +1084,10 @@ export function readSellCandidates(): Candidate[] {
   // Not an outright ban: surplus food is real value and a full larder should be
   // sellable. The line is the same reserve the cooking reflex defends, so the
   // two agree instead of one quietly undoing the other.
-  const mealsHeld = readMealCount();
-  const foodIsScarce = mealsHeld < FOOD_SELL_FLOOR;
 
   return (
     [...game.bank.items.values()]
-      .filter((entry) => !wantedByTasks.has(entry.item.id))
-      .filter((entry) => !scarceIngredients.has(entry.item.id))
-      .filter((entry) => !seeds.has(entry.item.id))
-      .filter((entry) => !spellRunes.has(entry.item.id))
-      .filter((entry) => !masteryTokens.has(entry.item.id))
-      .filter((entry) => !game.bank.lockedItems.has(entry.item))
-      .filter((entry) => !(foodIsScarce && entry.item instanceof FoodItem))
+      .filter((entry) => saleExclusionReason(entry.item) === null)
       // And never ammunition.
       //
       // The same omission as food, with the same automatic path selecting it:
@@ -1666,3 +1653,80 @@ export function readMostValuableExpendableStack(): {
     return null;
   }
 }
+
+/**
+ * Why a stack may not be sold, or null when it may.
+ *
+ * One function so the sell list and the diagnostic that explains it cannot
+ * disagree. That mattered: Gold and Silver Bars worth about 216,000 GP sat
+ * unsellable and unexplained, and three separate investigations eliminated
+ * guards one at a time from outside because nothing would say which one had
+ * fired. A filter chain that only ever returns a boolean can refuse for a good
+ * reason and a bad one identically, and the third time that costs an afternoon
+ * it is cheaper to make it speak.
+ */
+function saleExclusionReason(item: AnyItem): string | null {
+  try {
+    if (readTaskWantedItemIds().has(item.id)) return 'a Township task wants it';
+    if (readBarelyEnoughIngredientIds().has(item.id)) return 'it is the last of a recipe input';
+    if (readAllSeedIds().has(item.id)) return 'it is a farming seed';
+    if (readSpellRuneIds().has(item.id)) return 'a castable spell needs it';
+    if (readMasteryTokenIds().has(item.id)) return 'it is a mastery token';
+    if (game.bank.lockedItems.has(item)) return 'it is locked in the bank';
+    if (isAmmunition(item)) return 'it is ammunition';
+    if (item instanceof FoodItem && readMealCount() < FOOD_SELL_FLOOR) {
+      return `it is food and the larder is below ${FOOD_SELL_FLOOR} meals`;
+    }
+    if (gpValue(item) <= 0) return 'it does not sell for GP';
+    return null;
+  } catch {
+    // Unreadable means unsellable: refusing to sell is the recoverable error.
+    return 'its sell guards could not be evaluated';
+  }
+}
+
+/**
+ * Valuable stacks the agent is holding but refuses to sell, and why.
+ *
+ * The counterpart to the sell list rather than a duplicate of it. A stack worth
+ * six figures that never appears as a candidate is indistinguishable, from
+ * outside, from a stack the agent simply has not got to yet -- and that
+ * ambiguity is what let 216,000 GP of bars sit through several planning passes
+ * while the run was short of GP for Auto Eat.
+ *
+ * Only above a floor, and only the worst offenders, so this stays a diagnostic
+ * rather than a second inventory listing.
+ */
+export function readUnsellableNotice(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    const held: { name: string; value: number; reason: string }[] = [];
+
+    for (const entry of game.bank.items.values()) {
+      const reason = saleExclusionReason(entry.item);
+      if (reason === null) continue;
+
+      const value = gpValue(entry.item) * entry.quantity;
+      if (value < UNSELLABLE_NOTICE_FLOOR) continue;
+
+      held.push({ name: entry.item.name, value, reason });
+    }
+
+    return held
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 3)
+      .map((stack) => ({
+        label: `Holding ${stack.value.toLocaleString()} GP of ${stack.name} that will not be sold: ${stack.reason}.`,
+        xpPerHour: 0,
+        missing: [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** GP value below which an unsellable stack is not worth mentioning. */
+const UNSELLABLE_NOTICE_FLOOR = 20_000;

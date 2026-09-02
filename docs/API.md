@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-193 exports.
+194 exports.
 
 ## `act`
 
@@ -2132,6 +2132,25 @@ next, and somewhere along it are the dig sites.
 
 ```ts
 readTravelCandidates: () => Candidate[]
+```
+
+## `readUnsellableNotice`
+
+`function`
+
+Valuable stacks the agent is holding but refuses to sell, and why.
+
+The counterpart to the sell list rather than a duplicate of it. A stack worth
+six figures that never appears as a candidate is indistinguishable, from
+outside, from a stack the agent simply has not got to yet -- and that
+ambiguity is what let 216,000 GP of bars sit through several planning passes
+while the run was short of GP for Auto Eat.
+
+Only above a floor, and only the worst offenders, so this stays a diagnostic
+rather than a second inventory listing.
+
+```ts
+readUnsellableNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readUpgradeCandidates`
