@@ -153,7 +153,7 @@ export const STARTABLE_SKILL_IDS: readonly string[] = [
   'melvorD:Thieving',
   'melvorD:Astrology',
   'melvorD:Agility',
-  'melvorD:AltMagic',
+  'melvorD:Magic',
   'melvorItA:Harvesting',
 ];
 

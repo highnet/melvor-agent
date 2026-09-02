@@ -1006,8 +1006,19 @@ function fishingCandidates(): Candidate[] {
  * decides both when to cook more and when to stop selling it, so the two
  * cannot disagree about what "enough food" means.
  */
-/** Alt Magic's skill id; it pays a currency rather than producing an item. */
-const ALT_MAGIC_ID = 'melvorD:AltMagic';
+/**
+ * Alt Magic's skill id.
+ *
+ * `melvorD:Magic`, not `melvorD:AltMagic`. Alt Magic is a mode of the Magic
+ * skill rather than a skill of its own, so the registry holds it under
+ * `melvorD:Magic` -- and every lookup keyed on the plausible-looking
+ * `melvorD:AltMagic` silently returned undefined. Alt Magic therefore produced
+ * no candidates at all, for any spell, at any level, for the entire life of
+ * this repo. Not a refusal and not a zero rate: simply absent, and absent in a
+ * way nothing reported, because a skill that cannot be found is skipped in the
+ * same breath as a skill with nothing to offer.
+ */
+const ALT_MAGIC_ID = 'melvorD:Magic';
 
 const FOOD_SELL_FLOOR = 40;
 

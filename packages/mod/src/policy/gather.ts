@@ -48,7 +48,7 @@ const SUPPORTED_GATHERING_SKILLS: ReadonlySet<string> = new Set([
   'melvorD:Thieving',
   'melvorD:Astrology',
   'melvorD:Agility',
-  'melvorD:AltMagic',
+  'melvorD:Magic',
   'melvorItA:Harvesting',
 ]);
 

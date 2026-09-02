@@ -20,7 +20,7 @@ export const MISC_SKILL_IDS = [
   'melvorD:Thieving',
   'melvorD:Astrology',
   'melvorD:Agility',
-  'melvorD:AltMagic',
+  'melvorD:Magic',
   'melvorItA:Harvesting',
 ] as const;
 
@@ -86,7 +86,7 @@ export function startMiscSkill(
       return startAstrology(recipeId, isSuspended);
     case 'melvorD:Agility':
       return startAgility(isSuspended);
-    case 'melvorD:AltMagic':
+    case 'melvorD:Magic':
       return startAltMagic(recipeId, isSuspended);
     case 'melvorItA:Harvesting':
       return startHarvesting(recipeId, isSuspended);
@@ -332,7 +332,7 @@ function startAltMagic(
           return `spell ${recipeId} needs an item to consume and nothing eligible is banked`;
         }
         if (skill.isActive && skill.selectedSpell === spell) return `already casting ${recipeId}`;
-        return actionSlotHeldBy('melvorD:AltMagic');
+        return actionSlotHeldBy('melvorD:Magic');
       },
       perform: () => {
         if (skill.selectedSpell !== spell) skill.selectSpellOnClick(spell);
@@ -448,7 +448,7 @@ function miscSkillInstance(skillId: string): Startable | null {
         return game.astrology;
       case 'melvorD:Agility':
         return game.agility;
-      case 'melvorD:AltMagic':
+      case 'melvorD:Magic':
         return game.altMagic;
       case 'melvorItA:Harvesting':
         return game.harvesting;

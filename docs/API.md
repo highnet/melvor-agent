@@ -793,7 +793,7 @@ selection at all, and Harvesting clicks a vein. Any shared abstraction across
 these would be invented rather than observed.
 
 ```ts
-MISC_SKILL_IDS: readonly ["melvorD:Firemaking", "melvorD:Cooking", "melvorD:Thieving", "melvorD:Astrology", "melvorD:Agility", "melvorD:AltMagic", "melvorItA:Harvesting"]
+MISC_SKILL_IDS: readonly ["melvorD:Firemaking", "melvorD:Cooking", "melvorD:Thieving", "melvorD:Astrology", "melvorD:Agility", "melvorD:Magic", "melvorItA:Harvesting"]
 ```
 
 ## `newSlayerTask`
