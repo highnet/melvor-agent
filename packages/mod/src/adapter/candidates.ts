@@ -161,8 +161,7 @@ function genericSkillCandidates(): Candidate[] {
     // keeps every recipe comparable to the others rather than dropping the
     // whole skill; it is an approximation either way, since this is the skill's
     // current interval and not a per-recipe one.
-    const interval = safeNumber(() => withActions.actionInterval, 3000);
-    const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
+    const skillInterval = safeNumber(() => withActions.actionInterval, 3000);
 
     // A course skill earns a whole lap at a time; see readAgilityLapRate. Every
     // obstacle reports the same lap rate, because that is what running the
@@ -182,6 +181,11 @@ function genericSkillCandidates(): Candidate[] {
       }
 
       const requirement = recipeRequirement(recipe);
+
+      // Per recipe, not per skill: mastery is earned on the individual action,
+      // so two recipes in one skill do not share an interval.
+      const interval = masteryIntervalFor(skill, recipe, skillInterval);
+      const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
       candidates.push({
         kind: 'gather_resource',
@@ -496,6 +500,69 @@ function miningCandidates(): Candidate[] {
  * which is correct for the first and the only safe guess for the second.
  */
 /**
+ * Per-action interval, mastery included, for whichever skill this is.
+ *
+ * Nearly every skill exposes a getter that takes the specific action and
+ * returns its real interval with mastery and modifiers applied. Woodcutting was
+ * the only one wired up, and it was correspondingly the only rate in the whole
+ * list that tracked reality -- Yew rose from 22,500 to 30,000 GP/h across an
+ * afternoon of cutting purely because `getTreeInterval` reflected the mastery
+ * being earned, while every other skill stayed frozen at a flat `actionInterval`
+ * or, worse, a nominal three seconds.
+ *
+ * That is not a rounding error, it is a bias: it prices unmastered work at its
+ * unmastered rate forever and mastered work at its unmastered rate too, so the
+ * whole list understates exactly the actions the character has invested in.
+ *
+ * Fishing reports a range rather than a figure, so the midpoint is used and
+ * named as such. Artisan skills have no per-recipe getter -- one interval
+ * covers the skill -- so `actionInterval` is already the mastery-modified
+ * value for them.
+ */
+function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): number {
+  const getters: Record<string, string> = {
+    'melvorD:Woodcutting': 'getTreeInterval',
+    'melvorD:Cooking': 'getRecipeCookingInterval',
+    'melvorD:Thieving': 'getNPCInterval',
+    'melvorD:Agility': 'getObstacleInterval',
+    'melvorD:Astrology': 'getConstellationInterval',
+    'melvorD:Archaeology': 'getDigSiteInterval',
+    'melvorD:Farming': 'getRecipeInterval',
+    'melvorAoD:Cartography': 'getPaperMakingInterval',
+  };
+
+  try {
+    // Fishing is a range: getMinFishInterval / getMaxFishInterval. The midpoint
+    // is the honest single number, and pretending either end is *the* interval
+    // would bias every fishing rate in one direction.
+    if (skill.id === FISHING_ID) {
+      const fishing = skill as AnySkill & {
+        getMinFishInterval?: (fish: object) => number;
+        getMaxFishInterval?: (fish: object) => number;
+      };
+      const min = fishing.getMinFishInterval?.(recipe);
+      const max = fishing.getMaxFishInterval?.(recipe);
+      if (typeof min === 'number' && typeof max === 'number' && min > 0 && max > 0) {
+        return (min + max) / 2;
+      }
+      return fallback;
+    }
+
+    const name = getters[skill.id];
+    if (name === undefined) return fallback;
+
+    const withGetter = skill as unknown as Record<string, ((action: object) => number) | undefined>;
+    const getter = withGetter[name];
+    if (typeof getter !== 'function') return fallback;
+
+    const interval = getter.call(skill, recipe);
+    return Number.isFinite(interval) && interval > 0 ? interval : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
  * Mastery headroom, when a rate still has room to grow.
  *
  * Every rate in this list is an instantaneous one, and that is a myopic way to
@@ -734,6 +801,7 @@ function fishingCandidates(): Candidate[] {
         // expected value rather than either bound.
         (skill.getMinFishInterval(fish) + skill.getMaxFishInterval(fish)) / 2,
         gpValue(fish.product),
+        skill,
       ),
     );
 }

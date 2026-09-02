@@ -62,3 +62,72 @@ describe('mastery headroom is flagged, not projected', () => {
     expect(headroom(0)).toBe(false);
   });
 });
+
+/**
+ * The interval resolver must be per-recipe and per-skill, not one flat number.
+ *
+ * Nearly every skill exposes a getter taking the specific action and returning
+ * its real interval with mastery applied -- getTreeInterval, getNPCInterval,
+ * getRecipeCookingInterval, getObstacleInterval and so on. Only woodcutting was
+ * wired up, and it was correspondingly the only rate that tracked reality: Yew
+ * rose from 22,500 to 30,000 GP/h across an afternoon purely because its getter
+ * reflected the mastery being earned, while every other skill sat frozen.
+ */
+const resolveInterval = (
+  skillId: string,
+  getters: Record<string, ((action: object) => number) | undefined>,
+  recipe: object,
+  fallback: number,
+): number => {
+  const names: Record<string, string> = {
+    'melvorD:Woodcutting': 'getTreeInterval',
+    'melvorD:Thieving': 'getNPCInterval',
+    'melvorD:Cooking': 'getRecipeCookingInterval',
+  };
+  const name = names[skillId];
+  if (name === undefined) return fallback;
+  const getter = getters[name];
+  if (typeof getter !== 'function') return fallback;
+  const value = getter(recipe);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+
+describe('per-recipe mastery intervals across skills', () => {
+  const recipe = { id: 'melvorD:Yew' };
+
+  it('prefers the skill-specific getter over the flat interval', () => {
+    expect(
+      resolveInterval('melvorD:Woodcutting', { getTreeInterval: () => 9_000 }, recipe, 12_000),
+    ).toBe(9_000);
+  });
+
+  it('uses the getter for non-gathering skills too', () => {
+    // Thieving success and speed both scale with mastery; pricing it at a flat
+    // interval understates exactly the NPC the character has practised on.
+    expect(
+      resolveInterval('melvorD:Thieving', { getNPCInterval: () => 2_400 }, recipe, 3_000),
+    ).toBe(2_400);
+  });
+
+  it('falls back when the skill has no per-action getter', () => {
+    // Artisan skills share one interval across the whole skill, so the flat
+    // value is already the mastery-modified one.
+    expect(resolveInterval('melvorD:Smithing', {}, recipe, 2_000)).toBe(2_000);
+  });
+
+  it('falls back when the getter returns something unusable', () => {
+    // A zero or NaN interval would divide into an infinite rate and put the
+    // recipe at the top of the board.
+    expect(
+      resolveInterval('melvorD:Cooking', { getRecipeCookingInterval: () => 0 }, recipe, 3_000),
+    ).toBe(3_000);
+    expect(
+      resolveInterval(
+        'melvorD:Cooking',
+        { getRecipeCookingInterval: () => Number.NaN },
+        recipe,
+        3_000,
+      ),
+    ).toBe(3_000);
+  });
+});
