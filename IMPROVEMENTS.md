@@ -182,15 +182,24 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **No autonomous selling** *(3×)* — M. Every guard already exists; only the
       reflex is missing. This is why GP freezes while the bank fills and an
       operator has to sell by hand every forty minutes.
-- [ ] **Character-select auto-load is one-shot against a hardcoded URL** — S. If
-      the service is a few seconds late, the night is lost anyway.
-- [ ] **The stuck detector hammers a planner that always returns empty** — M.
-      Every three seconds, all night, with no escalation path.
+- [x] **Character-select auto-load is one-shot against a hardcoded URL** — S. It
+      now retries every 3s for two minutes, against the URL the operator
+      configured — remembered in localStorage, the one store that exists on that
+      screen — and stops only when a character is actually loaded.
+- [x] **The stuck detector hammers a planner that always returns empty** — M.
+      Exponential backoff from 1min to 10min, and after four unanswered
+      escalations it says so in `needsAttention`, which `/dashboard` exposes for
+      an external check.
 - [x] **Settings are PUT over HTTP every 3s** — S. ~9,600 writes a night, and when
       the service is down the warning floods a 300-record queue, evicting every
       real diagnostic before it can ship.
-- [ ] **`suspended` has no timeout and stops reporting entirely** — S.
-- [ ] **Auto-arm runs before anything checks what offline progression did** — M.
+- [x] **`suspended` has no timeout and stops reporting entirely** — S. It now
+      pushes a state-only report every tick while suspended, and forces itself
+      out after ten minutes with a `stuck_detected` replan and an escalation.
+- [x] **Auto-arm runs before anything checks what offline progression did** — M.
+      The automatic path refuses on a risen death counter, HP below the fraction
+      the policy tier aborts at, or no food with no Auto Eat. Arming by hand is
+      untouched: the operator is present and can judge.
 
 ## Observability
 
@@ -202,13 +211,17 @@ Township summary reported 0% health while the repair reflex correctly computed
       so the planner cannot see what it already abandoned.
 - [x] **Quality samples do not survive a reload** — M. The one metric restarts at
       zero, and diagnosis is then suppressed for the next thirty minutes.
-- [ ] **The blocked list is `slice(0, 12)` with no severity** — M. A food
-      countdown competes with "Yew unlocks at 60" on position alone.
-- [ ] **The panel shows none of the diagnostics it ships**, and hides service
-      health behind a closed disclosure — S.
-- [ ] **The stale-build check is broken again** — S. It walks up from
-      `process.cwd()` while the build writes to `MELVOR_CT_DIR`, and it compares
-      timestamps as sliced strings.
+- [x] **The blocked list is `slice(0, 12)` with no severity** — M. Producers set
+      a severity, criticals are never cut, each tier has reserved slots, and the
+      overflow line names what was dropped.
+- [x] **The panel shows none of the diagnostics it ships**, and hides service
+      health behind a closed disclosure — S. Critical blocked items and the
+      escalation are promoted to warnings; the service earns a row only when it
+      is unhealthy.
+- [x] **The stale-build check is broken again** — S. BUILD_INFO is written to
+      both locations from the same instant the bundle carries, the check reads
+      `MELVOR_CT_DIR` first, and stamps are compared as parsed instants with a
+      ±5s tolerance.
 
 ## Coverage — systems the agent does not use
 

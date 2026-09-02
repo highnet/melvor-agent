@@ -2,7 +2,7 @@ import { readAgilityLapRate } from './agility.js';
 
 /** Agility's skill id; see readAgilityLapRate for why it is special-cased. */
 const AGILITY_ID = 'melvorD:Agility';
-import type { Candidate } from '@melvor-agent/shared';
+import type { BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { readActiveRecipeIds } from './active.js';
 import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
@@ -1569,6 +1569,14 @@ export function readShopObjectiveCandidates(): Candidate[] {
 export function readBlockedOpportunities(): {
   label: string;
   xpPerHour: number;
+  /**
+   * How urgent this is. Absent means ordinary.
+   *
+   * Carried from the producer because only the producer knows whether a line
+   * is a countdown or a fact, and the renderer has twelve slots for a list
+   * that regularly runs to forty.
+   */
+  severity?: BlockedSeverity;
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   const blocked: ReturnType<typeof readBlockedOpportunities> = [];
@@ -1577,7 +1585,8 @@ export function readBlockedOpportunities(): {
   // unrelated reasons and they want three different responses.
   const slayerReason = readSlayerBlockedReason();
   if (slayerReason !== null) {
-    blocked.push({ label: `Slayer: ${slayerReason}`, xpPerHour: 0, missing: [] });
+    // A reason a menu is empty, not a shortfall to act on.
+    blocked.push({ label: `Slayer: ${slayerReason}`, xpPerHour: 0, severity: 'low', missing: [] });
   }
 
   // A seed shortfall is a blocked opportunity in the exact sense this list
@@ -1660,8 +1669,16 @@ const BLOCKED_LIMIT = 12;
  * this list is to tell the planner what the *game* is offering, not to rank
  * within one skill.
  */
-function rankBlocked<T extends { label: string; xpPerHour: number }>(blocked: T[]): T[] {
-  const byRate = [...blocked].sort((a, b) => b.xpPerHour - a.xpPerHour);
+function rankBlocked<T extends { label: string; xpPerHour: number; severity?: BlockedSeverity }>(
+  blocked: T[],
+): T[] {
+  // Criticals are never subject to the cap. Food running out with no Auto Eat
+  // is the shape of failure that ends a run, and it competed for one of twelve
+  // slots against five ways to make a bronze dagger.
+  const critical = blocked.filter((entry) => entry.severity === 'critical');
+  const byRate = blocked
+    .filter((entry) => entry.severity !== 'critical')
+    .sort((a, b) => b.xpPerHour - a.xpPerHour);
 
   const bestPerSkill: T[] = [];
   const seenSkills = new Set<string>();
@@ -1673,7 +1690,7 @@ function rankBlocked<T extends { label: string; xpPerHour: number }>(blocked: T[
   }
 
   const remainder = byRate.filter((entry) => !bestPerSkill.includes(entry));
-  return [...bestPerSkill, ...remainder].slice(0, BLOCKED_LIMIT);
+  return [...critical, ...[...bestPerSkill, ...remainder].slice(0, BLOCKED_LIMIT)];
 }
 
 /**
@@ -1798,6 +1815,7 @@ function missingInputs(
 function readBetterRecipeNotice(): {
   label: string;
   xpPerHour: number;
+  severity: BlockedSeverity;
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   const active = game.activeAction;
@@ -1840,6 +1858,10 @@ function readBetterRecipeNotice(): {
     {
       label: `Running ${running.label} at ${Math.round(runningRate).toLocaleString()} xp/h while ${best.label} is unlocked at ${Math.round(bestRate).toLocaleString()} xp/h. Switching is a choice, not an oversight — the slower one may be producing something the faster one does not.`,
       xpPerHour: 0,
+      // About the objective running right now, and it stops being true the
+      // moment the objective changes. A level requirement will still be there
+      // in an hour; this will not.
+      severity: 'high',
       missing: [],
     },
   ];

@@ -1,4 +1,4 @@
-import type { ActionResult, Candidate } from '@melvor-agent/shared';
+import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 
@@ -166,6 +166,7 @@ const LOST_ITEMS_NAMED = 4;
 export function readBankPressure(): {
   label: string;
   xpPerHour: number;
+  severity: BlockedSeverity;
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   const used = game.bank.occupiedSlots;
@@ -187,6 +188,10 @@ export function readBankPressure(): {
     entries.push({
       label: `Bank has already DISCARDED ${total} item(s) it could not fit: ${named}${rest}. This is the game's own record of what was lost, not a prediction — buy a slot or sell a stack before gathering more of these.`,
       xpPerHour: 0,
+      // Critical, and the only entry here reporting loss that has already
+      // happened rather than loss that might. A prediction can wait a tick; a
+      // receipt cannot be undone.
+      severity: 'critical' as const,
       missing: [],
     });
   }
@@ -198,6 +203,10 @@ export function readBankPressure(): {
           ? `Bank is FULL (${used}/${max}) — any new item type is being discarded silently while the skill keeps running. Sell a stack or buy a slot.`
           : `Bank has ${free} slot(s) left (${used}/${max}) — new item types will start being discarded. Sell a stack or buy a slot.`,
       xpPerHour: 0,
+      // A full bank is income at exactly zero with every gathering action
+      // refused, and it took two hours of an agent working perfectly to
+      // notice last time. One slot short of full is a warning, not a stop.
+      severity: free <= 0 ? 'critical' : 'high',
       missing: [],
     });
   }

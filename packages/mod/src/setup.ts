@@ -7,11 +7,23 @@ import {
 } from './adapter/index.js';
 import { Agent, type AgentSettings, DEFAULT_SETTINGS } from './runtime/agent.js';
 import { Logger } from './runtime/logger.js';
+import { recallServiceUrl, rememberServiceUrl } from './runtime/service-url-cache.js';
 import { SettingsStore } from './runtime/settings-store.js';
 import { Transport } from './runtime/transport.js';
 import { createPanel } from './ui/panel.js';
 
 const SETTINGS_KEY = 'agent';
+
+/** How often the character-select hook retries while the service is not ready. */
+const SELECT_RETRY_INTERVAL_MS = 3000;
+
+/**
+ * How long it keeps retrying.
+ *
+ * Two minutes covers a service started alongside the game and a machine still
+ * finishing boot, and stops well short of polling a service that is not coming.
+ */
+const SELECT_RETRY_WINDOW_MS = 120_000;
 
 /**
  * Mod entry point.
@@ -45,24 +57,69 @@ export function setup(ctx: Modding.ModContext): void {
   // allowlist already states which character the agent is permitted to play, so
   // it is reused rather than adding a second, quietly divergent setting; the
   // service is asked directly because characterStorage does not exist yet here.
-  ctx.onCharacterSelectionLoaded(async () => {
-    try {
-      const settings = await new Transport(DEFAULT_SETTINGS.serviceUrl).loadSettings();
+  ctx.onCharacterSelectionLoaded(() => {
+    // Retried, not attempted once.
+    //
+    // The first version ran exactly once, the moment the screen appeared, and
+    // returned silently on any failure -- including the one failure that
+    // actually happens: the game and the service are usually started together,
+    // so the service is often a few seconds from ready at precisely this
+    // instant. One missed fetch and the run sat on the character-select screen
+    // until morning, which is the whole failure the hook was added to fix.
+    const transport = new Transport(recallServiceUrl(DEFAULT_SETTINGS.serviceUrl));
+    const deadline = Date.now() + SELECT_RETRY_WINDOW_MS;
+    let reported = false;
+
+    const attempt = async (): Promise<boolean> => {
+      const settings = await transport.loadSettings();
       const allowlist = (settings as { characterAllowlist?: string[] } | null)?.characterAllowlist;
 
       // Exactly one, deliberately. An allowlist naming several characters does
       // not say which one to resume, and entering the wrong save would mean the
       // agent quietly playing someone else's run.
       const only = allowlist?.length === 1 ? allowlist[0] : undefined;
-      if (only === undefined) return;
+      if (only === undefined) return false;
 
       const result = loadCharacterByName(only);
-      if (!result.ok) log.warn('runtime', `character select: ${result.detail}`);
-    } catch (error) {
-      // Leaving the screen up for a human is exactly where this started, and a
-      // safe place to stop.
-      log.warn('runtime', `character select: ${String(error)}`);
-    }
+      if (result.ok) return true;
+
+      // Once per window. A refusal to guess between two saves named the same
+      // will still refuse in three seconds, and repeating it forty times buries
+      // it.
+      if (!reported) {
+        reported = true;
+        log.warn('runtime', `character select: ${result.detail}`);
+      }
+      return false;
+    };
+
+    const timer = setInterval(() => {
+      // The screen is left up for a human, which is exactly where this started
+      // and a safe place to stop. Bounded so a service that is genuinely absent
+      // does not leave a timer polling it for the rest of the session.
+      if (Date.now() > deadline) {
+        clearInterval(timer);
+        log.warn(
+          'runtime',
+          `character select: gave up after ${SELECT_RETRY_WINDOW_MS / 1000}s without a single-name allowlist from the service; pick a character by hand`,
+        );
+        return;
+      }
+
+      void attempt()
+        .then((entered) => {
+          // Only a successful load stops the retry. Until the game leaves this
+          // screen the hook's job is not done, and "we tried" is not the same
+          // claim as "a character is loaded".
+          if (entered) clearInterval(timer);
+        })
+        .catch((error: unknown) => {
+          if (!reported) {
+            reported = true;
+            log.warn('runtime', `character select: ${String(error)}`);
+          }
+        });
+    }, SELECT_RETRY_INTERVAL_MS);
   });
 
   ctx.onCharacterLoaded(() => {
@@ -99,6 +156,10 @@ export function setup(ctx: Modding.ModContext): void {
     agent.onChange(() => {
       const current = agent;
       if (current === null) return;
+      // So the next boot's character-select screen can reach the service the
+      // operator actually configured, rather than the default it used to
+      // hardcode. That screen has no characterStorage and no settings.
+      rememberServiceUrl(current.currentSettings.serviceUrl);
       sidebarHandle.setAside(current.runState, asideClass(current.runState));
       void settingsStore?.write(current.currentSettings);
     });
@@ -134,7 +195,11 @@ export function setup(ctx: Modding.ModContext): void {
     current.requestReplan('game_start');
 
     if (current.currentSettings.enabled) {
-      void current.arm();
+      // Flagged as automatic, which turns on the post-offline health checks.
+      // Offline progression has already resolved by this line -- that is the
+      // whole reason `onInterfaceReady` is where arming happens -- so this is
+      // the first and only moment anything can look at what it did.
+      void current.arm({ auto: true });
     }
   });
 

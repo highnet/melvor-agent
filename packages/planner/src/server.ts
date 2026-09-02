@@ -9,6 +9,7 @@ import {
 } from '@melvor-agent/shared';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { describeAttention } from './attention.js';
 import { TOOLS } from './mcp-tools.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import { plan, plannerStatus } from './plan.js';
@@ -130,6 +131,9 @@ app.get('/dashboard', (c) => {
   const dashboard: Dashboard = {
     connected: store.reportAgeMs !== null && store.reportAgeMs < 15_000,
     lastReportAgeMs: store.reportAgeMs,
+    // One field, so an overnight check is a curl and a null test rather than a
+    // reader that has to know which of four places an escalation lands in.
+    needsAttention: describeAttention(store.report, store.reportAgeMs),
     report: store.report,
     digest: store.digest(),
     ...rates(store),

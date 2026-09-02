@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BLOCKED_SEVERITIES } from './blocked.js';
 import { journalDigestSchema, journalEntrySchema, logRecordSchema } from './journal.js';
 import { candidateSchema, objectiveSchema } from './objective.js';
 import { gameIdSchema, qualitySampleSchema, stateSnapshotSchema } from './snapshot.js';
@@ -67,6 +68,20 @@ export type Command = z.infer<typeof commandSchema>;
 export const blockedOpportunitySchema = z.object({
   label: z.string(),
   xpPerHour: z.number().nonnegative(),
+  /**
+   * How urgent this is, set by whoever produced the entry.
+   *
+   * The list is longer than anything will render, so something has to be cut.
+   * Before this the cut was `slice(0, 12)` over a hand-maintained
+   * concatenation, which made priority a property of where a `push` happened to
+   * sit: a food-reserve countdown and "Yew unlocks at level 60" competed on
+   * position alone, and the ordering had already been rewritten twice for
+   * exactly that reason. Only the producer knows whether a line is a countdown
+   * or a fact, so the producer says.
+   *
+   * Defaulted, so an older mod's reports still validate and read as ordinary.
+   */
+  severity: z.enum(BLOCKED_SEVERITIES).default('normal'),
   missing: z.array(
     z.object({
       itemId: gameIdSchema,
@@ -145,6 +160,19 @@ export const agentReportSchema = z.object({
   quality: z.array(qualitySampleSchema),
   /** Non-null while the agent is refusing to arm; rendered verbatim by the TUI. */
   blockedReason: z.string().nullable(),
+  /**
+   * A condition the agent cannot resolve on its own, stated for a human.
+   *
+   * Distinct from `blockedReason`, which says the agent is refusing to arm.
+   * This says the agent is *running* and getting nowhere: the stuck detector
+   * has escalated repeatedly to a planner that answered nothing, or a
+   * suspension outlasted any offline-progress calculation. Both are states the
+   * agent can only report, and both previously produced silence — an HTTP round
+   * trip every three seconds all night, or no reports at all.
+   *
+   * Optional so an older mod still validates against a newer service.
+   */
+  needsAttention: z.string().nullable().default(null),
 });
 export type AgentReport = z.infer<typeof agentReportSchema>;
 
@@ -159,6 +187,18 @@ export const dashboardSchema = z.object({
   connected: z.boolean(),
   /** ms since the last report from the mod; null if none ever received. */
   lastReportAgeMs: z.number().int().nonnegative().nullable(),
+  /**
+   * The one field an external check should read. Null while nothing is wrong.
+   *
+   * Everything the agent can escalate ends up here — refusing to arm, stuck
+   * with no plan, suspended past any plausible catch-up, or gone silent
+   * entirely — because a watchdog that has to know which of four fields to
+   * inspect is a watchdog nobody writes. `connected: false` in particular said
+   * nothing about *why*, and the suspended path could not say anything at all:
+   * it returned before reporting, so the tell for "offline progress never
+   * finished" and the tell for "the game was closed" were the same silence.
+   */
+  needsAttention: z.string().nullable(),
   report: agentReportSchema.nullable(),
   digest: journalDigestSchema,
   /** Progress per real-time hour: the control condition is a single skill left running. */

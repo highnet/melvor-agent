@@ -124,10 +124,24 @@ function copyStaticAssets(target) {
       `manifest "namespace" is "${namespace}", but a namespace may not start with "melvor" — that prefix is reserved for the game data shipped with Melvor.`,
     );
   }
-  writeFileSync(
-    join(target, 'BUILD_INFO.txt'),
-    `built ${new Date().toISOString()}\nformat ${options.format}\n`,
-  );
+  // Stamped with the *same* instant the bundle carries, and written to both
+  // possible output folders.
+  //
+  // Two separate faults met here. `new Date()` was called again at this point,
+  // so the artifact and the bundle disagreed by a few milliseconds even within
+  // one build -- which the staleness check then read as a newer build waiting.
+  // Worse, this only ever wrote to `target`, which is MELVOR_CT_DIR whenever
+  // that is set, and the README tells the operator to set it; the check looked
+  // in `dist-local` and found whatever leftover was last written there, so the
+  // warning never fired at all. Writing both means the check reads a current
+  // file wherever it looks.
+  const info = `built ${buildStamp}\nformat ${options.format}\n`;
+  writeFileSync(join(target, 'BUILD_INFO.txt'), info);
+  const local = join(here, 'dist-local');
+  if (local !== target) {
+    mkdirSync(local, { recursive: true });
+    writeFileSync(join(local, 'BUILD_INFO.txt'), info);
+  }
 }
 
 function readEnv(name) {
