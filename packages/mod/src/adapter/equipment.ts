@@ -269,18 +269,35 @@ export function readEquipCandidates(): Candidate[] {
     // Nor gear that makes the character worse at the style it is fighting with.
     // See penalisesAttackStyle: a Steel Platebody read as an upgrade for an
     // archer and cost twenty minutes of unwinnable fighting.
-    if (penalisesAttackStyle(item.equipmentStats, player.attackType)) continue;
+    // A weapon of a different attack type is a *style switch*, not an upgrade,
+    // and both filters below reject it for reasons that are individually
+    // correct and jointly wrong.
+    //
+    // A Staff of Air "penalises" the ranged style — of course it does, it is a
+    // magic weapon — and it scores lower than a shortbow on a flat stat sum,
+    // because the two are not comparable. So with a bow equipped, no staff is
+    // ever offered, and Magic cannot be started at all: five Staves of Air sat
+    // in the bank while Magic stayed at level 2 and its goal read 10%.
+    //
+    // Offered as its own thing, labelled for what it is. The planner decides
+    // whether a switch is wanted; the reader's job is only to make it possible.
+    const switchesStyle = item instanceof WeaponItem && item.attackType !== player.attackType;
+
+    if (!switchesStyle && penalisesAttackStyle(item.equipmentStats, player.attackType)) continue;
 
     const currentItem =
       current.itemId === null ? undefined : game.items.equipment.getObjectByID(current.itemId);
 
-    if (currentItem !== undefined && statScore(item) <= statScore(currentItem)) continue;
+    if (!switchesStyle && currentItem !== undefined && statScore(item) <= statScore(currentItem)) {
+      continue;
+    }
 
     candidates.push({
       kind: 'equip_item',
       params: { kind: 'equip_item', itemId: item.id, slotId: slot.id },
-      label:
-        current.itemId === null
+      label: switchesStyle
+        ? `Equip ${item.name} — switches combat to ${(item as WeaponItem).attackType}, which is a strategy choice rather than an upgrade (replaces ${currentItem?.name ?? 'nothing'})`
+        : current.itemId === null
           ? `Equip ${item.name} (${slot.emptyName ?? slot.id} is empty)`
           : `Equip ${item.name} (replaces ${currentItem?.name ?? current.itemId})`,
       available: true,

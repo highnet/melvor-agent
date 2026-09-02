@@ -131,3 +131,41 @@ describe('putting on gear the character is missing', () => {
     ).toBeNull();
   });
 });
+
+describe('offering a weapon that changes the style', () => {
+  // Both existing filters reject a style switch for individually correct
+  // reasons that are jointly wrong. A Staff of Air "penalises" the ranged style
+  // — of course it does — and scores lower than a shortbow on a flat stat sum,
+  // because a staff and a bow are not comparable. So with a bow equipped no
+  // staff is ever offered, and five Staves of Air sat in the bank while Magic
+  // stayed at level 2 with its goal reading 10%.
+  const offered = (
+    itemStyle: string,
+    currentStyle: string,
+    penalises: boolean,
+    better: boolean,
+  ) => {
+    const switchesStyle = itemStyle !== currentStyle;
+    if (!switchesStyle && penalises) return false;
+    if (!switchesStyle && !better) return false;
+    return true;
+  };
+
+  it('offers a staff to an archer as a style switch', () => {
+    expect(offered('magic', 'ranged', true, false)).toBe(true);
+  });
+
+  it('still hides same-style gear that is worse', () => {
+    // The upgrade rule survives untouched for the case it was written for.
+    expect(offered('ranged', 'ranged', false, false)).toBe(false);
+  });
+
+  it('still hides same-style gear that penalises the style', () => {
+    // The platebody that left an archer unable to land a shot.
+    expect(offered('ranged', 'ranged', true, true)).toBe(false);
+  });
+
+  it('offers same-style gear that is a genuine upgrade', () => {
+    expect(offered('ranged', 'ranged', false, true)).toBe(true);
+  });
+});
