@@ -304,7 +304,22 @@ Township summary reported 0% health while the repair reflex correctly computed
       written by inference — guessing ids is the bug that made
       `melvorD:AltMagic` produce no candidates for the life of the repo — so it
       has to come from a real dump.
-- [ ] **`ActionResult` evidence is never consumed above the adapter** — M.
+- [x] **`ActionResult` evidence is never consumed above the adapter** — M.
+      `summariseObserved` turns the before/after projection into a described
+      magnitude where the two shapes can be compared and says nothing where they
+      cannot, so an adapter line now reads `ok — level +0, active false -> true`
+      rather than `ok`. `NoMovementWatch` feeds on it: the counter an
+      objective's own `successWhen` names — skill **XP**, not level, which moves
+      too rarely to watch — must move, and eight verified action rounds *and*
+      five flat minutes are both required before it logs an error and requests a
+      `stuck_detected` replan. Both thresholds because a false alarm replans a
+      healthy objective, and the policy tier ticks every three seconds. It sits
+      beside `detectStuck` rather than inside it: that asks whether the
+      character is going anywhere over fifteen minutes, this asks whether the
+      number *this objective* was chosen to move is moving. Surfaced in
+      `get_agent_state` next to the "Delivering: N xp/h" line, which catches the
+      other half — a rate modelled wrong, rather than actions that achieve
+      nothing.
 
 ## Dump
 

@@ -9,9 +9,10 @@ import type {
   Outcome,
   QualitySample,
   RunState,
+  StalledCounter,
   StateSnapshot,
 } from '@melvor-agent/shared';
-import { checkArmHealth, fail, stateSnapshotSchema } from '@melvor-agent/shared';
+import { checkArmHealth, fail, stateSnapshotSchema, summariseResult } from '@melvor-agent/shared';
 import {
   Subscriptions,
   THIEVING_ID,
@@ -198,6 +199,7 @@ import {
   unlockAffordablePlots,
 } from './combat-reflex.js';
 import type { Logger } from './logger.js';
+import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
 import type { Transport } from './transport.js';
@@ -433,6 +435,20 @@ export class Agent {
   private replanning = false;
   /** Consecutive failed actions for the current objective. */
   private consecutiveActionFailures = 0;
+
+  /**
+   * Watches the counter the current objective's success condition names.
+   *
+   * Sits beside `detectStuck` rather than inside it: that one asks whether the
+   * character is going anywhere at all over fifteen minutes, this one asks
+   * whether the specific number this objective was chosen to move is moving
+   * while its actions all report success. Agility answered yes to the first and
+   * no to the second for fifteen minutes, at zero XP.
+   */
+  private readonly noMovement = new NoMovementWatch();
+
+  /** The stall last detected, with the objective it belongs to. Null while healthy. */
+  private stalled: { objectiveId: string; evidence: StalledCounter } | null = null;
   /** Plan steps already retried once, so a refused step cannot loop forever. */
   private readonly requeuedSteps = new Set<string>();
 
@@ -1643,11 +1659,18 @@ export class Agent {
    */
   private perform(actions: readonly PolicyAction[], reason: string): boolean {
     const isSuspended = (): boolean => this.state === 'suspended';
+    /** What the last verified action of this round actually moved, if anything. */
+    let lastChange: string | null = null;
 
     for (const action of actions) {
       const result = this.dispatch(action, isSuspended);
 
       if (!result.ok) {
+        // "Succeeding and going nowhere" is a different claim from "failing",
+        // and failures have their own escalation (ACTION_FAILURE_LIMIT). Mixing
+        // the two would let a run of refusals count towards an alarm that is
+        // specifically about the game accepting everything it is asked.
+        this.noMovement.reset();
         // Being suspended is not the objective's fault — the tier is simply
         // paused, and counting it would abandon a fine objective mid catch-up.
         if (result.reason === 'suspended') return false;
@@ -1725,9 +1748,75 @@ export class Agent {
 
       // Any success clears the run: the objective is making progress again.
       this.consecutiveActionFailures = 0;
-      this.log.info('adapter', `${result.action} ok`, result);
+      // The evidence, read rather than logged whole. `ok` on its own is what
+      // the adapter's `changed()` closure believed; the magnitude is what it
+      // observed, and a line that says "ok — level +0, active false -> true"
+      // is the difference between a verified action and a productive one.
+      const delta = summariseResult(result);
+      if (delta !== null) lastChange = delta.detail;
+      this.log.info(
+        'adapter',
+        `${result.action} ok${delta === null ? '' : ` — ${delta.detail}`}`,
+        result,
+      );
     }
+
+    // Only a round that actually performed something is evidence about the
+    // objective; an empty intent list says nothing about whether the game is
+    // accepting calls that achieve nothing.
+    if (actions.length > 0) this.checkCounterMovement(lastChange);
     return true;
+  }
+
+  /**
+   * Escalates an objective whose actions all verify and whose counter is flat.
+   *
+   * The failure this catches is the one `ok` cannot express: every call
+   * accepted, every before/after diff real, and the number the objective exists
+   * to move sitting exactly where it started. Agility ran that way for fifteen
+   * minutes — `Agility.stop ok`, `agility.run ok`, alternating every three
+   * seconds, zero XP — and nothing above the adapter could tell it apart from
+   * work.
+   *
+   * @param lastChange - What the round's last verified action moved, if the
+   *                     projection allowed the comparison at all.
+   */
+  private checkCounterMovement(lastChange: string | null): void {
+    const objective = this.settings.objective;
+    const snapshot = this.lastSnapshot;
+    if (objective === null || snapshot === null) return;
+
+    // No criteria means a one-shot action whose executor decides completion.
+    // There is no counter to watch, and inventing one would replan the very
+    // objectives that are meant to finish after a single verified action.
+    const counter = readObjectiveCounter(snapshot, objective.successWhen);
+    if (counter === null) return;
+
+    const verdict = this.noMovement.recordSuccess(objective.id, counter, Date.now());
+    if (verdict.kind === 'moved' || verdict.kind === 'restarted') {
+      this.stalled = null;
+      return;
+    }
+    if (verdict.kind === 'watching') return;
+
+    const minutes = verdict.forMs / 60_000;
+    const evidence: StalledCounter = {
+      counter: verdict.label,
+      value: verdict.value,
+      successes: verdict.successes,
+      minutes,
+      lastChange: lastChange ?? 'the projection reported nothing comparable',
+    };
+    this.stalled = { objectiveId: objective.id, evidence };
+
+    this.log.error(
+      'policy',
+      `${verdict.successes} verified actions over ${minutes.toFixed(1)}min and ${verdict.label} is still ${verdict.value}: the game accepts every call and the objective's own success counter has not moved (last change: ${evidence.lastChange}); replanning`,
+    );
+    // The same trigger `detectStuck` uses, deliberately: this is the same
+    // condition observed sooner and with the counter named, so it goes through
+    // the same backoff and the same planner path rather than a parallel one.
+    this.requestReplan('stuck_detected');
   }
 
   private dispatch(action: PolicyAction, isSuspended: () => boolean): ActionResult<unknown> {
@@ -2207,6 +2296,14 @@ export class Agent {
       adapterFailures: readAdapterFailures(),
       blockedReason: this.blockedReason,
       needsAttention: this.attention,
+      // Only while it still describes the objective that is running. A stall
+      // detected on a step that has since been replaced would read as a live
+      // complaint about the objective that replaced it, which is precisely the
+      // wrong diagnosis to hand a planning session.
+      stalledCounter:
+        this.stalled !== null && this.stalled.objectiveId === this.settings.objective?.id
+          ? this.stalled.evidence
+          : null,
     });
 
     if (reply === null) {

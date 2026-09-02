@@ -114,6 +114,29 @@ export const adapterFailureSchema = z.object({
 });
 export type AdapterFailure = z.infer<typeof adapterFailureSchema>;
 
+/**
+ * An objective whose actions are verified and whose own counter is not moving.
+ *
+ * The other half of the advertised-versus-realised comparison. That one catches
+ * a rate that was modelled wrong — Crystal advertising 120,000 GP/h against
+ * 10,800 delivered — and cannot see the failure where the actions themselves
+ * achieve nothing: Agility stopping and starting every three seconds, each call
+ * returning `ok` with real before/after evidence, for zero XP. Both were found
+ * by an operator noticing a number looked wrong, hours in.
+ */
+export const stalledCounterSchema = z.object({
+  /** The counter the objective's success condition names, e.g. `Agility xp`. */
+  counter: z.string(),
+  /** What it has been stuck at. */
+  value: z.number(),
+  /** Rounds of fully verified actions across the flat window. */
+  successes: z.number().int().nonnegative(),
+  minutes: z.number().nonnegative(),
+  /** What the most recent verified action actually changed, if anything. */
+  lastChange: z.string(),
+});
+export type StalledCounter = z.infer<typeof stalledCounterSchema>;
+
 /** mod -> service. Posted on every policy tick. */
 export const agentReportSchema = z.object({
   runState: runStateSchema,
@@ -202,6 +225,17 @@ export const agentReportSchema = z.object({
    * Optional so an older mod still validates against a newer service.
    */
   needsAttention: z.string().nullable().default(null),
+  /**
+   * Set while the current objective's actions verify and its counter does not.
+   *
+   * Null in the healthy case, and cleared as soon as the counter moves. A
+   * replan has already been requested by the time this is populated; the field
+   * exists so a planning session can see *why* rather than being handed a
+   * fresh objective with no account of what went wrong with the last one.
+   *
+   * Defaulted so an older mod still validates against a newer service.
+   */
+  stalledCounter: stalledCounterSchema.nullable().default(null),
 });
 export type AgentReport = z.infer<typeof agentReportSchema>;
 

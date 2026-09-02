@@ -137,6 +137,22 @@ export const TOOLS: Record<string, ToolHandler> = {
           `Delivering: ${Math.round(measured.realisedXpPerHour).toLocaleString()} xp/h over ${measured.hours.toFixed(1)}h — ${ratio}`,
         ];
       })(),
+      // The other half of the line above, and the half it cannot see.
+      //
+      // "Delivering: N xp/h — X% of advertised" catches a rate that was
+      // modelled wrong while the work itself happens. It says nothing when the
+      // work happens *and produces nothing*: Agility stopping and restarting
+      // every three seconds, each call verified with real before/after
+      // evidence, for zero XP across fifteen minutes. The mod now watches the
+      // counter the objective's own success condition names, and this is where
+      // it says so.
+      ...(() => {
+        const stalled = report.stalledCounter ?? null;
+        if (stalled === null) return [];
+        return [
+          `Actions verified but nothing moving: ${stalled.successes} successful action rounds over ${stalled.minutes.toFixed(1)}min with ${stalled.counter} still at ${stalled.value.toLocaleString()}. Last observed change: ${stalled.lastChange}. A replan was requested — the game accepts these actions and the objective's own counter cannot see them.`,
+        ];
+      })(),
       // Guarded adapter reads that threw, cumulative for the run.
       //
       // Placed next to the advertised-vs-realised comparison because it is the
