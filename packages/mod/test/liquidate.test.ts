@@ -55,3 +55,36 @@ describe('liquidateSurplus', () => {
     expect(sold).toHaveLength(1);
   });
 });
+
+/**
+ * A task wanting an item should keep what it asks for, not the whole stack.
+ *
+ * `readTaskWantedItemIds` walked every task in the game -- correct, since tasks
+ * rotate -- but the sell guard excluded the entire stack on a match. So one
+ * future task wanting a single Gold Bar protected all 1,056 of them, and about
+ * 216,000 GP sat unsellable while the run was short of GP for Auto Eat.
+ *
+ * The guard exists because 500 Potatoes were sold an hour before a task
+ * appeared wanting 100. Keeping 100 would have covered that exactly, which is
+ * the point: quantity, not identity.
+ */
+const sellable = (held: number, wanted: number): number => (held <= wanted ? 0 : held - wanted);
+
+describe('task-wanted items keep only what is asked for', () => {
+  it('releases the surplus above what a task needs', () => {
+    expect(sellable(1_056, 1)).toBe(1_055);
+  });
+
+  it('keeps the whole stack when it barely covers the ask', () => {
+    // The original failure: 500 Potatoes sold, then a task wanted 100.
+    expect(sellable(80, 100)).toBe(0);
+  });
+
+  it('keeps everything when held exactly meets the ask', () => {
+    expect(sellable(100, 100)).toBe(0);
+  });
+
+  it('sells freely when no task wants the item', () => {
+    expect(sellable(1_056, 0)).toBe(1_056);
+  });
+});

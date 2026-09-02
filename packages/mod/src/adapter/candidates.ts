@@ -22,7 +22,7 @@ import {
 } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
 import { readShopCandidates } from './shop.js';
-import { readTaskWantedItemIds } from './township.js';
+import { readTaskWantedQuantities } from './township.js';
 
 const MS_PER_HOUR = 3_600_000;
 
@@ -861,7 +861,10 @@ function thievingCandidates(): Candidate[] {
   // it and Thieving did not, which is backwards: the reason this character is
   // grinding Thieving at all is Bob the Farmer, the only NPC in the game's data
   // that drops Potato Seeds, and his entry said nothing about that.
-  const wantedByNeed = new Set<string>([...readTaskWantedItemIds(), ...readShortSeedIds()]);
+  const wantedByNeed = new Set<string>([
+    ...readTaskWantedQuantities().keys(),
+    ...readShortSeedIds(),
+  ]);
 
   return (
     skill.actions.allObjects
@@ -1087,7 +1090,7 @@ export function readSellCandidates(): Candidate[] {
 
   return (
     [...game.bank.items.values()]
-      .filter((entry) => saleExclusionReason(entry.item) === null)
+      .filter((entry) => saleExclusionReason(entry.item, entry.quantity) === null)
       // And never ammunition.
       //
       // The same omission as food, with the same automatic path selecting it:
@@ -1100,7 +1103,13 @@ export function readSellCandidates(): Candidate[] {
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({
         kind: 'sell_items' as const,
-        params: { kind: 'sell_items' as const, itemId: entry.item.id, keepQuantity: 0 },
+        params: {
+          kind: 'sell_items' as const,
+          itemId: entry.item.id,
+          // Keep back what a task still wants and sell the rest, rather than
+          // choosing between the whole stack and none of it.
+          keepQuantity: readTaskWantedQuantities().get(entry.item.id) ?? 0,
+        },
         label: `Sell ${entry.quantity}x ${entry.item.name}`,
         // Not a rate: this is the one-off value of clearing the stack. Left off
         // gpPerHour deliberately, since a sale has no duration to divide by.
@@ -1665,9 +1674,14 @@ export function readMostValuableExpendableStack(): {
  * reason and a bad one identically, and the third time that costs an afternoon
  * it is cheaper to make it speak.
  */
-function saleExclusionReason(item: AnyItem): string | null {
+function saleExclusionReason(item: AnyItem, held = 0): string | null {
   try {
-    if (readTaskWantedItemIds().has(item.id)) return 'a Township task wants it';
+    // Quantity, not identity. A future task wanting one Gold Bar should keep
+    // one, not all 1,056 -- see readTaskWantedQuantities.
+    const wanted = readTaskWantedQuantities().get(item.id) ?? 0;
+    if (wanted > 0 && held <= wanted) {
+      return `a Township task wants ${wanted} and only ${held} are held`;
+    }
     if (readBarelyEnoughIngredientIds().has(item.id)) return 'it is the last of a recipe input';
     if (readAllSeedIds().has(item.id)) return 'it is a farming seed';
     if (readSpellRuneIds().has(item.id)) return 'a castable spell needs it';
@@ -1706,7 +1720,7 @@ export function readUnsellableNotice(): {
     const held: { name: string; value: number; reason: string }[] = [];
 
     for (const entry of game.bank.items.values()) {
-      const reason = saleExclusionReason(entry.item);
+      const reason = saleExclusionReason(entry.item, entry.quantity);
       if (reason === null) continue;
 
       const value = gpValue(entry.item) * entry.quantity;

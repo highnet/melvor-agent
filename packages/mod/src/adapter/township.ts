@@ -557,12 +557,36 @@ export function claimCasualTask(
  * Casual tasks count too: they hold the same kind of item goal.
  */
 export function readTaskWantedItemIds(): Set<string> {
-  const wanted = new Set<string>();
+  return new Set(readTaskWantedQuantities().keys());
+}
+
+/**
+ * How many of each item the town's uncompleted tasks still want.
+ *
+ * The quantity matters as much as the identity, and treating the two as the
+ * same thing was expensive. This walks every task in the game, not merely the
+ * ones currently offered, because tasks rotate -- which is right. But paired
+ * with a guard that excluded the whole stack, it meant a single future task
+ * wanting one Gold Bar protected all 1,056 of them, and about 216,000 GP of
+ * bars sat unsellable while the run was short of GP for Auto Eat.
+ *
+ * Keeping what the tasks ask for and releasing the surplus preserves the guard
+ * completely: the reason it exists is that 500 Potatoes were sold an hour
+ * before a task appeared wanting 100, and keeping 100 would have covered that
+ * exactly.
+ */
+export function readTaskWantedQuantities(): Map<string, number> {
+  const wanted = new Map<string, number>();
   const township = game.township;
   if (!township.townData.townCreated) return wanted;
 
-  const collect = (goals: { itemGoals: { item: { id: string } }[] }): void => {
-    for (const goal of goals.itemGoals) wanted.add(goal.item.id);
+  const collect = (goals: { itemGoals: { item: { id: string }; quantity: number }[] }): void => {
+    for (const goal of goals.itemGoals) {
+      // The largest single ask, not the sum: tasks are completed one at a time,
+      // so holding the biggest requirement covers any of them.
+      const need = Math.max(wanted.get(goal.item.id) ?? 0, goal.quantity);
+      wanted.set(goal.item.id, need);
+    }
   };
 
   for (const task of township.tasks.tasks.allObjects) {
