@@ -323,22 +323,42 @@ export function harvestReadyPlots(
  */
 export function plantEmptyPlots(
   state: {
-    emptyPlotIds: readonly string[];
-    /** Seeds held, richest first. Callers filter to what is plantable. */
-    plentifulSeeds: readonly { recipeId: string; held: number; cost: number }[];
+    /** Empty plots with the category each will accept. */
+    emptyPlots: readonly { plotId: string; categoryId: string }[];
+    /** Seeds held, richest first, with the category each belongs to. */
+    plentifulSeeds: readonly {
+      recipeId: string;
+      categoryId: string;
+      held: number;
+      cost: number;
+    }[];
   },
   plant: (plotId: string, recipeId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  const plotId = state.emptyPlotIds[0];
-  if (plotId === undefined) return null;
+  // A plot and a seed have to match categories, and this used to consider only
+  // the first empty plot.
+  //
+  // The adapter refuses a category mismatch, so once a Herb or Tree plot was
+  // unlocked the first empty plot could be one no held seed fits -- and because
+  // nothing looked past `[0]`, the reflex returned that same refusal forever
+  // while allotment plots sat empty beside it. A guard starving its own
+  // precondition, which this codebase has now paid for twice.
+  //
+  // Pairing rather than filtering: the first (plot, seed) whose categories
+  // agree, so a blocked plot is stepped over instead of blocking the farm.
+  for (const plot of state.emptyPlots) {
+    // The game's own cost, not a guess. A plot takes three seeds, and the first
+    // version of this asked for one — so it chose a seed it could not plant and
+    // reported "need 3x Potato Seeds, hold 2" once a second.
+    const seed = state.plentifulSeeds.find(
+      (entry) => entry.categoryId === plot.categoryId && entry.held >= entry.cost,
+    );
+    if (seed === undefined) continue;
 
-  // The game's own cost, not a guess. A plot takes three seeds, and the first
-  // version of this asked for one — so it chose a seed it could not plant and
-  // reported "need 3x Potato Seeds, hold 2" once a second.
-  const seed = state.plentifulSeeds.find((entry) => entry.held >= entry.cost);
-  if (seed === undefined) return null;
+    return { name: 'reflex.plantPlot', result: plant(plot.plotId, seed.recipeId) };
+  }
 
-  return { name: 'reflex.plantPlot', result: plant(plotId, seed.recipeId) };
+  return null;
 }
 
 /**

@@ -825,10 +825,16 @@ export class Agent {
       // replanted on the next rather than being read as still occupied.
       plantEmptyPlots(
         {
-          emptyPlotIds: livePlots.filter((plot) => plot.state === 'empty').map((plot) => plot.id),
+          // Both readers have always carried categoryId; the call site dropped
+          // it, and the reflex then paired plots with seeds that cannot go in
+          // them.
+          emptyPlots: livePlots
+            .filter((plot) => plot.state === 'empty')
+            .map((plot) => ({ plotId: plot.id, categoryId: plot.categoryId })),
           plentifulSeeds: readPlantableSeeds()
             .map((seed) => ({
               recipeId: seed.recipeId,
+              categoryId: seed.categoryId,
               held: seed.seedsHeld,
               cost: seed.seedCost,
             }))

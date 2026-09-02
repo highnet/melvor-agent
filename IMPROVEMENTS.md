@@ -99,7 +99,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       allowlist on a timer.
 - [x] **The quiver is unwatched mid-fight** — S. Ammo is checked at engage and
       never again; an empty quiver is a silent zero-damage stall.
-- [ ] **The farm planting reflex is plot-category-blind** — S. It only ever
+- [x] **The farm planting reflex is plot-category-blind** — S. It only ever
       considers plot `[0]`, so one Herb plot can livelock planting while
       allotment plots sit empty beside it.
 

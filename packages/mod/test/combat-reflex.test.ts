@@ -364,7 +364,10 @@ describe('plantEmptyPlots', () => {
   it('plants an empty plot with a seed held in quantity', () => {
     const planted: string[] = [];
     plantEmptyPlots(
-      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Potato', held: 6, cost: 3 }] },
+      {
+        emptyPlots: [{ plotId: 'p1', categoryId: 'allotment' }],
+        plentifulSeeds: [{ recipeId: 'Potato', categoryId: 'allotment', held: 6, cost: 3 }],
+      },
       (plotId, recipeId) => {
         planted.push(`${plotId}:${recipeId}`);
         return ok();
@@ -378,7 +381,10 @@ describe('plantEmptyPlots', () => {
     // A plot costs three seeds. Asking for one chose a seed that could not be
     // planted and failed once a second: "need 3x Potato Seeds, hold 2".
     const outcome = plantEmptyPlots(
-      { emptyPlotIds: ['p1'], plentifulSeeds: [{ recipeId: 'Herb', held: 1, cost: 3 }] },
+      {
+        emptyPlots: [{ plotId: 'p1', categoryId: 'allotment' }],
+        plentifulSeeds: [{ recipeId: 'Herb', categoryId: 'allotment', held: 1, cost: 3 }],
+      },
       () => ok(),
     );
 
@@ -389,10 +395,10 @@ describe('plantEmptyPlots', () => {
     const planted: string[] = [];
     plantEmptyPlots(
       {
-        emptyPlotIds: ['p1'],
+        emptyPlots: [{ plotId: 'p1', categoryId: 'allotment' }],
         plentifulSeeds: [
-          { recipeId: 'Herb', held: 1, cost: 3 },
-          { recipeId: 'Cabbage', held: 6, cost: 3 },
+          { recipeId: 'Herb', categoryId: 'allotment', held: 1, cost: 3 },
+          { recipeId: 'Cabbage', categoryId: 'allotment', held: 6, cost: 3 },
         ],
       },
       (_plotId, recipeId) => {
@@ -406,7 +412,7 @@ describe('plantEmptyPlots', () => {
 
   it('does nothing when no plot is empty', () => {
     expect(
-      plantEmptyPlots({ emptyPlotIds: [], plentifulSeeds: [{ recipeId: 'Potato', held: 9 }] }, () =>
+      plantEmptyPlots({ emptyPlots: [], plentifulSeeds: [{ recipeId: 'Potato', held: 9 }] }, () =>
         ok(),
       ),
     ).toBeNull();
@@ -826,5 +832,46 @@ describe('stopWhenStarving with food in the bank', () => {
     );
 
     expect(outcome).toBeNull();
+  });
+});
+
+describe('plantEmptyPlots pairs categories', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  it('steps over a plot no held seed fits', () => {
+    // The livelock this fixes: the adapter refuses a category mismatch, and the
+    // reflex only ever looked at the first empty plot. Once a Herb plot was
+    // unlocked it returned that same refusal forever while allotment plots sat
+    // empty beside it -- a guard starving its own precondition.
+    const planted: string[] = [];
+    plantEmptyPlots(
+      {
+        emptyPlots: [
+          { plotId: 'herb1', categoryId: 'herb' },
+          { plotId: 'allot1', categoryId: 'allotment' },
+        ],
+        plentifulSeeds: [{ recipeId: 'Potato', categoryId: 'allotment', held: 9, cost: 3 }],
+      },
+      (plotId, recipeId) => {
+        planted.push(`${plotId}:${recipeId}`);
+        return ok();
+      },
+    );
+
+    expect(planted).toEqual(['allot1:Potato']);
+  });
+
+  it('never plants a seed into the wrong category', () => {
+    // The adapter would refuse it; offering it wastes the tick and reports a
+    // failure that looks like a bug.
+    expect(
+      plantEmptyPlots(
+        {
+          emptyPlots: [{ plotId: 'herb1', categoryId: 'herb' }],
+          plentifulSeeds: [{ recipeId: 'Potato', categoryId: 'allotment', held: 9, cost: 3 }],
+        },
+        () => ok(),
+      ),
+    ).toBeNull();
   });
 });
