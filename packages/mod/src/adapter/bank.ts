@@ -102,18 +102,66 @@ export function sellItem(
 const BANK_PRESSURE_SLOTS = 2;
 
 /**
- * Warns when the bank is about to stop the character working.
+ * What the bank actually threw away, by the game's own count.
+ *
+ * `Bank.lostItems` (bank2.d.ts:78) is the game recording every item it tried to
+ * add and could not fit. Nothing in this mod had ever read it, so the only thing
+ * said about a full bank was the speculative warning below — "new item types
+ * *will* start being discarded" — which is a prediction where a measurement was
+ * sitting one accessor away.
+ *
+ * Two honest limits, both stated because they change how the number should be
+ * read and neither of them makes it a false positive:
+ *
+ * - The typings describe the map as being for offline progress, and do not say
+ *   when the game clears it. So this is a floor on what has been lost since it
+ *   was last cleared, never a ceiling and never a total for the run.
+ * - A non-empty map is nonetheless proof. The game only writes to it when an
+ *   add has already failed, so anything in here is a drop that is gone.
+ *
+ * @returns Item names and quantities that did not fit, largest loss first.
+ */
+export function readLostItems(): { name: string; quantity: number }[] {
+  const lost: { name: string; quantity: number }[] = [];
+
+  for (const [item, quantity] of game.bank.lostItems) {
+    if (quantity <= 0) continue;
+    try {
+      lost.push({ name: item.name, quantity });
+    } catch {
+      // An item that cannot name itself is still a loss, but not one that can
+      // be reported usefully.
+    }
+  }
+
+  return lost.sort((a, b) => b.quantity - a.quantity);
+}
+
+/** How many discarded item types to name before summarising the rest. */
+const LOST_ITEMS_NAMED = 4;
+
+/**
+ * Warns when the bank is about to stop the character working, and reports what
+ * it has already destroyed.
  *
  * A full bank does not announce itself. Gathering an item type the bank has no
  * room for simply produces nothing, while the skill keeps running and the XP
  * keeps ticking — so an agent watching only "is the skill active" sees a
  * perfectly healthy run that is quietly throwing away every drop.
  *
+ * The loss line is separate from the pressure line and deliberately not gated on
+ * free slots. A discard that has already happened is a fact whatever the bank
+ * looks like now — a slot bought since, or a stack sold, does not bring the
+ * items back — and the two lines answer different questions: one is a countdown,
+ * the other is a receipt. See {@link readLostItems} for what the receipt covers.
+ *
  * Reported rather than fixed. The remedies are selling something or buying a
  * slot, both of which are decisions with costs, and both of which the agent
- * already has capabilities for.
+ * already has capabilities for — and both of which now have a measured number to
+ * argue with instead of a warning about the future.
  *
- * @returns One blocked-opportunity entry, or none when there is room.
+ * @returns Blocked-opportunity entries, or none when there is room and nothing
+ *          has been lost.
  */
 export function readBankPressure(): {
   label: string;
@@ -124,18 +172,37 @@ export function readBankPressure(): {
   const max = game.bank.maximumSlots;
   const free = max - used;
 
-  if (free > BANK_PRESSURE_SLOTS) return [];
+  const entries: ReturnType<typeof readBankPressure> = [];
 
-  return [
-    {
+  const lost = readLostItems();
+  if (lost.length > 0) {
+    const total = lost.reduce((sum, entry) => sum + entry.quantity, 0);
+    const named = lost
+      .slice(0, LOST_ITEMS_NAMED)
+      .map((entry) => `${entry.quantity}x ${entry.name}`)
+      .join(', ');
+    const rest =
+      lost.length > LOST_ITEMS_NAMED ? ` and ${lost.length - LOST_ITEMS_NAMED} more` : '';
+
+    entries.push({
+      label: `Bank has already DISCARDED ${total} item(s) it could not fit: ${named}${rest}. This is the game's own record of what was lost, not a prediction — buy a slot or sell a stack before gathering more of these.`,
+      xpPerHour: 0,
+      missing: [],
+    });
+  }
+
+  if (free <= BANK_PRESSURE_SLOTS) {
+    entries.push({
       label:
         free <= 0
           ? `Bank is FULL (${used}/${max}) — any new item type is being discarded silently while the skill keeps running. Sell a stack or buy a slot.`
           : `Bank has ${free} slot(s) left (${used}/${max}) — new item types will start being discarded. Sell a stack or buy a slot.`,
       xpPerHour: 0,
       missing: [],
-    },
-  ];
+    });
+  }
+
+  return entries;
 }
 
 /** The shop's bank-slot purchase, or null when it is unavailable or unaffordable. */
@@ -210,6 +277,44 @@ export function buryBones(
   );
 }
 
+/** A bone stack in the bank, with what burying it is worth. */
+export interface BuriableBones {
+  itemId: string;
+  name: string;
+  quantity: number;
+  /** Prayer points each bone converts into, from the game's own accessor. */
+  pointsEach: number;
+}
+
+/**
+ * Bones held, richest first.
+ *
+ * Shared by the candidate list and the burying reflex so the two cannot disagree
+ * about what is in the bank. Richest first because the reflex takes one stack
+ * per pass and points are what everything downstream is short of.
+ */
+export function readBuriableBones(): BuriableBones[] {
+  const bones: BuriableBones[] = [];
+
+  for (const entry of game.bank.items.values()) {
+    if (!(entry.item instanceof BoneItem)) continue;
+    if (entry.quantity <= 0) continue;
+
+    try {
+      bones.push({
+        itemId: entry.item.id,
+        name: entry.item.name,
+        quantity: entry.quantity,
+        pointsEach: game.bank.getPrayerPointsPerBone(entry.item),
+      });
+    } catch {
+      // A bone that cannot price itself is not offered.
+    }
+  }
+
+  return bones.sort((a, b) => b.quantity * b.pointsEach - a.quantity * a.pointsEach);
+}
+
 /**
  * Bones worth burying.
  *
@@ -217,25 +322,12 @@ export function buryBones(
  * consumes them, and Prayer is otherwise untrainable.
  */
 export function readBoneCandidates(): Candidate[] {
-  const candidates: Candidate[] = [];
-
-  for (const entry of game.bank.items.values()) {
-    if (!(entry.item instanceof BoneItem)) continue;
-
-    try {
-      const points = game.bank.getPrayerPointsPerBone(entry.item);
-      candidates.push({
-        kind: 'bury_bones',
-        params: { kind: 'bury_bones', itemId: entry.item.id, quantity: entry.quantity },
-        label: `Bury ${entry.quantity}x ${entry.item.name} for ${points} prayer points each — points are what prayers spend, and spending them in combat is what trains Prayer`,
-        available: true,
-      });
-    } catch {
-      // A bone that cannot price itself is not a candidate.
-    }
-  }
-
-  return candidates;
+  return readBuriableBones().map((bone) => ({
+    kind: 'bury_bones',
+    params: { kind: 'bury_bones', itemId: bone.itemId, quantity: bone.quantity },
+    label: `Bury ${bone.quantity}x ${bone.name} for ${bone.pointsEach} prayer points each — points are what prayers spend, and spending them in combat is what trains Prayer`,
+    available: true,
+  }));
 }
 
 /**

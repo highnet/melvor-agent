@@ -47,6 +47,8 @@ import {
   onGameEvent,
   openItem,
   plantFarmPlot,
+  readActivatablePrayers,
+  readActivePrayerIds,
   readActiveRecipeIds,
   readAgilityCandidates,
   readAstrologyCandidates,
@@ -56,6 +58,7 @@ import {
   readBankedFood,
   readBlockedOpportunities,
   readBoneCandidates,
+  readBuriableBones,
   readCheapPermanentUpgrades,
   readCheapestExpendableStack,
   readClaimableTasks,
@@ -78,12 +81,14 @@ import {
   readGatherCandidates,
   readGearUpgrades,
   readHeldCompost,
+  readLapsingPotions,
   readLevelCapCandidates,
   readLoadoutCandidates,
   readLockedActions,
   readMasteryCandidates,
   readMasteryTokenCandidates,
   readMealCount,
+  readModifierGearNotice,
   readMonsterDropsOfInterest,
   readMostValuableExpendableStack,
   readNextContainer,
@@ -104,6 +109,7 @@ import {
   readSlayerCandidates,
   readSnapshot,
   readSpellCandidates,
+  readSpentChargesNotice,
   readSynergyCandidates,
   readTargetCombatLevel,
   readTaskCandidates,
@@ -128,6 +134,7 @@ import {
   selectTownshipWorship,
   sellItem,
   setAttackStyle,
+  setPotionAutoReuse,
   shouldCollectLoot,
   spendMasteryPool,
   startCombatEvent,
@@ -159,6 +166,8 @@ import type { PolicyAction } from '../policy/types.js';
 import { readBuildStamp } from './build-stamp.js';
 import {
   abandonIfOutmatched,
+  activateCheapestPrayer,
+  buryBonesWhenHeld,
   buyTrivialUpgrades,
   claimFinishedTasks,
   claimMasteryTokens,
@@ -166,10 +175,12 @@ import {
   collectStockpiledFood,
   compostBeforePlanting,
   cookWhenFoodLow,
+  dropUnpayablePrayers,
   eatWhenLow,
   expandBankWhenFull,
   fillEmptySlots,
   harvestReadyPlots,
+  keepPotionsActive,
   liquidateSurplus,
   openPendingContainers,
   plantEmptyPlots,
@@ -683,6 +694,24 @@ export class Agent {
         },
         (itemId, quantity) => claimMasteryToken(itemId, quantity, isSuspended),
       ),
+      // Bones, for the same reason and in the same tier: nothing else consumes
+      // them, they occupy a bank slot the bank is always short of, and burying
+      // is the only thing that produces the points Prayer is trained by
+      // spending. Both halves of Prayer were candidates nobody ever picked.
+      buryBonesWhenHeld(
+        {
+          prayerPoints: snapshot.combat.prayerPoints,
+          bones: readBuriableBones(),
+        },
+        (itemId, quantity) => buryBones(itemId, quantity, isSuspended),
+      ),
+      // An active potion that lapses mid-objective is a decision the planner
+      // made expiring silently. The reader offers nothing unless a replacement
+      // is already banked, so this can never enable a re-use with nothing to
+      // re-use.
+      keepPotionsActive({ lapsing: readLapsingPotions() }, (actionId) =>
+        setPotionAutoReuse(actionId, true, isSuspended),
+      ),
       // Gear the character is plainly missing. An empty slot has nothing on the
       // other side of the trade; a replacement must clear a margin.
       fillEmptySlots(
@@ -852,6 +881,29 @@ export class Agent {
             .sort((a, b) => b.held - a.held),
         },
         (plotId, recipeId) => plantFarmPlot(plotId, recipeId, isSuspended),
+      ),
+      // Prayer's two halves, in the order that keeps them from arguing. Dropping
+      // fires only at zero points and activating only above zero, so the
+      // conditions are disjoint and neither can undo the other.
+      dropUnpayablePrayers(
+        {
+          inCombat: snapshot.combat.inCombat,
+          prayerPoints: snapshot.combat.prayerPoints,
+          activePrayerIds: readActivePrayerIds(),
+        },
+        (prayerId) => togglePrayer(prayerId, isSuspended),
+      ),
+      // Spending points in combat is the only source of Prayer XP there is, so
+      // this is not a buff decision -- it is the whole training method, and
+      // Prayer 20 was unreachable while nothing ever turned a prayer on.
+      activateCheapestPrayer(
+        {
+          inCombat: snapshot.combat.inCombat,
+          prayerPoints: snapshot.combat.prayerPoints,
+          activePrayerIds: readActivePrayerIds(),
+          available: readActivatablePrayers(),
+        },
+        (prayerId) => togglePrayer(prayerId, isSuspended),
       ),
       // The live check that makes the pre-fight screen safe: outside combat the
       // game cannot compute enemy stats, so the screen guesses from combat
@@ -2011,6 +2063,15 @@ export class Agent {
         // The ordering follows what a line is for. "Yew unlocks at level 60" is
         // a fact to notice in passing and will still be true in an hour.
         // "Food is down to 11 meals and there is no Auto Eat" is a countdown.
+        // Above the rest of the diagnostics, because a spent charge is the one
+        // failure on this list with no symptom at all: the item stays worn, the
+        // slot stays full, every reading looks right, and the rate simply drops
+        // forever. Nothing else can surface it.
+        ...readSpentChargesNotice(),
+        // Owned gear that every scorer here values at zero. Not ranked, because
+        // pricing a modifier is a judgement about what the run is doing; see
+        // readModifierGear for why a number would be a guess dressed up.
+        ...readModifierGearNotice(),
         ...readUnsellableNotice(),
         ...readShopGoalNotice(),
         ...readBlockedOpportunities(),
@@ -2116,10 +2177,19 @@ export class Agent {
     const blocked: ReturnType<typeof readBlockedOpportunities> = [];
 
     for (const target of readCombatTargets()) {
+      // The Slayer task says so in both lists. A refused task monster is not
+      // "one more fight we cannot take": it is the only fight that can clear the
+      // task blocking every other Slayer candidate, so the planner needs to see
+      // it as the deadlock it is rather than as a line among two hundred.
+      const slayer =
+        target.slayerKillsLeft === undefined
+          ? ''
+          : ` — SLAYER TASK, ${target.slayerKillsLeft} kill(s) left, and no new task can be taken until it is done`;
+
       const refusal = this.gateRefusal(target.id, target.combatLevel);
       if (refusal !== null) {
         blocked.push({
-          label: `Fight ${target.name} (combat level ${target.combatLevel}) — ${refusal}`,
+          label: `Fight ${target.name} (combat level ${target.combatLevel})${slayer} — ${refusal}`,
           xpPerHour: 0,
           missing: [],
         });
@@ -2137,8 +2207,8 @@ export class Agent {
         target.kind === 'run_dungeon' ? [] : readMonsterDropsOfInterest(target.id, wantedItemIds);
       const label =
         drops.length === 0
-          ? `Fight ${target.name} (${where})`
-          : `Fight ${target.name} (${where}) — drops ${drops.join(', ')}, which you are short of`;
+          ? `Fight ${target.name} (${where})${slayer}`
+          : `Fight ${target.name} (${where})${slayer} — drops ${drops.join(', ')}, which you are short of`;
 
       if (target.kind === 'run_dungeon') {
         candidates.push({

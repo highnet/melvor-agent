@@ -150,6 +150,139 @@ export function dropUnpayablePrayers(
 }
 
 /**
+ * Prayer points above which bones are left in the bank.
+ *
+ * A reserve rather than a cap on burying. Points are stored value either way —
+ * as bones or as points — and the typings do not say what the point bar's
+ * maximum is, so pouring a whole stack into a bar that may already be near it is
+ * the one way this reflex could destroy something. A thousand points is hours of
+ * a cheap prayer running, which is more than any objective lasts, and the bones
+ * that stay in the bank are still there for the next thousand.
+ */
+const PRAYER_POINT_RESERVE = 1000;
+
+/**
+ * Buries bones as they accumulate.
+ *
+ * Prayer 20 was structurally unreachable, and no single piece of it was broken.
+ * Burying grants points and no XP; the XP comes from *spending* points in
+ * combat; spending needs a prayer active; and the only prayer reflex in this
+ * file exclusively turns prayers *off*. Both halves — burying and activating —
+ * existed as candidates nobody ever picked, which by now is a known failure mode
+ * in this codebase rather than a surprise: surfacing a thing is not doing it.
+ *
+ * Free and additive, the same shape as {@link claimMasteryTokens}. Nothing else
+ * consumes bones — no recipe takes them, and the sell reader would rather
+ * liquidate them — so a bone in the bank is a bone doing nothing, occupying a
+ * slot the bank is chronically short of. Combat produces them steadily whether
+ * or not anything uses them.
+ *
+ * Not gated on combat: burying touches the bank, not the action slot.
+ *
+ * One stack per pass, richest first, and only under the point reserve. See
+ * {@link PRAYER_POINT_RESERVE} for why the reserve is there rather than a cap.
+ */
+export function buryBonesWhenHeld(
+  state: {
+    prayerPoints: number;
+    /** Bones held, richest first. */
+    bones: readonly { itemId: string; quantity: number }[];
+  },
+  bury: (itemId: string, quantity: number) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.prayerPoints >= PRAYER_POINT_RESERVE) return null;
+
+  const stack = state.bones[0];
+  if (stack === undefined || stack.quantity <= 0) return null;
+
+  return {
+    name: 'reflex.buryBones',
+    result: bury(stack.itemId, stack.quantity),
+  };
+}
+
+/**
+ * Turns on the cheapest prayer once there are points and a fight to spend them in.
+ *
+ * The other half of {@link buryBonesWhenHeld}, and the one that actually earns
+ * the XP: points spent during combat are the only source of Prayer experience
+ * there is. The character finished a full day holding 506 prayer points with
+ * every prayer switched off.
+ *
+ * Gated on being in combat, because that is the only place points buy anything.
+ * An active prayer outside a fight still drains on regeneration ticks, which is
+ * how the bones get spent for nothing — the exact leak the adapter's
+ * `togglePrayer` doc warns about, and the reason activation was left to the
+ * planner in the first place.
+ *
+ * Only when nothing is already active. The game's cap on simultaneous prayers is
+ * not in the typings, so this does not guess at one: one prayer is enough to
+ * spend points and train the skill, and stopping at one means the reflex can
+ * never stack a drain it did not intend.
+ *
+ * The exact companion of {@link dropUnpayablePrayers}, and their conditions are
+ * disjoint by construction — that one fires at zero points, this one only above
+ * zero — so the two cannot flip a prayer on and off against each other.
+ */
+export function activateCheapestPrayer(
+  state: {
+    inCombat: boolean;
+    prayerPoints: number;
+    activePrayerIds: readonly string[];
+    /** Prayers that can be switched on now, cheapest to run first. */
+    available: readonly { prayerId: string; name: string }[];
+  },
+  togglePrayer: (prayerId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.inCombat) return null;
+  if (state.prayerPoints <= 0) return null;
+  if (state.activePrayerIds.length > 0) return null;
+
+  const cheapest = state.available[0];
+  if (cheapest === undefined) return null;
+
+  return {
+    name: 'reflex.activatePrayer',
+    result: togglePrayer(cheapest.prayerId),
+  };
+}
+
+/**
+ * Keeps an already-chosen potion from lapsing when its charges run out.
+ *
+ * A potion is a fixed number of charges and then silence. Nothing re-drinks it,
+ * so a buff drunk at the start of a three-hour objective covers the first few
+ * minutes and the rest runs unpotioned at a rate nobody notices is lower —
+ * indistinguishable, from the outside, from the potion having been oversold.
+ *
+ * Not a fresh decision, which is what makes it a reflex. The potion is already
+ * active, so a planner has already decided this potion belongs on this action;
+ * this only stops that decision expiring halfway through the thing it was made
+ * for. The reader supplies the rest of the guard — it offers nothing unless a
+ * replacement is actually banked, so this can never enable a re-use that has
+ * nothing to re-use.
+ *
+ * One action per pass, and the call asserts the accessor it read, so a lapse
+ * that has already been enabled produces no second attempt. See
+ * `setPotionAutoReuse` for why the polarity is expressed that way.
+ */
+export function keepPotionsActive(
+  state: {
+    /** Active potions that will lapse, each with a replacement in the bank. */
+    lapsing: readonly { actionId: string; actionName: string; potionName: string }[];
+  },
+  enableReuse: (actionId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  const lapsing = state.lapsing[0];
+  if (lapsing === undefined) return null;
+
+  return {
+    name: 'reflex.keepPotionActive',
+    result: enableReuse(lapsing.actionId),
+  };
+}
+
+/**
  * How low HP may fall before the reflex eats, as a fraction of max.
  *
  * Higher than an auto-eat threshold on purpose. Auto-eat fires the instant the

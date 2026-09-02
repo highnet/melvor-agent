@@ -535,6 +535,8 @@ export interface CombatTarget {
   name: string;
   areaName: string;
   combatLevel: number;
+  /** Kills still owed on the active Slayer task, when this is that monster. */
+  slayerKillsLeft?: number;
 }
 
 /** Monsters per area offered to the planner. */
@@ -554,6 +556,20 @@ const MONSTERS_PER_AREA = 3;
 export function readCombatTargets(): CombatTarget[] {
   const targets: CombatTarget[] = [];
 
+  // First, and deduplicated against the general sweep below.
+  //
+  // Taking a Slayer task blocks every future task until it is finished, and
+  // nothing turned the assigned monster into a fight. So the agent could take a
+  // task, close the only door Slayer XP comes through, and have no candidate
+  // that opens it again -- a self-inflicted deadlock built out of two features
+  // that each worked.
+  //
+  // Prepending rather than annotating in place: the assigned monster is usually
+  // not among the three easiest in its area, so it was frequently not emitted
+  // at all.
+  const assigned = readSlayerTaskTarget();
+  if (assigned !== null) targets.push(assigned);
+
   const areas = [...game.combatAreas.allObjects, ...game.slayerAreas.allObjects];
   for (const area of areas) {
     if (isRefusedRealm(area.realm.id)) continue;
@@ -561,6 +577,7 @@ export function readCombatTargets(): CombatTarget[] {
 
     const byLevel = [...area.monsters].sort((a, b) => combatLevelOf(a) - combatLevelOf(b));
     for (const monster of byLevel.slice(0, MONSTERS_PER_AREA)) {
+      if (monster.id === assigned?.id) continue;
       targets.push({
         kind: 'fight_monster',
         id: monster.id,
@@ -594,6 +611,69 @@ export function readCombatTargets(): CombatTarget[] {
   }
 
   return targets;
+}
+
+/**
+ * The monster an accepted Slayer task is asking for.
+ *
+ * The missing half of Slayer. `newSlayerTask` takes a task and
+ * `readSlayerCandidates` then correctly returns nothing while one is active --
+ * taking another discards the kills already made -- so an accepted task removed
+ * every Slayer candidate and put none back. The task's own monster
+ * (slayer.d.ts:106) was the one thing that could have advanced it, and nothing
+ * read it.
+ *
+ * The area is resolved rather than assumed: `SlayerTask` names a monster and not
+ * a place, while `engageMonster` needs both. Slayer areas are searched first,
+ * then ordinary combat areas that set `allowSlayerKills` — the game's own flag
+ * for "kills here count toward a Slayer task" (combatAreas.d.ts:353). Tasks are
+ * assigned by combat level rather than by area, so a low-level task monster
+ * genuinely can live outside a Slayer area, and searching only one registry
+ * would have reproduced the same dead end one level down.
+ *
+ * Enterability is checked here, not left to the engage call, because a candidate
+ * is by definition something the mod has proven it can execute now. A task whose
+ * area is gated is a real situation and it belongs in the blocked list rather
+ * than in a candidate that refuses every time it is chosen.
+ *
+ * @returns The assigned fight, or null when no task is active or it cannot be reached.
+ */
+export function readSlayerTaskTarget(): CombatTarget | null {
+  try {
+    const task = game.combat.slayerTask;
+    if (!task.active) return null;
+
+    const monster = task.monster;
+    if (monster === undefined) return null;
+
+    const reachable = (candidate: CombatArea): boolean =>
+      candidate.monsters.includes(monster) &&
+      !isRefusedRealm(candidate.realm.id) &&
+      game.checkRequirements(candidate.entryRequirements, false);
+
+    const area =
+      game.slayerAreas.allObjects.find(reachable) ??
+      game.combatAreas.allObjects.find(
+        (candidate) => candidate.allowSlayerKills && reachable(candidate),
+      );
+    if (area === undefined) return null;
+
+    return {
+      kind: 'fight_monster',
+      id: monster.id,
+      areaId: area.id,
+      name: monster.name,
+      areaName: area.name,
+      combatLevel: combatLevelOf(monster),
+      // Zero would be indistinguishable from "not a task monster" downstream,
+      // and a task with no kills left is one the game has already finished.
+      slayerKillsLeft: Math.max(1, task.killsLeft),
+    };
+  } catch {
+    // A task that cannot describe itself is not a candidate; the blocked list
+    // still explains why Slayer is offering nothing.
+    return null;
+  }
 }
 
 /** `combatLevel` is a getter that can throw on malformed modded monsters. */

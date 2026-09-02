@@ -372,3 +372,35 @@ What to do instead:
   load regenerates; a dump that loads with holes lies.
 - Before quoting a number, ask what it is the numerator and denominator *of*.
   `lootChance` passed that test and `100%` did not.
+
+## `autoReuseActions` is a blocklist wearing an allowlist's name
+
+`PotionManager.autoReuseActions: Set<Action>` is documented, in the game's own
+typings, as *"Actions for which potions should **not** be automatically
+re-used"* (potionManager.d.ts:11). The name says the opposite of the comment,
+and the comment is the part that was written on purpose.
+
+So the set is never read here. `autoReusePotionsForAction(action)`
+(potionManager.d.ts:19) is the single reading, and `setPotionAutoReuse` asserts
+that accessor's own value either side of `toggleAutoReusePotion` (:26).
+
+The general move is worth more than the fact. When a field's name and its
+documentation disagree, do not pick a winner — **express the action in terms of
+the accessor you can observe**, so the polarity stops being load-bearing. Read
+it wrong here and the cost is one reversible toggle that then reads as done;
+read a set membership wrong and the cost is a silent inversion nobody notices.
+
+## A skill can be unreachable with every piece of it present
+
+Prayer had a bury capability, a bury candidate, a toggle capability, a prayer
+candidate, and a reflex. Prayer 20 was still impossible.
+
+Burying grants points and no XP; the XP comes only from *spending* points during
+combat; spending needs a prayer switched on. The two candidates were the kind
+nobody ever picks, and the one reflex — `dropUnpayablePrayers` — exclusively
+turns prayers *off*, and was not even wired into the tick chain.
+
+Nothing was broken. Every part worked and the chain between them was never
+joined, which no per-part test can catch. Before believing a skill is covered,
+trace the loop end to end and name the step that actually produces the XP —
+here it was the fifth link, and four working links looked like coverage.

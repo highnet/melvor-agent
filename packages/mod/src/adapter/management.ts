@@ -264,6 +264,119 @@ export function usePotion(
   );
 }
 
+/**
+ * Turns automatic potion re-use on or off for one action.
+ *
+ * A potion is a fixed number of charges and then nothing. `usePotion` drinks
+ * one, the charges tick away against whatever is running, and the buff ends
+ * without a word — the skill carries on at the un-potioned rate, which looks
+ * exactly like the potion never having been worth much. Over a long objective
+ * the drink is a few minutes of benefit and hours of nothing.
+ *
+ * **On the polarity, which is the whole trap here.** `PotionManager` holds
+ * `autoReuseActions: Set<Action>` and documents it as *"Actions for which
+ * potions should **not** be automatically re-used"* (potionManager.d.ts:11) —
+ * the set is a blocklist and its name reads like an allowlist. So the set is
+ * never touched here. The single reading is `autoReusePotionsForAction`
+ * (potionManager.d.ts:19), whose name asks the question in the same direction
+ * this function's `enabled` answers it, and the action asserts that accessor's
+ * own value either side of `toggleAutoReusePotion` (potionManager.d.ts:26).
+ *
+ * That framing is what makes a wrong guess cheap rather than silent. If the
+ * accessor turned out to mean the opposite, this would toggle once, observe the
+ * value it asked for, and stop — because the caller's precondition is that same
+ * accessor. One reversible call, not a loop and not a loss.
+ *
+ * @param actionId - Namespaced id of the action the potion applies to.
+ * @param enabled - The value `autoReusePotionsForAction` should read afterwards.
+ */
+export function setPotionAutoReuse(
+  actionId: string,
+  enabled: boolean,
+  isSuspended: () => boolean,
+): ActionResult<{ actionId: string; autoReuse: boolean }> {
+  const action = game.actions.getObjectByID(actionId);
+  if (action === undefined) {
+    return fail('potion.setAutoReuse', 'precondition', `no action ${actionId}`);
+  }
+
+  const project = (): { actionId: string; autoReuse: boolean } => ({
+    actionId,
+    autoReuse: game.potions.autoReusePotionsForAction(action),
+  });
+
+  return act(
+    {
+      name: 'potion.setAutoReuse',
+      observe: project,
+      precondition: () =>
+        game.potions.autoReusePotionsForAction(action) === enabled
+          ? `auto re-use for ${actionId} is already ${enabled}`
+          : null,
+      perform: () => game.potions.toggleAutoReusePotion(action),
+      changed: (_before, after) => after.autoReuse === enabled,
+    },
+    isSuspended,
+  );
+}
+
+/** A potion that will lapse when its charges run out, with a replacement banked. */
+export interface LapsingPotion {
+  actionId: string;
+  actionName: string;
+  potionId: string;
+  potionName: string;
+  charges: number;
+  held: number;
+}
+
+/**
+ * Active potions that will lapse silently, and could be re-used instead.
+ *
+ * Deliberately restricted to potions that are *already active*. Turning
+ * automatic re-use on spends another potion from the bank when the charges run
+ * out, so this is not free — but it is not a fresh decision either: the planner
+ * has already chosen this potion for this action, and letting the choice expire
+ * halfway through the objective it was drunk for is not a decision anyone made.
+ *
+ * Restricted again to potions there are more of. Enabling re-use with an empty
+ * bank changes nothing, and a candidate or reflex that fires on nothing is how
+ * the reflex tier fills a journal with refusals.
+ *
+ * @returns Active potions that would lapse, with what is banked to replace them.
+ */
+export function readLapsingPotions(): LapsingPotion[] {
+  const lapsing: LapsingPotion[] = [];
+
+  try {
+    for (const [action, active] of game.potions.activePotions) {
+      try {
+        if (game.potions.autoReusePotionsForAction(action)) continue;
+
+        const held = game.bank.getQty(active.item);
+        if (held <= 0) continue;
+
+        lapsing.push({
+          actionId: action.id,
+          actionName: action.name,
+          potionId: active.item.id,
+          potionName: active.item.name,
+          charges: active.charges,
+          held,
+        });
+      } catch {
+        // An action whose potion state cannot be read is left alone.
+      }
+    }
+  } catch {
+    // No active potions readable is reported as none lapsing, which fails
+    // toward doing nothing.
+    return [];
+  }
+
+  return lapsing;
+}
+
 // --- slayer ----------------------------------------------------------------
 
 /**
@@ -345,6 +458,87 @@ export function readSlayerCandidates(): Candidate[] {
   }
 
   return candidates;
+}
+
+/**
+ * Prayers currently switched on.
+ *
+ * Read live rather than from the snapshot, which carries prayer points but not
+ * the prayers spending them. Both prayer reflexes need it: one to know there is
+ * something to drop, the other to know there is nothing to add to.
+ */
+export function readActivePrayerIds(): string[] {
+  try {
+    return [...game.combat.player.activePrayers].map((prayer) => prayer.id).sort();
+  } catch {
+    // An unreadable prayer set reports as empty, which stops the drop reflex
+    // and lets the activation reflex try — the cheaper of the two mistakes,
+    // since activation is refused by the adapter when it cannot be paid for.
+    return [];
+  }
+}
+
+/** A prayer that can be switched on now, and what it costs to run. */
+export interface ActivatablePrayer {
+  prayerId: string;
+  name: string;
+  /** Points spent per attack the player makes. */
+  pointsPerPlayer: number;
+  /** Points spent per attack the enemy makes. */
+  pointsPerEnemy: number;
+}
+
+/**
+ * Prayers the character can switch on right now, cheapest to run first.
+ *
+ * Prayer is the one skill in the game with no action of its own. Burying bones
+ * grants points and no XP — verified live, 52 bones for zero XP — and the XP
+ * comes only from *spending* those points during a fight. So a prayer being
+ * active is not a buff decision, it is the entire training method, and Prayer 20
+ * was unreachable by construction while nothing ever turned one on.
+ *
+ * Cheapest first is deliberate and is not about efficiency. The point is to
+ * spend points steadily for as long as the bones last; an expensive prayer
+ * empties the bar in a handful of swings and then the reflex that drops
+ * unpayable prayers switches it off again.
+ *
+ * Two exclusions, both from the game's own data rather than from a name:
+ *
+ * - `useSoulPoints` prayers (prayer.d.ts:36) spend Soul Points, a different
+ *   currency with a different source, so a check on prayer points says nothing
+ *   about whether they can be paid for.
+ * - `canUseWithDamageType` (prayer.d.ts:39) against the player's own damage type
+ *   (character.d.ts:100), because a prayer the character cannot use is one the
+ *   game silently refuses — the same shape as selecting a spell without runes.
+ */
+export function readActivatablePrayers(): ActivatablePrayer[] {
+  const player = game.combat.player;
+  const prayers: ActivatablePrayer[] = [];
+  const prayerLevel = game.skills.getObjectByID('melvorD:Prayer')?.level ?? 1;
+
+  for (const prayer of game.prayers.allObjects) {
+    try {
+      if (player.activePrayers.has(prayer)) continue;
+      if (isRefusedRealm(prayer.realm.id)) continue;
+      // ActivePrayer has no requirements array; it gates on Prayer level.
+      if (prayer.level > prayerLevel) continue;
+      if (prayer.useSoulPoints) continue;
+      if (!prayer.canUseWithDamageType(player.damageType)) continue;
+
+      prayers.push({
+        prayerId: prayer.id,
+        name: prayer.name,
+        pointsPerPlayer: prayer.pointsPerPlayer,
+        pointsPerEnemy: prayer.pointsPerEnemy,
+      });
+    } catch {
+      // A prayer that cannot state its cost is not offered.
+    }
+  }
+
+  return prayers.sort(
+    (a, b) => a.pointsPerPlayer + a.pointsPerEnemy - (b.pointsPerPlayer + b.pointsPerEnemy),
+  );
 }
 
 /**

@@ -2,6 +2,8 @@ import type { ActionResult } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   abandonIfOutmatched,
+  activateCheapestPrayer,
+  buryBonesWhenHeld,
   buyTrivialUpgrades,
   claimFinishedTasks,
   collectPendingLoot,
@@ -10,6 +12,7 @@ import {
   eatWhenLow,
   expandBankWhenFull,
   harvestReadyPlots,
+  keepPotionsActive,
   openPendingContainers,
   plantEmptyPlots,
   refillFood,
@@ -873,5 +876,135 @@ describe('plantEmptyPlots pairs categories', () => {
         () => ok(),
       ),
     ).toBeNull();
+  });
+});
+
+describe('Prayer, which nothing could reach', () => {
+  it('buries bones while the point bar is low', () => {
+    // Prayer XP comes only from spending points in combat, points come only
+    // from bones, and burying was a candidate nobody ever picked. Both halves
+    // of the skill existed and neither ever ran.
+    const bury = vi.fn(() => ok);
+    const outcome = buryBonesWhenHeld(
+      { prayerPoints: 0, bones: [{ itemId: 'melvorD:Bones', quantity: 52 }] },
+      bury,
+    );
+
+    expect(outcome?.name).toBe('reflex.buryBones');
+    expect(bury).toHaveBeenCalledWith('melvorD:Bones', 52);
+  });
+
+  it('leaves bones in the bank once points are deep', () => {
+    // The typings do not state the point bar's maximum, so pouring a stack into
+    // a bar that may already be at it is the one way this could destroy value.
+    // Bones keep indefinitely, so the reserve costs nothing.
+    const bury = vi.fn(() => ok);
+    expect(
+      buryBonesWhenHeld(
+        { prayerPoints: 5000, bones: [{ itemId: 'melvorD:Bones', quantity: 52 }] },
+        bury,
+      ),
+    ).toBeNull();
+    expect(bury).not.toHaveBeenCalled();
+  });
+
+  it('does nothing with no bones held', () => {
+    expect(buryBonesWhenHeld({ prayerPoints: 0, bones: [] }, () => ok)).toBeNull();
+  });
+
+  it('turns on the cheapest prayer in a fight', () => {
+    // Cheapest so the points last: an expensive prayer empties the bar in a few
+    // swings and dropUnpayablePrayers then switches it straight back off.
+    const toggle = vi.fn(() => ok);
+    const outcome = activateCheapestPrayer(
+      {
+        inCombat: true,
+        prayerPoints: 200,
+        activePrayerIds: [],
+        available: [
+          { prayerId: 'melvorD:Thick_Skin', name: 'Thick Skin' },
+          { prayerId: 'melvorD:Ultimate_Strength', name: 'Ultimate Strength' },
+        ],
+      },
+      toggle,
+    );
+
+    expect(outcome?.name).toBe('reflex.activatePrayer');
+    expect(toggle).toHaveBeenCalledWith('melvorD:Thick_Skin');
+  });
+
+  it('never turns a prayer on outside combat', () => {
+    // An active prayer drains on regeneration ticks whether or not anything is
+    // being fought, so firing this outside a fight spends the bones for nothing.
+    expect(
+      activateCheapestPrayer(
+        {
+          inCombat: false,
+          prayerPoints: 200,
+          activePrayerIds: [],
+          available: [{ prayerId: 'melvorD:Thick_Skin', name: 'Thick Skin' }],
+        },
+        () => ok,
+      ),
+    ).toBeNull();
+  });
+
+  it('adds nothing when a prayer is already running', () => {
+    // The game's cap on simultaneous prayers is not in the typings, so one is
+    // enough: it spends points and trains the skill without guessing at a limit.
+    expect(
+      activateCheapestPrayer(
+        {
+          inCombat: true,
+          prayerPoints: 200,
+          activePrayerIds: ['melvorD:Thick_Skin'],
+          available: [{ prayerId: 'melvorD:Ultimate_Strength', name: 'Ultimate Strength' }],
+        },
+        () => ok,
+      ),
+    ).toBeNull();
+  });
+
+  it('cannot fight dropUnpayablePrayers over the same prayer', () => {
+    // The two conditions are disjoint by construction — one fires only at zero
+    // points, the other only above zero — so neither can undo the other, and
+    // the pair cannot flip a prayer on and off once a second.
+    const active = { inCombat: true, activePrayerIds: ['melvorD:Thick_Skin'] };
+
+    expect(dropUnpayablePrayers({ ...active, prayerPoints: 0 }, () => ok)).not.toBeNull();
+    expect(
+      activateCheapestPrayer(
+        { ...active, prayerPoints: 0, available: [{ prayerId: 'p', name: 'p' }] },
+        () => ok,
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('potions that would otherwise lapse', () => {
+  it('enables re-use for an active potion with more in the bank', () => {
+    // usePotion drinks one and nothing re-uses it, so a buff drunk for a
+    // three-hour objective covers the first few minutes of it and then stops
+    // without a word.
+    const enable = vi.fn(() => ok);
+    const outcome = keepPotionsActive(
+      {
+        lapsing: [
+          { actionId: 'melvorD:Mining', actionName: 'Mining', potionName: 'Mining Potion I' },
+        ],
+      },
+      enable,
+    );
+
+    expect(outcome?.name).toBe('reflex.keepPotionActive');
+    expect(enable).toHaveBeenCalledWith('melvorD:Mining');
+  });
+
+  it('does nothing when no potion is lapsing', () => {
+    // The reader supplies the rest of the guard: it offers nothing unless a
+    // potion is already active and a replacement is already banked.
+    const enable = vi.fn(() => ok);
+    expect(keepPotionsActive({ lapsing: [] }, enable)).toBeNull();
+    expect(enable).not.toHaveBeenCalled();
   });
 });

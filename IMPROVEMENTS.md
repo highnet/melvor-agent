@@ -222,23 +222,47 @@ Township summary reported 0% health while the repair reflex correctly computed
       — S. `getLowestUpgradeInChain`, `upgradeChains`.
 - [ ] **Skilling outfits score zero** — M. `statScore` sums equipment stats, and an
       outfit's value is in modifiers — so Township's entire payoff is unwearable.
-- [ ] **Potions lapse silently** — S. `toggleAutoReusePotion` is never called.
-- [x] **Township building is one-at-a-time and upgrade-blind** — M.
+      *Partly done:* `readModifierGear` now surfaces owned modifier-bearing gear
+      with the game's own effect descriptions, so it is at least visible. Scoring
+      it was deliberately not attempted: a modifier's worth depends on what the
+      run is doing (+5% Mining mastery XP is everything to a miner and nothing to
+      a fisher), so any weight would be a guess presented as a measurement — the
+      exact failure that made a Steel Platebody outscore what it replaced.
+      Wearing it stays a planner decision until there is a way to price it
+      against the current objective.
+- [x] **Potions lapse silently** — S. `toggleAutoReusePotion` is now called by a
+      reflex, but only for a potion *already active* with a replacement banked —
+      the planner chose the potion, this only stops the choice expiring. Polarity
+      settled and written down: `autoReuseActions` is documented as the actions
+      potions should **not** be re-used for, so the set is never read; the action
+      asserts `autoReusePotionsForAction` either side of the toggle, which makes
+      a wrong reading cost one reversible call rather than a silent inversion.
+- [ ] **Township building is one-at-a-time and upgrade-blind** — M.
       `getBuildingCountRemainingForLevelUp` turns it into a targeted objective.
-- [ ] **Slayer: an accepted task has no fight candidate** — M. Take a task, block
-      every future task behind it, and have nothing that advances it.
+- [x] **Slayer: an accepted task has no fight candidate** — M. `readSlayerTaskTarget`
+      turns `slayerTask.monster` into a prioritised `fight_monster` candidate with
+      kills remaining in the label, area resolved from `game.slayerAreas` and
+      enterability checked, so a refused task lands in the blocked list saying it
+      is the deadlock rather than one line among two hundred.
 - [x] **Attack-style candidates never say which skill they train** — S.
       `AttackStyle.experienceGain` is the game's own answer, and this is the only
       lever on four combat goals.
-- [ ] **Prayer 20 is structurally unreachable** — M. Burying and activation are
-      both candidates nobody picks, and the only prayer reflex turns them *off*.
-- [x] **Dig-site maps can be selected but never created** — M. When the last map's
+- [x] **Prayer 20 is structurally unreachable** — M. `buryBonesWhenHeld` converts
+      bones under a point reserve and `activateCheapestPrayer` spends the points
+      in combat, which is the only source of Prayer XP there is.
+      `dropUnpayablePrayers` was also never wired into the chain at all; it is now,
+      and the two conditions are disjoint so neither can undo the other.
+- [ ] **Dig-site maps can be selected but never created** — M. When the last map's
       charges run out Archaeology vanishes with no way back, and the agent makes
       paper forever. `createNewMapForDigSite` (cartography.d.ts:389).
-- [ ] **Charged equipment burns out unnoticed** — S. `game.itemCharges` appears
-      nowhere in the mod.
-- [ ] **`Bank.lostItems` is never read** — S. The game records exactly what was
-      discarded at a full bank; we warn speculatively instead.
+- [x] **Charged equipment burns out unnoticed** — S. `readEquipmentCharges` reads
+      `getCharges` for every worn item marked with `consumesChargesOn`, and a
+      spent or nearly-spent one is reported. It is the failure with no symptom:
+      the item stays worn, every reading looks right, and the rate just drops.
+- [x] **`Bank.lostItems` is never read** — S. `readLostItems` reports what the
+      game recorded as discarded, as a receipt separate from the countdown. It is
+      a floor rather than a total — the typings do not say when the map is
+      cleared — but a non-empty map is proof, never a false positive.
 
 ## Architecture
 
