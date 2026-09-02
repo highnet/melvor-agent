@@ -9,9 +9,11 @@ import { gpCostOf } from './shop.js';
  * originates here. The dump is stamped with `gameVersion` so a game update
  * makes the staleness detectable rather than silent.
  *
- * Only the slices Phase 1 and the Phase 2 combat gate need are exported. This
- * is deliberate: `game.items` alone is thousands of entries, and a dump nobody
- * reads is just a large file that goes stale.
+ * Sections are added when a question could not be answered without them, and
+ * not before: a dump nobody reads is just a large file that goes stale. The
+ * item table is the one place that argument was made backwards — `game.items`
+ * is thousands of entries, so it was left out, and every item the agent picked
+ * up rather than produced then had no price at all.
  *
  * @returns A structured dump ready to be serialised to `knowledge/dump.json`.
  */
@@ -57,6 +59,43 @@ function safeBoolean(read: () => boolean, fallback: boolean): boolean {
 }
 
 /**
+ * Cuts an oversized section to a limit, and says that it did.
+ *
+ * Three sections were sliced with a bare `.slice(0, n)` and no record of it,
+ * which is how one file came to hold two disagreeing answers to the same
+ * question: `herbloreRecipes` reported twelve recipes while `skillRecipes`
+ * reported seventy-two for the same skill, and nothing in either said one had
+ * been cut. A reader has no way to tell a short list from a truncated one.
+ *
+ * Those slices are gone. This remains for the one section that is genuinely
+ * unbounded — every item in the game — so that a cap, if it ever bites, is a
+ * recorded fact rather than a silent one.
+ *
+ * @param items - The full list.
+ * @param limit - Maximum entries to keep.
+ * @returns The kept entries, the count they were cut at (null when uncut), and
+ *   how many there were to begin with.
+ */
+export function capSection<T>(
+  items: readonly T[],
+  limit: number,
+): { items: T[]; truncatedAt: number | null; totalAvailable: number } {
+  if (items.length <= limit) {
+    return { items: [...items], truncatedAt: null, totalAvailable: items.length };
+  }
+  return { items: items.slice(0, limit), truncatedAt: limit, totalAvailable: items.length };
+}
+
+/**
+ * How many items the flat item table will carry before it cuts.
+ *
+ * Chosen to sit above every item the base game and its expansions register, so
+ * in practice it never bites; it exists so that a future content drop produces
+ * a recorded truncation instead of a quietly shorter table.
+ */
+const ITEM_TABLE_LIMIT = 5000;
+
+/**
  * Describes a requirement list without pretending to know every shape.
  *
  * Flattening an unrecognised requirement to its bare type name is what made
@@ -85,6 +124,28 @@ function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
 }
 
 export function dumpRegistries(): KnowledgeDump {
+  /**
+   * Cuts made while building this dump.
+   *
+   * Filled in by the sections below as they evaluate, which is why
+   * `truncations` is the *last* key of the returned literal — object literal
+   * properties evaluate in source order, so anything placed after it would
+   * report its cut into an array that has already been read.
+   */
+  const truncations: { section: string; truncatedAt: number; totalAvailable: number }[] = [];
+
+  function take<T>(section: string, items: readonly T[], limit: number): T[] {
+    const cut = capSection(items, limit);
+    if (cut.truncatedAt !== null) {
+      truncations.push({
+        section,
+        truncatedAt: cut.truncatedAt,
+        totalAvailable: cut.totalAvailable,
+      });
+    }
+    return cut.items;
+  }
+
   return {
     gameVersion: gameVersion,
     capturedAt: Date.now(),
@@ -121,15 +182,63 @@ export function dumpRegistries(): KnowledgeDump {
       productSellsFor: tree.product.sellsFor.quantity,
       productSellsForCurrencyId: tree.product.sellsFor.currency.id,
     })),
+    // Mining rocks, with the numbers that decide what mining actually pays.
+    //
+    // A rock is not a tree: it holds a fixed amount of HP, one swing takes one
+    // HP, and when it empties the rock is gone for `baseRespawnInterval`. Price
+    // only the swing and Crystal advertises 120,000 GP/h against about 10,800
+    // realised. The correction is arithmetic given `maxHP` and the respawn —
+    // and because neither had ever been dumped, it had to be measured by hand
+    // against a stopwatch instead.
+    //
+    // `maxHP` comes from `getRockMaxHP` (rockTicking.d.ts:180) rather than the
+    // `maxHP` field, for the same reason `miningIntervalFor` uses it: mastery
+    // raises how many swings a rock takes before it empties, so the field would
+    // freeze every rock at its unmastered value and make the correction wrong
+    // in a second way.
+    //
+    // `hasPassiveRegen` (:70) is the exception that breaks the whole model —
+    // gem veins refill on a timer while nothing is mining them — and it is
+    // useless without the rate that refill happens at, so the skill-wide
+    // `passiveRegenInterval` (:108) is carried on each row to keep the row
+    // self-contained. `baseQuantity` (:67) is ore per swing, which is not
+    // always one and was silently assumed to be.
+    miningRocks: (() => {
+      try {
+        return game.mining.actions.allObjects.map((rock) => ({
+          id: rock.id,
+          name: rock.name,
+          level: rock.level,
+          baseExperience: safeNumber(() => rock.baseExperience, 0),
+          maxHP: safeNumber(() => game.mining.getRockMaxHP(rock), 0),
+          baseRespawnInterval: safeNumber(() => rock.baseRespawnInterval, 0),
+          hasPassiveRegen: safeBoolean(() => rock.hasPassiveRegen, false),
+          passiveRegenInterval: safeNumber(() => game.mining.passiveRegenInterval, 0),
+          baseQuantity: safeNumber(() => rock.baseQuantity, 1),
+          productId: safeText(() => rock.product.id),
+          productName: safeText(() => rock.product.name),
+          productSellsFor: safeNumber(() => rock.product.sellsFor.quantity, 0),
+          productSellsForCurrencyId: safeText(() => rock.product.sellsFor.currency.id),
+        }));
+      } catch {
+        return [];
+      }
+    })(),
     // Herblore recipes and their exact inputs.
     //
     // The only level-1 recipe, Bird Nest Potion I, was read off a screenshot as
     // "1 Herb + 2 seeds" from two small icons. Reading pictures is how five
     // conclusions went wrong today, and this one decides what the whole
     // Herblore chain actually needs, so it belongs in data.
+    //
+    // Dumped whole. It used to stop at twelve, so this section reported twelve
+    // Herblore recipes while `skillRecipes` reported seventy-two for the same
+    // skill — one file holding two answers to one question, with nothing saying
+    // which of them had been cut. Duplicating the costs across two sections is
+    // a far smaller problem than that.
     herbloreRecipes: (() => {
       try {
-        return game.herblore.actions.allObjects.slice(0, 12).map((recipe) => ({
+        return game.herblore.actions.allObjects.map((recipe) => ({
           id: recipe.id,
           name: recipe.name,
           level: recipe.level,
@@ -156,6 +265,12 @@ export function dumpRegistries(): KnowledgeDump {
     // `chance` is left as the raw object the game holds rather than flattened,
     // because its shape varies by drop type and inventing a normalisation would
     // be exactly the guesswork this removes.
+    //
+    // Every drop of every skill, no longer six per skill and sixty overall.
+    // Those two slices were invisible in the output, so a skill whose seventh
+    // rare drop was the one being looked for read as a skill that does not drop
+    // it — the same failure mode as an undumped section, with the added cost of
+    // looking answered.
     skillRareDrops: (() => {
       const out: {
         skillId: string;
@@ -168,7 +283,7 @@ export function dumpRegistries(): KnowledgeDump {
         for (const skill of game.skills.allObjects) {
           const drops = (skill as { rareDrops?: unknown }).rareDrops;
           if (!Array.isArray(drops)) continue;
-          for (const drop of drops.slice(0, 6)) {
+          for (const drop of drops) {
             try {
               out.push({
                 skillId: skill.id,
@@ -185,7 +300,7 @@ export function dumpRegistries(): KnowledgeDump {
       } catch {
         return [];
       }
-      return out.slice(0, 60);
+      return out;
     })(),
     // Summoning tablet recipes.
     //
@@ -200,7 +315,7 @@ export function dumpRegistries(): KnowledgeDump {
     // cannot infer from a flat cost list.
     summoningRecipes: (() => {
       try {
-        return game.summoning.actions.allObjects.slice(0, 20).map((recipe) => ({
+        return game.summoning.actions.allObjects.map((recipe) => ({
           id: recipe.id,
           name: recipe.name,
           level: recipe.level,
@@ -382,10 +497,20 @@ export function dumpRegistries(): KnowledgeDump {
       name: npc.name,
       level: npc.level,
       maxHit: npc.maxHit,
-      lootTable: npc.lootTable.drops.map((drop) => drop.item.name),
+      // Names replaced by the table the game actually rolls. A list of names
+      // says a drop is possible and nothing else: not how many come out, and
+      // not how often against the rest of the table.
+      lootDrops: dumpDropTable(npc.lootTable.drops),
+      lootTotalWeight: safeNumber(() => npc.lootTable.totalWeight, 0),
       // The guaranteed drop, which the table does not include and which was
       // invisible for the same reason monster loot was.
       uniqueDrop: safeText(() => npc.uniqueDrop?.item.name ?? ''),
+      uniqueDropQuantity: safeNumber(() => npc.uniqueDrop?.quantity ?? 0, 0),
+      // Coins are not items, so they are in no loot table and were in no
+      // section — which left the dump describing the agent's largest single
+      // income as yielding nothing at all. `currencyDrops` (thieving2.d.ts:36)
+      // is where a pickpocket's actual pay lives.
+      currencyDrops: dumpCurrencyQuantities(npc.currencyDrops),
     })),
     monsters: game.monsters.allObjects.map((monster) => ({
       id: monster.id,
@@ -405,21 +530,52 @@ export function dumpRegistries(): KnowledgeDump {
       // rate: a seed on a table that rolls one kill in fifty is not comparable
       // to a Bird Nest, and comparing them was the entire point of asking.
       lootChance: safeNumber(() => monster.lootChance, 0),
-      lootTable: safeList(() => monster.lootTable.drops.map((drop) => drop.item.name)),
-      // Weights, because `lootChance` alone is not a rate and reading it as one
-      // produced a wrong claim within minutes of the table being dumped:
-      // "Golbin drops Garum Seeds at 100% loot chance" is two facts welded into
-      // a falsehood. `lootChance` is the chance the table rolls *at all*; which
-      // item comes out is then weight/totalWeight. A seed on a 1-in-40 slot of
-      // a table that always rolls is not a seed every kill.
+      // The table itself, because `lootChance` alone is not a rate and reading
+      // it as one produced a wrong claim within minutes of the table being
+      // dumped: "Golbin drops Garum Seeds at 100% loot chance" is two facts
+      // welded into a falsehood. `lootChance` is the chance the table rolls *at
+      // all*; which item comes out is then weight/totalWeight, and how many
+      // come out is min/max. A seed on a 1-in-40 slot of a table that always
+      // rolls is not a seed every kill.
       //
-      // With these, seeds-per-kill is arithmetic instead of a guess, which is
-      // the whole difference between choosing a fight and hoping about one.
+      // This replaces the parallel `lootTable`/`lootWeights` name lists. The
+      // same table split across two string arrays is how the two halves came to
+      // be read separately in the first place, and neither carried a quantity.
       lootTotalWeight: safeNumber(() => monster.lootTable.totalWeight, 0),
-      lootWeights: safeList(() =>
-        monster.lootTable.drops.map((drop) => `${drop.item.name}:${drop.weight}`),
-      ),
+      lootDrops: dumpDropTable(monster.lootTable.drops),
+      // What a kill pays in coin. The dump priced every fight at the sale value
+      // of its items and nothing else, so a monster that drops GP and no items
+      // read as worth killing for exactly zero. `currencyDrops`
+      // (monsters.d.ts:112) is a min/max range, not a fixed amount.
+      currencyDrops: dumpCurrencyRange(monster.currencyDrops),
       bones: safeText(() => monster.bones?.item.name ?? ''),
+      // Stats, so a fight can be assessed as something other than one number.
+      //
+      // `combatLevel` alone cannot say whether a monster is dangerous to *this*
+      // character: it blends offence and defence into a single figure, and the
+      // question that actually matters — can we out-damage its Hitpoints before
+      // its attack type beats our gear — needs the parts. `levels`
+      // (monsters.d.ts:103) and `attackType` (:106) are the game's own answers.
+      //
+      // Still deliberately absent: maxHit, for the reason stated above. Levels
+      // are stored data; a max hit is computed on an instantiated Enemy, and
+      // reconstructing one here would be an invention dressed as a reading.
+      levels: {
+        hitpoints: safeNumber(() => monster.levels.Hitpoints, 0),
+        attack: safeNumber(() => monster.levels.Attack, 0),
+        strength: safeNumber(() => monster.levels.Strength, 0),
+        defence: safeNumber(() => monster.levels.Defence, 0),
+        ranged: safeNumber(() => monster.levels.Ranged, 0),
+        magic: safeNumber(() => monster.levels.Magic, 0),
+        corruption: safeNumber(() => monster.levels.Corruption, 0),
+      },
+      attackType: safeText(() => monster.attackType),
+      // A boss cannot be farmed the way a normal monster can, and a monster
+      // that `canSlayer` (:118) is the only kind a Slayer task can ever ask
+      // for — which is exactly the join an accepted task needs to become a
+      // fight candidate.
+      isBoss: safeBoolean(() => monster.isBoss, false),
+      canSlayer: safeBoolean(() => monster.canSlayer, false),
     })),
     dungeons: game.dungeons.allObjects.map((dungeon) => ({
       id: dungeon.id,
@@ -462,6 +618,31 @@ export function dumpRegistries(): KnowledgeDump {
       // modifiers a purchase grants.
       effect: safeText(() => purchase.contains.stats?.describePlain() ?? ''),
     })),
+    // Every item, flat.
+    //
+    // Sale value existed only where some recipe happened to produce the item,
+    // so anything the agent picked up rather than made — a drop, a container's
+    // contents, a shop good, a bone — was unpriced, and an unpriced input
+    // defaults to zero in exactly the wrong direction: Leather armour read as
+    // 90,000 GP/h until the 100 GP the Leather costs was found by hand.
+    //
+    // Scalar-only and deliberately so. This is thousands of rows; one nested
+    // object per row is what makes a reference too large to read. `category`
+    // and `type` (item.d.ts:43-44) are the game's own grouping, `sellsFor`
+    // (:58) is a currency quantity so the currency is named rather than
+    // assumed, and `healsFor` (:264) is on FoodItem alone — zero everywhere
+    // else, which is the honest reading for an item that heals nothing.
+    items: take('items', game.items.allObjects, ITEM_TABLE_LIMIT).map((item) => ({
+      id: item.id,
+      name: item.name,
+      category: safeText(() => item.category),
+      type: safeText(() => item.type),
+      sellsFor: safeNumber(() => item.sellsFor.quantity, 0),
+      sellsForCurrencyId: safeText(() => item.sellsFor.currency.id),
+      healsFor: safeNumber(() => (item instanceof FoodItem ? item.healsFor : 0), 0),
+    })),
+    // Last, and it has to stay last: see the declaration above.
+    truncations,
   };
 }
 
@@ -501,9 +682,14 @@ function dumpSkillRecipes(): {
   baseAbyssalExperience: number;
   abyssalLevel: number;
   realmId: string;
+  recipeInterval: number;
   itemCosts: { itemId: string; name: string; quantity: number }[];
+  buildCosts: { itemId: string; name: string; quantity: number }[];
+  buildCurrencyCosts: { currencyId: string; currencyName: string; quantity: number }[];
   runeCosts: { itemId: string; name: string; quantity: number }[];
   fixedItemCosts: { itemId: string; name: string; quantity: number }[];
+  currencyRewards: { currencyId: string; currencyName: string; quantity: number }[];
+  itemRewards: { itemId: string; name: string; quantity: number }[];
   productId: string;
   productName: string;
   baseQuantity: number;
@@ -527,6 +713,19 @@ function dumpSkillRecipes(): {
 
     const baseInterval = safeNumber(() => withActions.baseInterval ?? 0, 0);
 
+    // Agility is the one skill whose `itemCosts` are not consumption.
+    //
+    // `BaseAgilityObject.itemCosts` (agility.d.ts:23) is what building an
+    // obstacle costs once; the obstacle is then run for as long as it stands.
+    // Recorded as `itemCosts` — a field this file documents as "inputs a recipe
+    // consumes" — it charges every lap the price of construction, which is a
+    // profit calculation wrong by however many laps the course is run.
+    //
+    // Identified by object identity against `game.agility` rather than by id
+    // string or class name, because that cannot be wrong about which skill it
+    // matched.
+    const costsAreOneTime = (skill as unknown) === (game.agility as unknown);
+
     for (const raw of recipes) {
       const recipe = raw as {
         id?: string;
@@ -539,6 +738,10 @@ function dumpSkillRecipes(): {
         itemCosts?: { item: { id: string; name: string }; quantity: number }[];
         runesRequired?: { item: { id: string; name: string }; quantity: number }[];
         fixedItemCosts?: { item: { id: string; name: string }; quantity: number }[];
+        baseInterval?: number;
+        currencyCosts?: { currency: { id: string; name: string }; quantity: number }[];
+        currencyRewards?: { currency: { id: string; name: string }; quantity: number }[];
+        itemRewards?: { item: { id: string; name: string }; quantity: number }[];
         product?: {
           id: string;
           name: string;
@@ -564,7 +767,22 @@ function dumpSkillRecipes(): {
           baseAbyssalExperience: safeNumber(() => recipe.baseAbyssalExperience ?? 0, 0),
           abyssalLevel: safeNumber(() => recipe.abyssalLevel ?? 0, 0),
           realmId: safeText(() => recipe.realm?.id ?? ''),
-          itemCosts: dumpItemCosts(recipe.itemCosts),
+          // The recipe's own interval where it has one, which several skills
+          // do: an Agility obstacle and a Firemaking log both time themselves,
+          // and the skill-level `baseInterval` above is 0 for the first and a
+          // flat nominal 3,000ms for every log of the second. A rate built on
+          // the skill constant alone ranks logs by XP and picks the slowest.
+          // `AgilityObstacle.baseInterval` is agility.d.ts:72.
+          recipeInterval: safeNumber(() => recipe.baseInterval ?? 0, 0),
+          itemCosts: costsAreOneTime ? [] : dumpItemCosts(recipe.itemCosts),
+          // A one-time build cost, kept apart from consumption so no arithmetic
+          // can mistake one for the other. Empty for every skill but Agility.
+          buildCosts: costsAreOneTime ? dumpItemCosts(recipe.itemCosts) : [],
+          // Most obstacles are built with GP rather than items
+          // (`BaseAgilityObject.currencyCosts`, agility.d.ts:24) — Cargo Net
+          // costs no items at all — so recording only the item half would leave
+          // the usual build cost at zero, which reads as free.
+          buildCurrencyCosts: costsAreOneTime ? dumpCurrencyQuantities(recipe.currencyCosts) : [],
           // Alt Magic prices its casts in runes, not itemCosts, so a spell
           // dumped without them looks free -- and when the candidate list then
           // withheld every spell, the dump could not say whether the cause was
@@ -573,6 +791,12 @@ function dumpSkillRecipes(): {
           // itemCosts (altMagic.d.ts:57).
           runeCosts: dumpItemCosts(recipe.runesRequired),
           fixedItemCosts: dumpItemCosts(recipe.fixedItemCosts),
+          // What an obstacle pays per lap. An Agility obstacle has no product
+          // item at all, so with only `product` recorded the entire skill read
+          // as producing nothing — while `currencyRewards` (agility.d.ts:75)
+          // and `itemRewards` (:76) are the whole of what it yields.
+          currencyRewards: dumpCurrencyQuantities(recipe.currencyRewards),
+          itemRewards: dumpItemCosts(recipe.itemRewards),
           productId: safeText(() => recipe.product?.id ?? ''),
           productName: safeText(() => recipe.product?.name ?? ''),
           baseQuantity: safeNumber(() => recipe.baseQuantity ?? 1, 1),
@@ -587,6 +811,82 @@ function dumpSkillRecipes(): {
   }
 
   return out;
+}
+
+/**
+ * A drop table, with the quantities the game actually rolls.
+ *
+ * Every drop in this dump used to be a bare item name, so the table said what
+ * *can* come out and never how much — and a table read as one-item-per-roll
+ * understates any drop that rolls in bundles. `DropTableElement` carries
+ * `minQuantity`, `maxQuantity` and `weight` together (utils.d.ts:424-428);
+ * splitting them across sections is what let "Golbin drops Garum Seeds at 100%
+ * loot chance" be assembled out of true parts, so they are kept together here.
+ *
+ * The weight is only a rate alongside the table's `totalWeight`, which every
+ * caller of this records next to it.
+ */
+function dumpDropTable(drops: readonly DropTableElement[] | undefined): {
+  itemId: string;
+  itemName: string;
+  minQuantity: number;
+  maxQuantity: number;
+  weight: number;
+}[] {
+  try {
+    return (drops ?? []).map((drop) => ({
+      itemId: drop.item.id,
+      itemName: drop.item.name,
+      minQuantity: drop.minQuantity,
+      maxQuantity: drop.maxQuantity,
+      weight: drop.weight,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Currency amounts, as the game states them.
+ *
+ * The agent's largest single income is Thieving, and the dump described it as
+ * yielding nothing: coins are not items, so they appear in no loot table and
+ * were in no section. `ThievingNPC.currencyDrops` (thieving2.d.ts:36) is a flat
+ * `CurrencyQuantity`; `Monster.currencyDrops` (monsters.d.ts:112) is a range,
+ * and is dumped by `dumpCurrencyRange` instead.
+ *
+ * Typed structurally rather than as `CurrencyQuantity` so the generic recipe
+ * dumper, which describes its rows by shape, can hand its `currencyRewards`
+ * to the same function.
+ */
+function dumpCurrencyQuantities(
+  drops: readonly { currency: { id: string; name: string }; quantity: number }[] | undefined,
+): { currencyId: string; currencyName: string; quantity: number }[] {
+  try {
+    return (drops ?? []).map((drop) => ({
+      currencyId: drop.currency.id,
+      currencyName: drop.currency.name,
+      quantity: drop.quantity,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** A monster's currency drops, which are a min/max range rather than a fixed amount. */
+function dumpCurrencyRange(
+  drops: readonly CurrencyDrop[] | undefined,
+): { currencyId: string; currencyName: string; min: number; max: number }[] {
+  try {
+    return (drops ?? []).map((drop) => ({
+      currencyId: drop.currency.id,
+      currencyName: drop.currency.name,
+      min: drop.min,
+      max: drop.max,
+    }));
+  } catch {
+    return [];
+  }
 }
 
 /** Inputs a recipe consumes, empty for a gathering action that consumes none. */
