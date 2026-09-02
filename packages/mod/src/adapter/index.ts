@@ -221,7 +221,7 @@ export {
 export { dumpRegistries } from './registries.js';
 export { CharacterSettings, type PersistenceHealth } from './storage.js';
 export { addSidebarPanel, type PanelHandle } from './sidebar.js';
-export { exportSave } from './save.js';
+export { exportSave, reloadGame } from './save.js';
 export type {
   ActionResult,
   ActiveActionState,

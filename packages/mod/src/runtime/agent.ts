@@ -105,6 +105,7 @@ import {
   readTravelCandidates,
   readUpgradeCandidates,
   readWorshipCandidates,
+  reloadGame,
   repairTownshipBuilding,
   screenByCombatLevel,
   selectAttackSpell,
@@ -1858,6 +1859,12 @@ export class Agent {
       case 'dump_knowledge':
         await this.dumpKnowledge();
         break;
+      case 'reload_game': {
+        this.log.info('operator', 'saving and reloading to pick up the mod on disk');
+        const reload = reloadGame();
+        if (!reload.ok) this.log.error('operator', `reload refused: ${reload.detail}`);
+        break;
+      }
       case 'export_save': {
         const result = exportSave();
         if (result.ok) {

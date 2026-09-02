@@ -201,10 +201,19 @@ server.registerTool(
   {
     title: 'Control the agent',
     description:
-      'Arm, disarm, or kill the agent, force a replan, export the save, or regenerate the knowledge dump. Kill is a hard stop that latches until the game reloads.',
+      'Arm, disarm, or kill the agent, force a replan, export the save, regenerate the knowledge dump, or reload the game. Kill is a hard stop that latches until the game reloads. reload_game saves first and then reloads the page, which is the only way a newly built mod actually starts running — without it a fix sits committed and unloaded while the agent works around it.',
     inputSchema: {
       action: z
-        .enum(['arm', 'disarm', 'kill', 'revive', 'replan', 'export_save', 'dump_knowledge'])
+        .enum([
+          'arm',
+          'disarm',
+          'kill',
+          'revive',
+          'replan',
+          'export_save',
+          'dump_knowledge',
+          'reload_game',
+        ])
         .describe('What to do.'),
     },
   },

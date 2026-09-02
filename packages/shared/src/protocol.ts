@@ -52,6 +52,8 @@ export const commandSchema = z.discriminatedUnion('type', [
    */
   z.object({ type: z.literal('set_plan'), objectives: z.array(objectiveSchema).min(1).max(8) }),
   z.object({ type: z.literal('dump_knowledge') }),
+  /** Save and reload the page, so a newly built mod is actually loaded. */
+  z.object({ type: z.literal('reload_game') }),
   z.object({ type: z.literal('export_save') }),
 ]);
 export type Command = z.infer<typeof commandSchema>;
