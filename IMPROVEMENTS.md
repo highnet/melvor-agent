@@ -147,7 +147,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Planning
 
-- [ ] **Plan steps cannot carry a quantity target** — S. `set_objective` has
+- [x] **Plan steps cannot carry a quantity target** — S. `set_objective` has
       `untilItemId`/`untilQuantity` and `set_plan` does not, so "mine 200 ore,
       then smelt" is unsayable — which is exactly the chain shape that matters.
 - [x] **No candidate says how long its inputs last** — S/M. `canAfford` checks a

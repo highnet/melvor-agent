@@ -288,11 +288,26 @@ export const TOOLS: Record<string, ToolHandler> = {
       if (resolvedStep.moved) moved.push(`step ${position + 1} (${chosen.label})`);
 
       const abortMinutes = Number(step.abortMinutes ?? 60);
+
+      // A quantity target, same as set_objective has always had.
+      //
+      // Without it a plan could only end a step at a level, which either stops
+      // short of the count the next step needs or runs hours past it -- so
+      // "mine 200 Gold Ore, then smelt" was unsayable, and the chain had to be
+      // driven by an operator watching for the moment to switch. That is the
+      // shape of work a plan exists to remove.
+      const stepItemId = typeof step.untilItemId === 'string' ? step.untilItemId : undefined;
+      const stepQuantity = Number(step.untilQuantity);
+      const stepStock =
+        stepItemId !== undefined && Number.isFinite(stepQuantity) && stepQuantity > 0
+          ? { itemId: stepItemId, quantity: stepQuantity }
+          : undefined;
+
       objectives.push({
         id: `plan-${Date.now()}-${position}`,
         kind: chosen.kind,
         params: chosen.params,
-        successWhen: successFor(chosen, Number(step.targetLevel ?? 0)),
+        successWhen: successFor(chosen, Number(step.targetLevel ?? 0), stepStock),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
         rationale: String(step.rationale ?? 'no rationale given'),

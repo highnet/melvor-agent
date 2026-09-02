@@ -123,6 +123,18 @@ server.registerTool(
               .max(720)
               .describe('Give up on this step after this long and move to the next one.'),
             rationale: z.string().describe('One sentence on why this step, in this position.'),
+            untilItemId: z
+              .string()
+              .optional()
+              .describe(
+                'Optional. Finish when the bank holds untilQuantity of this item, instead of at a level. This is what makes a production chain sayable: "mine 200 Gold Ore, then smelt" cannot be expressed with a level target, which either stops short of the count the next step needs or runs hours past it.',
+              ),
+            untilQuantity: z
+              .number()
+              .int()
+              .min(1)
+              .optional()
+              .describe('Optional. How many of untilItemId to end with. Requires untilItemId.'),
           }),
         )
         .min(2)
