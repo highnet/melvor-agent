@@ -85,7 +85,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       go to the bank, `readMealCount` never sees it, so the cooking reflex fires
       forever and the meal count never moves. This is the mechanical form of the
       starvation death. `Cooking.stockpileItems` (cooking.d.ts:78).
-- [ ] **Aborting on the HP/food floor does not stop the damage** — M. The abort
+- [x] **Aborting on the HP/food floor does not stop the damage** — M. The abort
       returns before the disengage path and emits no action, so at 14% HP the
       agent clears its objective and keeps fighting.
 - [x] **`stopWhenStarving` cannot fire in combat** — S. `CombatManager` implements

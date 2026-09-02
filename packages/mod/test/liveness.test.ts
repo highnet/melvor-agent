@@ -123,3 +123,42 @@ describe('resuming from suspension restores rather than promotes', () => {
     expect(resumeState('running', false)).toBe('idle');
   });
 });
+
+/**
+ * An abort on the health floor must stop the thing doing the damage.
+ *
+ * The criteria say "stopping rather than continuing to take damage with no way
+ * to heal", and the handler emitted no action at all -- it cleared the
+ * objective and asked for a replan while the character went on fighting or
+ * pickpocketing. At 14% health with no food that is not a safety floor, it is a
+ * note in a log.
+ */
+const stopFor = (
+  outcome: 'aborted_stuck' | 'aborted_budget' | 'aborted_gp_floor',
+  inCombat: boolean,
+  activeSkill: string | null,
+): 'combat' | 'skill' | 'none' => {
+  if (outcome !== 'aborted_stuck') return 'none';
+  if (inCombat) return 'combat';
+  return activeSkill === null ? 'none' : 'skill';
+};
+
+describe('health aborts stop the damage', () => {
+  it('disengages when the damage is a fight', () => {
+    expect(stopFor('aborted_stuck', true, null)).toBe('combat');
+  });
+
+  it('stops the skill when the damage is Thieving', () => {
+    expect(stopFor('aborted_stuck', false, 'melvorD:Thieving')).toBe('skill');
+  });
+
+  it('leaves a budget abort alone', () => {
+    // A time budget is a scheduling decision; stopping the activity there would
+    // throw away work for no reason.
+    expect(stopFor('aborted_budget', false, 'melvorD:Mining')).toBe('none');
+  });
+
+  it('leaves a GP-floor abort alone', () => {
+    expect(stopFor('aborted_gp_floor', false, 'melvorD:Mining')).toBe('none');
+  });
+});

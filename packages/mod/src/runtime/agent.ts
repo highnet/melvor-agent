@@ -1325,11 +1325,38 @@ export class Agent {
         this.settings = { ...this.settings, objective: null };
         this.requestReplan('objective_completed');
         break;
-      case 'abort':
+      case 'abort': {
         this.log.warn('policy', `objective aborted (${decision.outcome}): ${decision.detail}`);
+
+        // An abort on the health floor has to stop the thing doing the damage.
+        //
+        // The criteria say "stopping rather than continuing to take damage with
+        // no way to heal", and the handler emitted no action at all -- it
+        // cleared the objective and asked for a replan while the character went
+        // on fighting or pickpocketing. At 14% health with no food that is not
+        // a safety floor, it is a note in a log.
+        //
+        // Only for the health outcomes. A budget or GP-floor abort is a
+        // scheduling decision and stopping the activity there would throw away
+        // work for no reason.
+        if (decision.outcome === 'aborted_stuck') {
+          const suspended = (): boolean => this.state === 'suspended';
+          const active = snapshot.activeAction;
+          const stopped = snapshot.combat.inCombat
+            ? disengageCombat(suspended)
+            : active === undefined || active === null
+              ? null
+              : stopGathering(active.id, suspended);
+
+          if (stopped !== null && !stopped.ok) {
+            this.log.error('runtime', `abort could not stop the damage: ${stopped.detail}`);
+          }
+        }
+
         this.settings = { ...this.settings, objective: null };
         this.requestReplan('objective_aborted');
         break;
+      }
       case 'act': {
         const performed = this.perform(decision.actions, decision.reason);
         // A one-shot decision is finished once its actions are verified.
