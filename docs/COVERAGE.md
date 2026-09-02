@@ -56,6 +56,44 @@ than a return value it was told to trust.
 | `upgrade_item` | Combine bank materials into a better item |
 | `use_potion` | Drink a potion for the current activity |
 
+## Every skill, and how the agent trains it
+
+Generated from the skill registry in `data/dump.json`, so a skill the game
+adds cannot quietly go unlisted. "Startable" means the generic candidate
+enumeration offers its recipes; the rest are named with the capability that
+covers them, or with what is still missing.
+
+| Skill | How it is trained |
+| --- | --- |
+| Attack | combat — `fight_monster` with `set_attack_style` |
+| Strength | combat — `fight_monster` with `set_attack_style` |
+| Defence | combat — `fight_monster` with `set_attack_style` |
+| Hitpoints | combat — trained by taking damage in `fight_monster` |
+| Ranged | combat — `fight_monster` with a ranged style and ammunition |
+| Magic | startable — recipes offered as candidates |
+| Prayer | combat — `bury_bones` for points, `toggle_prayer` to spend them |
+| Slayer | combat — `new_slayer_task`, then `fight_monster` |
+| Woodcutting | startable — recipes offered as candidates |
+| Fishing | startable — recipes offered as candidates |
+| Firemaking | startable — recipes offered as candidates |
+| Cooking | startable — recipes offered as candidates |
+| Mining | startable — recipes offered as candidates |
+| Smithing | startable — recipes offered as candidates |
+| Thieving | startable — recipes offered as candidates |
+| Farming | `tend_farm` (plant, compost, harvest) |
+| Fletching | startable — recipes offered as candidates |
+| Crafting | startable — recipes offered as candidates |
+| Runecrafting | startable — recipes offered as candidates |
+| Herblore | startable — recipes offered as candidates |
+| Agility | startable — recipes offered as candidates |
+| Summoning | startable — recipes offered as candidates |
+| Astrology | startable — recipes offered as candidates |
+| Township | `build_township`, `repair_township`, `claim_township_task` |
+| Cartography | `survey_hex`, `make_paper`, `travel_to_poi` |
+| Archaeology | `excavate_dig_site` with `select_dig_map` and `select_dig_tool` |
+| Harvesting | startable, but gated behind the Abyssal realm, which needs the Into the Abyss dungeon |
+| Corruption | not yet — gated behind the Abyssal realm, which needs the Into the Abyss dungeon |
+
 ## What it deliberately does not do
 
 | System | Why not |
@@ -66,6 +104,5 @@ than a return value it was told to trust.
 | Bank tabs and sorting | cosmetic; no effect on what the character can do |
 | Switching an existing Township worship | the first choice is a capability; switching later costs 50,000,000 GP and destroys every worship building, so it is not offered beside "build a hut" where a planner skimming labels could pick it |
 | Offering item downgrades as candidates | the capability exists and an objective may ask for a downgrade outright; it is never *proposed*, because it destroys the better item for a refund and no enumeration should tempt a planner into one |
-| Abyssal realm content | refused by the realm guard, per the original brief |
 | Limited-time events | rewards roll automatically from actions the agent already performs; there is no choice to make |
 | Clue Hunt | a puzzle chain the developers deliberately hid — the typings scold anyone reading them. Solving it by reading game data would defeat its point rather than play it |

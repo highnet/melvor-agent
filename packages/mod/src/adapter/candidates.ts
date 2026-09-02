@@ -262,10 +262,17 @@ function alchemyGpPerCast(skill: AnySkill, recipe: RecipeLike): number | null {
       productionRatio?: number;
       specialCost?: { quantity: number };
     };
-    // -1 is AltMagicProductionID.GP (altMagic.d.ts:13). Spelled out because it
-    // is a plain `declare enum`, so the runtime bundle may carry no value.
-    if (spell.produces !== -1) return null;
+    // The two ids are spelled out because AltMagicProductionID is a plain
+    // `declare enum` (altMagic.d.ts:12-21), so the runtime bundle may carry no
+    // value for it: -1 is GP, -2 is Bar.
     if ((spell.specialCost?.quantity ?? 0) <= 0) return null;
+
+    // Superheat produces a bar, not currency, so the ordinary product path
+    // finds nothing to price -- an AltMagicSpell has no `product` field -- and
+    // the whole family read as worth zero. Its value is the bar it smelts, less
+    // the ore that bar consumes, exactly as the furnace version is priced.
+    if (spell.produces === -2) return superheatGpPerCast();
+    if (spell.produces !== -1) return null;
 
     const magic = game.altMagic;
     let best = 0;
@@ -278,6 +285,45 @@ function alchemyGpPerCast(skill: AnySkill, recipe: RecipeLike): number | null {
     return best;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Net GP of the best bar Superheat can currently smelt.
+ *
+ * Superheat consumes a Smithing recipe's ingredients and produces its bar
+ * without occupying the furnace. Its worth is therefore the same margin the
+ * furnace earns -- bar value less ore value -- and pricing it any other way
+ * would make the two paths incomparable when the whole question is which to
+ * use.
+ *
+ * The best *affordable* recipe, because an unaffordable one is not an option
+ * this hour, and level-gated ones are not options at all.
+ */
+function superheatGpPerCast(): number {
+  try {
+    let best = 0;
+    for (const recipe of game.smithing.actions.allObjects) {
+      try {
+        if (recipe.level > game.smithing.level) continue;
+        if (!game.smithing.isMasteryActionUnlocked(recipe)) continue;
+
+        const revenue = gpValue(recipe.product) * (recipe.baseQuantity ?? 1);
+        if (revenue <= 0) continue;
+
+        let spent = 0;
+        for (const cost of recipe.itemCosts) spent += gpValue(cost.item) * cost.quantity;
+
+        const net = revenue - spent;
+        if (net > best) best = net;
+      } catch {
+        // A recipe that will not price itself is not the best one.
+      }
+    }
+
+    return best;
+  } catch {
+    return 0;
   }
 }
 
@@ -740,6 +786,19 @@ function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): 
         return (min + max) / 2;
       }
       return fallback;
+    }
+
+    // Alt Magic has no per-spell interval getter: one interval covers the
+    // skill. But `actionInterval` reads the selected spell and throws when
+    // none is chosen -- which is the state candidate enumeration runs in -- so
+    // it was landing on the generic 3s fallback instead of its real 2s, and
+    // every spell was priced a third slow. `baseInterval` is a readonly
+    // constant (altMagic.d.ts:99) and is always readable.
+    if (skill.id === ALT_MAGIC_ID) {
+      const magic = skill as AnySkill & { baseInterval?: number };
+      return typeof magic.baseInterval === 'number' && magic.baseInterval > 0
+        ? magic.baseInterval
+        : fallback;
     }
 
     const name = getters[skill.id];

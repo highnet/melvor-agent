@@ -88,7 +88,6 @@ const NOT_COVERED: [string, string][] = [
     'Offering item downgrades as candidates',
     'the capability exists and an objective may ask for a downgrade outright; it is never *proposed*, because it destroys the better item for a refund and no enumeration should tempt a planner into one',
   ],
-  ['Abyssal realm content', 'refused by the realm guard, per the original brief'],
   [
     'Limited-time events',
     'rewards roll automatically from actions the agent already performs; there is no choice to make',
@@ -107,6 +106,71 @@ if (missing.length > 0) {
   );
 }
 
+/**
+ * Skill ids the generic enumeration will start.
+ *
+ * Read from the source rather than duplicated, and the whole file is scanned
+ * for `melvor*:` ids because STARTABLE_SKILL_IDS spreads GATHERING_SKILL_IDS,
+ * which is declared elsewhere in the file behind named constants -- a reader
+ * that only looked at the literal list reported Woodcutting, Mining and Fishing
+ * as unsupported, which would have been a false alarm in a document whose whole
+ * job is to be trusted.
+ */
+const STARTABLE = new Set(
+  [
+    ...readFileSync(resolve(repoRoot, 'packages/mod/src/adapter/gathering.ts'), 'utf8').matchAll(
+      /'(melvor[A-Za-z]*:[A-Za-z]+)'/g,
+    ),
+  ].map((m) => m[1] as string),
+);
+
+/**
+ * Skills trained through a dedicated capability rather than the generic recipe
+ * enumeration, and skills the agent genuinely cannot train yet.
+ *
+ * Anything absent from both this map and STARTABLE_SKILL_IDS shows as a gap,
+ * which is the point: "all skills are supported" should be checkable rather
+ * than asserted.
+ */
+const SKILL_NOTES: Record<string, string> = {
+  'melvorD:Attack': 'combat — `fight_monster` with `set_attack_style`',
+  'melvorD:Strength': 'combat — `fight_monster` with `set_attack_style`',
+  'melvorD:Defence': 'combat — `fight_monster` with `set_attack_style`',
+  'melvorD:Hitpoints': 'combat — trained by taking damage in `fight_monster`',
+  'melvorD:Ranged': 'combat — `fight_monster` with a ranged style and ammunition',
+  'melvorD:Prayer': 'combat — `bury_bones` for points, `toggle_prayer` to spend them',
+  'melvorD:Slayer': 'combat — `new_slayer_task`, then `fight_monster`',
+  'melvorD:Farming': '`tend_farm` (plant, compost, harvest)',
+  'melvorD:Township': '`build_township`, `repair_township`, `claim_township_task`',
+  'melvorAoD:Cartography': '`survey_hex`, `make_paper`, `travel_to_poi`',
+  'melvorAoD:Archaeology': '`excavate_dig_site` with `select_dig_map` and `select_dig_tool`',
+  'melvorItA:Corruption':
+    'not yet — gated behind the Abyssal realm, which needs the Into the Abyss dungeon',
+  'melvorItA:Harvesting':
+    'startable, but gated behind the Abyssal realm, which needs the Into the Abyss dungeon',
+};
+
+const skillRows = (() => {
+  let skills: { id: string; name: string }[] = [];
+  try {
+    skills = (
+      JSON.parse(readFileSync(resolve(repoRoot, 'data/dump.json'), 'utf8')) as {
+        skills: { id: string; name: string }[];
+      }
+    ).skills;
+  } catch {
+    return ['| _(no dump available; run `dump_knowledge`)_ | |'];
+  }
+
+  return skills.map((skill) => {
+    const note = SKILL_NOTES[skill.id];
+    if (note !== undefined) return `| ${skill.name} | ${note} |`;
+    if (STARTABLE.has(skill.id))
+      return `| ${skill.name} | startable — recipes offered as candidates |`;
+    return `| ${skill.name} | **gap — no way to train it** |`;
+  });
+})();
+
 const lines = [
   '# Coverage',
   '',
@@ -121,6 +185,17 @@ const lines = [
   '| Capability | What it does |',
   '| --- | --- |',
   ...[...kinds].sort().map((kind) => `| \`${kind}\` | ${DESCRIPTIONS[kind]} |`),
+  '',
+  '## Every skill, and how the agent trains it',
+  '',
+  'Generated from the skill registry in `data/dump.json`, so a skill the game',
+  'adds cannot quietly go unlisted. "Startable" means the generic candidate',
+  'enumeration offers its recipes; the rest are named with the capability that',
+  'covers them, or with what is still missing.',
+  '',
+  '| Skill | How it is trained |',
+  '| --- | --- |',
+  ...skillRows,
   '',
   '## What it deliberately does not do',
   '',
