@@ -265,6 +265,10 @@ export const knowledgeDumpSchema = z.object({
       id: z.string(),
       name: z.string(),
       allowQuantityPurchase: z.boolean(),
+      gpCost: z.number().nonnegative(),
+      owned: z.number().nonnegative(),
+      atBuyLimit: z.boolean(),
+      requirements: z.array(z.string()),
     }),
   ),
 });

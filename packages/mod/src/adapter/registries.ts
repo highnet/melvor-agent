@@ -1,4 +1,5 @@
 import type { KnowledgeDump } from '@melvor-agent/knowledge';
+import { gpCostOf } from './shop.js';
 
 /**
  * Exports the game's own data registries.
@@ -426,10 +427,22 @@ export function dumpRegistries(): KnowledgeDump {
       monsterIds: dungeon.monsters.map((monster) => monster.id),
       realmId: dungeon.realm.id,
     })),
+    // Cost, ownership and gate, not just the name.
+    //
+    // Without these the dump can list eleven pickaxes and settle nothing: the
+    // candidate list only ever shows *affordable* purchases, so a tool missing
+    // from it might be already owned or might be ten times our GP, and those
+    // want opposite responses. The same silence around realms produced an
+    // invented prerequisite an hour earlier. Requirements are flattened the way
+    // realm and biome requirements are.
     shopPurchases: game.shop.purchases.allObjects.map((purchase) => ({
       id: purchase.id,
       name: purchase.name,
       allowQuantityPurchase: purchase.allowQuantityPurchase,
+      gpCost: safeNumber(() => gpCostOf(purchase), 0),
+      owned: safeNumber(() => game.shop.getPurchaseCount(purchase), 0),
+      atBuyLimit: safeBoolean(() => game.shop.isPurchaseAtBuyLimit(purchase), false),
+      requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
     })),
   };
 }

@@ -165,7 +165,7 @@ export function readShopCandidates(): {
 }
 
 /** GP component of a single purchase, or 0 when it costs another currency. */
-function gpCostOf(purchase: ShopPurchase): number {
+export function gpCostOf(purchase: ShopPurchase): number {
   const costs = game.shop.getPurchaseCosts(purchase, 1);
   return (
     costs.getCurrencyQuantityArray().find((entry) => entry.currency === game.gp)?.quantity ?? 0
