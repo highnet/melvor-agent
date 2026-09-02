@@ -2,7 +2,7 @@ import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, recordFallback, safeList, safeNumber, safeValue } from './safe.js';
 
 /**
  * The management actions a human performs constantly and an agent could not.
@@ -26,7 +26,72 @@ export interface MasteryProjection {
   actionId: string;
   masteryLevel: number;
   poolXp: number;
+  /** How full the pool is, 0-100. Checkpoints are thresholds on this number. */
+  poolPercent: number;
+  /** Mastery pool checkpoint bonuses currently granted. */
+  activeBonuses: number;
 }
+
+/**
+ * The lowest checkpoint the pool has not reached yet.
+ *
+ * Pure so the arithmetic is testable without a game. `percents` are the
+ * `MasteryPoolBonus.percent` values the skill declares (skill.d.ts:605-611);
+ * a bonus is held once the pool is filled to at least its percent.
+ *
+ * @returns The next percent to aim for, or null when every checkpoint is held.
+ */
+export function nextCheckpointPercent(
+  percents: readonly number[],
+  poolPercent: number,
+): number | null {
+  const ahead = percents.filter((percent) => percent > poolPercent).sort((a, b) => a - b);
+  return ahead[0] ?? null;
+}
+
+/**
+ * Pool XP a level-up will consume, from the game's own experience table.
+ *
+ * Pure, and separated out because it is the one number here that is *not*
+ * stated in the typings. `levelUpMasteryWithPoolXP` (skill.d.ts:689) takes a
+ * level count and says nothing about what it charges; the mastery XP needed to
+ * reach the target level is the only defensible reading, and `exp.levelToXP`
+ * (utils.d.ts:234) is the game's own curve. Callers must treat the result as an
+ * estimate and check the realised cost afterwards — see {@link spendMasteryPool}.
+ */
+export function poolXpForLevels(
+  masteryXp: number,
+  currentLevel: number,
+  levels: number,
+  levelToXp: (level: number) => number,
+): number {
+  return Math.max(0, levelToXp(currentLevel + levels) - masteryXp);
+}
+
+/**
+ * How many checkpoint bonuses a spend would cost.
+ *
+ * Pure, and phrased against the game's own hypothetical-XP accessor
+ * `getActiveMasteryPoolBonusCount(realm, xp)` (skill.d.ts:730) rather than
+ * against thresholds recomputed here, so the answer is the game's answer.
+ *
+ * @returns 0 when the spend is safe, a positive count when bonuses would be
+ *          revoked, and `null` when the count could not be read at all — which
+ *          the caller must treat as a refusal, not as a zero.
+ */
+export function checkpointLoss(
+  poolXp: number,
+  spendXp: number,
+  activeBonusesAt: (xp: number) => number | undefined,
+): number | null {
+  const held = activeBonusesAt(poolXp);
+  const after = activeBonusesAt(Math.max(0, poolXp - spendXp));
+  if (held === undefined || after === undefined) return null;
+  return Math.max(0, held - after);
+}
+
+/** What the spend is expected to cost the pool, or why we will not make it. */
+type SpendPlan = { refusal: string } | { estimatedCost: number };
 
 /**
  * Spends mastery pool XP to raise an action's mastery level.
@@ -35,6 +100,34 @@ export interface MasteryProjection {
  * converting it costs nothing but the pool itself. A human does this whenever
  * they glance at the screen; an agent that cannot leaves it accumulating
  * forever.
+ *
+ * **It is not unconditionally free, and that is what this guard is for.**
+ * Mastery pool checkpoints are granted automatically as the pool fills past
+ * their percent and revoked automatically as it empties back below — and
+ * spending is the only thing that empties it. So a spend can hand back a level
+ * and silently take away a standing bonus on every action in the skill, which
+ * is a straight loss whenever the checkpoint was worth more than the level.
+ * The game itself treats this as a decision worth stopping for: settings.d.ts:80
+ * ships `showMasteryCheckpointconfirmations`, *"If confirmation messages should
+ * be shown when losing a mastery pool checkpoint when spending mastery xp"*.
+ * This adapter calls the underlying method with no dialog, so the check has to
+ * live here or nowhere.
+ *
+ * A second, independent reason to leave the pool full: a pet whose
+ * `scaleChanceWithMasteryPool` is set (pets.d.ts:12-13) is rolled through
+ * `rollForSkillPet` (pets.d.ts:63) with a chance that scales with pool
+ * progress, so draining the pool also lowers the skill-pet drop rate for as
+ * long as it stays drained. Nothing here prices that; it is one more reason the
+ * refusal errs towards keeping the pool full.
+ *
+ * The refusal is deliberately the minimum: it blocks a spend that would drop a
+ * checkpoint and permits everything else. Banking up to the next checkpoint and
+ * spending only the surplus would be the better policy, and it is not
+ * implemented because the pool XP a level-up charges is not stated in the
+ * typings — see {@link poolXpForLevels}. Since that cost is an estimate, the
+ * realised cost is compared against it after the fact and a mismatch is
+ * recorded, so a wrong model shows up as a counter rather than as a bonus that
+ * quietly went missing.
  *
  * @param skillId - Skill owning the action.
  * @param actionId - The mastery action to level.
@@ -51,7 +144,10 @@ export function spendMasteryPool(
     | (AnySkill & {
         actions?: { getObjectByID(id: string): unknown };
         getMasteryLevel?: (action: object) => number;
+        getMasteryXP?: (action: object) => number;
         getMasteryPoolXP?: (realm: Realm) => number;
+        getMasteryPoolProgress?: (realm: Realm) => number;
+        getActiveMasteryPoolBonusCount?: (realm: Realm, xp: number) => number;
         levelUpMasteryWithPoolXP?: (action: object, levels: number) => void;
       })
     | undefined;
@@ -66,23 +162,77 @@ export function spendMasteryPool(
     return fail('mastery.spend', 'precondition', `no action ${actionId} in ${skillId}`);
   }
 
+  const realm = game.currentRealm;
+
+  const bonusesAt = (xp: number): number | undefined =>
+    safeValue('management.spendMasteryPool.bonusCount', () =>
+      skill.getActiveMasteryPoolBonusCount?.(realm, xp),
+    );
+
   const project = (): MasteryProjection => ({
     actionId,
     masteryLevel: skill.getMasteryLevel?.(action) ?? 0,
-    poolXp: skill.getMasteryPoolXP?.(game.currentRealm) ?? 0,
+    poolXp: skill.getMasteryPoolXP?.(realm) ?? 0,
+    poolPercent: safeNumber(
+      'management.spendMasteryPool.poolPercent',
+      () => skill.getMasteryPoolProgress?.(realm),
+      0,
+    ),
+    activeBonuses: safeNumber(
+      'management.spendMasteryPool.activeBonuses',
+      () => skill.getActiveMasteryPoolBonusCount?.(realm, skill.getMasteryPoolXP?.(realm) ?? 0),
+      0,
+    ),
   });
 
-  return act(
+  // Planned before `act` rather than inside the precondition, so the estimated
+  // cost survives to be compared against the realised one below.
+  const plan = ((): SpendPlan => {
+    if (!Number.isInteger(levels) || levels <= 0) {
+      return { refusal: `levels must be a positive integer, got ${levels}` };
+    }
+
+    const current = project();
+    if (current.poolXp <= 0) return { refusal: `${skillId} mastery pool is empty` };
+
+    const masteryXp = safeValue('management.spendMasteryPool.masteryXp', () =>
+      skill.getMasteryXP?.(action),
+    );
+    if (typeof masteryXp !== 'number' || !Number.isFinite(masteryXp)) {
+      return { refusal: `cannot read ${actionId} mastery XP, so the pool cost is unknown` };
+    }
+
+    let estimatedCost: number;
+    try {
+      estimatedCost = poolXpForLevels(masteryXp, current.masteryLevel, levels, (level) =>
+        exp.levelToXP(level),
+      );
+    } catch (error) {
+      noteSwallowed('management.spendMasteryPool.levelToXP', error);
+      return { refusal: 'cannot compute the pool cost of this level-up' };
+    }
+
+    // Fail closed. Not being able to count the checkpoints is not a reason to
+    // spend anyway — the whole point of this branch is that the loss is silent
+    // and irreversible, so "cannot tell" has to mean "do not".
+    const loss = checkpointLoss(current.poolXp, estimatedCost, bonusesAt);
+    if (loss === null) {
+      return { refusal: `cannot read ${skillId} mastery pool checkpoints; refusing to spend` };
+    }
+    if (loss > 0) {
+      return {
+        refusal: `spending ~${Math.round(estimatedCost)} pool XP would revoke ${loss} ${skillId} mastery pool checkpoint bonus(es) (pool at ${current.poolPercent.toFixed(1)}%); train the skill to refill the pool first`,
+      };
+    }
+
+    return { estimatedCost };
+  })();
+
+  const result = act(
     {
       name: 'mastery.spend',
       observe: project,
-      precondition: () => {
-        if (!Number.isInteger(levels) || levels <= 0) {
-          return `levels must be a positive integer, got ${levels}`;
-        }
-        if (project().poolXp <= 0) return `${skillId} mastery pool is empty`;
-        return null;
-      },
+      precondition: () => ('refusal' in plan ? plan.refusal : null),
       perform: () => skill.levelUpMasteryWithPoolXP?.(action, levels),
       // The pool must fall *and* the level rise. A level rise alone would mean
       // ordinary training paid for it, not the pool.
@@ -91,15 +241,47 @@ export function spendMasteryPool(
     },
     isSuspended,
   );
+
+  if (result.ok && 'estimatedCost' in plan) {
+    const spent = result.observed.before.poolXp - result.observed.after.poolXp;
+    // A cost model that is wrong is a guard that is wrong, and it would show up
+    // nowhere else: the spend succeeds either way. One XP of slack for rounding.
+    if (Math.abs(spent - plan.estimatedCost) > 1) {
+      recordFallback(
+        'management.spendMasteryPool.costModel',
+        `estimated ${Math.round(plan.estimatedCost)} pool XP, game charged ${Math.round(spent)}`,
+      );
+    }
+    if (result.observed.after.activeBonuses < result.observed.before.activeBonuses) {
+      recordFallback(
+        'management.spendMasteryPool.checkpointLost',
+        `${skillId} lost ${result.observed.before.activeBonuses - result.observed.after.activeBonuses} pool checkpoint bonus(es) despite the guard`,
+      );
+    }
+  }
+
+  return result;
 }
 
-/** Skills whose mastery pool has XP worth spending. */
+/**
+ * Skills whose mastery pool has XP worth spending.
+ *
+ * The label carries how full the pool is and where the next checkpoint sits,
+ * because "3,400 pool XP" on its own reads as pure surplus and is not: the pool
+ * is also the thing granting the skill's checkpoint bonuses and scaling its pet
+ * chance, and both are given back the moment it drains past a threshold. A
+ * planner choosing between two spends needs to see which one is close to a
+ * checkpoint. {@link spendMasteryPool} still refuses a spend that would drop
+ * one — this is the number that lets the choice be made before the refusal.
+ */
 export function readMasteryCandidates(): Candidate[] {
   const candidates: Candidate[] = [];
 
   for (const skill of game.skills.allObjects) {
     const withMastery = skill as AnySkill & {
       getMasteryPoolXP?: (realm: Realm) => number;
+      getMasteryPoolProgress?: (realm: Realm) => number;
+      getMasteryPoolBonusesInRealm?: (realm: Realm) => { percent: number }[];
       actions?: { allObjects: { id: string; name: string }[] };
       getMasteryLevel?: (action: object) => number;
       levelUpMasteryWithPoolXP?: unknown;
@@ -137,10 +319,26 @@ export function readMasteryCandidates(): Candidate[] {
 
     if (lowest === undefined) continue;
 
+    const poolPercent = safeNumber(
+      'management.readMasteryCandidates.poolPercent',
+      () => withMastery.getMasteryPoolProgress?.(game.currentRealm),
+      0,
+    );
+    const checkpoints = safeList('management.readMasteryCandidates.checkpoints', () =>
+      (withMastery.getMasteryPoolBonusesInRealm?.(game.currentRealm) ?? []).map(
+        (bonus) => bonus.percent,
+      ),
+    );
+    const next = nextCheckpointPercent(checkpoints, poolPercent);
+    const checkpointNote =
+      next === null
+        ? 'every checkpoint held — spending gives one back'
+        : `next checkpoint at ${next}%`;
+
     candidates.push({
       kind: 'spend_mastery',
       params: { kind: 'spend_mastery', skillId: skill.id, actionId: lowest.id, levels: 1 },
-      label: `Spend ${skill.name} mastery pool on ${lowest.name} (level ${lowestLevel}, ${Math.round(poolXp)} pool XP)`,
+      label: `Spend ${skill.name} mastery pool on ${lowest.name} (level ${lowestLevel}, ${Math.round(poolXp)} pool XP, pool ${poolPercent.toFixed(1)}% full, ${checkpointNote}); refused if it would revoke a checkpoint bonus`,
       available: true,
     });
   }
