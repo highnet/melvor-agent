@@ -441,6 +441,14 @@ export function dumpRegistries(): KnowledgeDump {
       name: purchase.name,
       allowQuantityPurchase: purchase.allowQuantityPurchase,
       gpCost: safeNumber(() => gpCostOf(purchase), 0),
+      // 143 purchases priced in another currency dumped gpCost 0, which reads
+      // as free. The full cost list says what they actually take.
+      costs: safeList(() =>
+        game.shop
+          .getPurchaseCosts(purchase, 1)
+          .getCurrencyQuantityArray()
+          .map((entry) => `${entry.quantity} ${entry.currency.name}`),
+      ),
       owned: safeNumber(() => game.shop.getPurchaseCount(purchase), 0),
       atBuyLimit: safeBoolean(() => game.shop.isPurchaseAtBuyLimit(purchase), false),
       requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
@@ -490,6 +498,9 @@ function dumpSkillRecipes(): {
   name: string;
   level: number;
   baseExperience: number;
+  baseAbyssalExperience: number;
+  abyssalLevel: number;
+  realmId: string;
   itemCosts: { itemId: string; name: string; quantity: number }[];
   runeCosts: { itemId: string; name: string; quantity: number }[];
   fixedItemCosts: { itemId: string; name: string; quantity: number }[];
@@ -522,6 +533,9 @@ function dumpSkillRecipes(): {
         name?: string;
         level?: number;
         baseExperience?: number;
+        baseAbyssalExperience?: number;
+        abyssalLevel?: number;
+        realm?: { id: string };
         itemCosts?: { item: { id: string; name: string }; quantity: number }[];
         runesRequired?: { item: { id: string; name: string }; quantity: number }[];
         fixedItemCosts?: { item: { id: string; name: string }; quantity: number }[];
@@ -544,6 +558,12 @@ function dumpSkillRecipes(): {
           name: safeText(() => recipe.name ?? ''),
           level: safeNumber(() => recipe.level ?? 0, 0),
           baseExperience: safeNumber(() => recipe.baseExperience ?? 0, 0),
+          // Into the Abyss content earns on a separate track, so 384 recipes
+          // dumped `baseExperience: 0` and were indistinguishable from a
+          // reachable level-1 action that pays nothing.
+          baseAbyssalExperience: safeNumber(() => recipe.baseAbyssalExperience ?? 0, 0),
+          abyssalLevel: safeNumber(() => recipe.abyssalLevel ?? 0, 0),
+          realmId: safeText(() => recipe.realm?.id ?? ''),
           itemCosts: dumpItemCosts(recipe.itemCosts),
           // Alt Magic prices its casts in runes, not itemCosts, so a spell
           // dumped without them looks free -- and when the candidate list then

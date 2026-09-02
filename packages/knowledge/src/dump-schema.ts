@@ -269,6 +269,9 @@ export const knowledgeDumpSchema = z.object({
       name: z.string(),
       level: z.number().nonnegative(),
       baseExperience: z.number().nonnegative(),
+      baseAbyssalExperience: z.number().nonnegative().default(0),
+      abyssalLevel: z.number().nonnegative().default(0),
+      realmId: z.string().default(''),
       itemCosts: z.array(
         z.object({ itemId: z.string(), name: z.string(), quantity: z.number() }),
       ),
@@ -291,6 +294,7 @@ export const knowledgeDumpSchema = z.object({
       name: z.string(),
       allowQuantityPurchase: z.boolean(),
       gpCost: z.number().nonnegative(),
+      costs: z.array(z.string()).default([]),
       owned: z.number().nonnegative(),
       atBuyLimit: z.boolean(),
       requirements: z.array(z.string()),
