@@ -1,3 +1,4 @@
+import { levelsPerHour } from '@melvor-agent/shared';
 import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import { controlRate, measureProgress } from './progress.js';
@@ -128,10 +129,11 @@ export const TOOLS: Record<string, ToolHandler> = {
     // behaviour long-term goals exist to counter.
     const snapshot = store.report?.snapshot ?? null;
     const statuses = snapshot === null ? [] : evaluateGoals(await loadGoals(memoryRoot), snapshot);
+    const skillXp = new Map((snapshot?.skills ?? []).map((skill) => [skill.id, skill.xp] as const));
 
     const lines = candidates.map((c, i) => {
       const serves = goalsAdvancedBy(c, statuses);
-      return `${i}. ${describe(c)}${serves.length === 0 ? '' : `  → ${serves.join(', ')}`}`;
+      return `${i}. ${describe(c, skillXp)}${serves.length === 0 ? '' : `  → ${serves.join(', ')}`}`;
     });
 
     // Remember exactly what was shown, so a later choice can be checked
@@ -355,16 +357,40 @@ function topStacks(items: { qty: number; name: string }[]): string {
     .join(', ');
 }
 
-function describe(candidate: {
-  label: string;
-  xpPerHour?: number | undefined;
-  gpPerHour?: number | undefined;
-  requiresLevel?: number | undefined;
-}): string {
+function describe(
+  candidate: {
+    label: string;
+    kind?: string;
+    params?: unknown;
+    xpPerHour?: number | undefined;
+    gpPerHour?: number | undefined;
+    requiresLevel?: number | undefined;
+  },
+  skillXp?: ReadonlyMap<string, number>,
+): string {
   const parts = [candidate.label];
   if ((candidate.xpPerHour ?? 0) > 0) {
     parts.push(`${Math.round(candidate.xpPerHour ?? 0).toLocaleString()} xp/h`);
   }
+
+  // Levels per hour, not just XP per hour.
+  //
+  // The two diverge enormously and the goals are written in levels. Mining at
+  // 33,600 xp/h from level 43 is worth a fraction of a level an hour; Crafting
+  // at 15,600 from level 2 is worth dozens. Ranking a list by XP silently
+  // ranks it by "whichever skill is already highest", which is backwards for
+  // any total-level goal — and total level 500 was the nearest goal on the
+  // board while the plan ground seven expensive Mining levels.
+  //
+  // Computed here rather than in the mod because it depends on current XP,
+  // which the snapshot already carries, and because the same arithmetic
+  // already decides the stopgap's fallback.
+  const skillId = (candidate.params as { skillId?: string } | undefined)?.skillId;
+  if (skillXp !== undefined && skillId !== undefined && (candidate.xpPerHour ?? 0) > 0) {
+    const rate = levelsPerHour(skillXp.get(skillId) ?? 0, candidate.xpPerHour ?? 0);
+    if (rate > 0) parts.push(`${rate.toFixed(2)} levels/h`);
+  }
+
   if ((candidate.gpPerHour ?? 0) > 0) {
     parts.push(`${Math.round(candidate.gpPerHour ?? 0).toLocaleString()} gp/h`);
   }
