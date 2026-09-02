@@ -238,3 +238,23 @@ labels" but "check the realised rate against the label once, early" — the
 service already measures GP/h over a window and had been saying *"earning
 heavily... something on the list pays better"* for an hour before anyone read
 it.
+
+## A high sale price is not a margin
+
+Asked whether smithing platebodies beats smelting bars, the dump answers without
+ambiguity once inputs are priced: every platebody in reach sells for *less than
+the bars it consumes*. Bronze loses 27 GP per action, Iron 28, Steel 102,
+Mithril 345, Adamant 458. Armour is a value sink; it is smithed to be worn.
+
+The instructive part is how convincing the opposite looks. Mithril Platebody
+sells for 280 against Silver Bar's 51 — five times the sticker price — and under
+a gross model reads 504,000 GP/h, comfortably the best action in the game. It
+destroys value every time it runs.
+
+The same trap has a quieter form one row down. Mithril Bar sells 125, nearly as
+much as Gold Bar's 142, and nets 8 against Gold's 112 — because it burns four
+Coal per bar and Gold burns one ore. Two recipes with almost identical revenue
+and a fourteenfold difference in profit.
+
+So: rank production by **margin per unit of time**, never by revenue. Revenue is
+the number the game shows you and the one that is almost always wrong.
