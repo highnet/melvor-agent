@@ -250,7 +250,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       potions should **not** be re-used for, so the set is never read; the action
       asserts `autoReusePotionsForAction` either side of the toggle, which makes
       a wrong reading cost one reversible call rather than a silent inversion.
-- [ ] **Township building is one-at-a-time and upgrade-blind** — M.
+- [x] **Township building is one-at-a-time and upgrade-blind** — M.
       `getBuildingCountRemainingForLevelUp` turns it into a targeted objective.
 - [x] **Slayer: an accepted task has no fight candidate** — M. `readSlayerTaskTarget`
       turns `slayerTask.monster` into a prioritised `fight_monster` candidate with
@@ -265,7 +265,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       in combat, which is the only source of Prayer XP there is.
       `dropUnpayablePrayers` was also never wired into the chain at all; it is now,
       and the two conditions are disjoint so neither can undo the other.
-- [ ] **Dig-site maps can be selected but never created** — M. When the last map's
+- [x] **Dig-site maps can be selected but never created** — M. When the last map's
       charges run out Archaeology vanishes with no way back, and the agent makes
       paper forever. `createNewMapForDigSite` (cartography.d.ts:389).
 - [x] **Charged equipment burns out unnoticed** — S. `readEquipmentCharges` reads
@@ -312,18 +312,18 @@ Township summary reported 0% health while the repair reflex correctly computed
       depletion had to be measured by hand.
 - [x] **Monsters have no stats, only a combat level** — S.
 - [x] **No drop has a quantity, and no currency drop is recorded** — M. The dump
-- [ ] **Monsters have no stats, only a combat level** — S. Neither `levels` nor
+- [x] **Monsters have no stats, only a combat level** — S. Neither `levels` nor
       `equipmentStats` is captured, which is why the pre-fight screen can compare
       levels but cannot calibrate a threshold on equipment bonuses.
-- [ ] **No drop has a quantity, and no currency drop is recorded** — M. The dump
+- [x] **No drop has a quantity, and no currency drop is recorded** — M. The dump
       currently says the agent's main GP source yields nothing.
 - [ ] **Alt Magic, Herblore and Firemaking store product and cost under names the
       generic dumper does not read** — M. 131 blank rows.
-- [ ] **384 recipes report `baseExperience: 0`** — S. Abyssal content, whose XP
+- [x] **384 recipes report `baseExperience: 0`** — S. Abyssal content, whose XP
       lives in `baseAbyssalExperience`.
 - [x] **Agility build costs are recorded as per-action inputs** — M. A one-time
       cost mislabelled as consumption, feeding wrong profit arithmetic.
-- [ ] **143 shop purchases report `gpCost: 0`**, which reads as free — S.
+- [x] **143 shop purchases report `gpCost: 0`**, which reads as free — S.
 - [x] **There is still no flat item table** — M. Sale values exist only where a
       recipe happens to produce the item.
 - [x] **Sections are silently truncated** — S. `herbloreRecipes` says 12 while
