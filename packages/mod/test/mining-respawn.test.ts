@@ -66,13 +66,25 @@ describe('mining interval includes respawn downtime', () => {
     ).toBe(4_500);
   });
 
-  it('charges only the swing when the rock regenerates passively', () => {
-    // A rock that refills while being mined never stops paying out.
+  it('still charges the respawn when the rock regenerates passively', () => {
+    // This assertion used to expect the bare 3,000 -- "a rock that refills
+    // while being mined never stops paying out". The dump settles it against
+    // that reading: *every* rock in the game carries `hasPassiveRegen`, so the
+    // exemption disabled the respawn correction entirely, and the rocks it
+    // mattered most for have the least forgiving numbers. Mithril yields 6 ore
+    // and waits 20 seconds; Crystal yields 66 and waits two minutes. Crystal
+    // advertised 120,000 GP/h on the old reading and measured 10,800.
+    //
+    // Regen refills the rock over time, so the truth sits between the bare
+    // swing and the full amortisation. The slower bound is used deliberately:
+    // how much a regen tick restores is not stated in the typings, and
+    // understating a rate is recoverable by measurement where overstating one
+    // is not.
     expect(
       miningIntervalFor(
         rock({ masteryMaxHP: 10, baseRespawnInterval: 30_000, hasPassiveRegen: true }),
       ),
-    ).toBe(3_000);
+    ).toBe(6_000);
   });
 
   it('falls back to the bare interval when HP or respawn is unrecorded', () => {

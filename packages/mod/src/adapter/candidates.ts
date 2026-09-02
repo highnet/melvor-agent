@@ -1190,7 +1190,24 @@ export function miningIntervalFor(rock: MiningRock): number {
   const base = modifiedInterval(game.mining, game.mining.baseInterval, rock);
 
   try {
-    if (rock.hasPassiveRegen === true) return base;
+    // Passive regen does not mean the rock never runs out.
+    //
+    // This used to return the bare swing for any rock with `hasPassiveRegen`,
+    // on the reading that such a rock refills itself. The dump settles it:
+    // *every* rock in the game carries the flag, so the respawn correction
+    // below has never once applied -- and the rocks it would matter most for
+    // are the ones with the least forgiving numbers. Mithril yields 6 ore and
+    // then waits 20 seconds; Crystal yields 66 and waits two minutes. Both were
+    // priced as though the wait did not exist, which is how Crystal came to
+    // advertise 120,000 GP/h against a measured 10,800.
+    //
+    // Regen refills the rock over time, so the true cost sits between the bare
+    // swing and the full amortisation below. How much HP a regen tick restores
+    // is not stated in the typings, so the slower bound is used deliberately:
+    // understating a rate is recoverable by measurement, and overstating one is
+    // what cost this project an afternoon of planning. The candidate label says
+    // the rate is unverified for these rocks, and the Delivering line now
+    // measures the truth against it.
 
     // `getRockMaxHP` (rockTicking.d.ts:180), not the static `maxHP` field.
     //
