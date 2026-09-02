@@ -148,6 +148,7 @@ export {
   readWorshipCandidates,
   selectTownshipWorship,
   readTownshipSummary,
+  readRepairableBuildings,
   repairTownshipBuilding,
   type TownshipProjection,
   type TownshipSummary,

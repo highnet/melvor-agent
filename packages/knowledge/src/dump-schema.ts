@@ -33,7 +33,14 @@ export const knowledgeDumpSchema = z.object({
   capturedAt: z.number().int().positive(),
   gamemodeId: z.string().min(1),
 
-  realms: z.array(z.object({ id: z.string(), name: z.string() })),
+  realms: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      unlocked: z.boolean(),
+      requirements: z.array(z.string()),
+    }),
+  ),
 
   skills: z.array(
     z.object({

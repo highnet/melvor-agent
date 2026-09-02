@@ -771,3 +771,42 @@ function describeGoal(goal: { getDescriptionHTML(): string }): string {
     return 'an unreadable goal';
   }
 }
+
+/**
+ * Degraded buildings the town can afford to repair.
+ *
+ * Reads only, and deliberately unordered: which one to repair first is a
+ * decision, and decisions live in the reflex tier where they can be tested
+ * without a live game.
+ */
+export function readRepairableBuildings(): {
+  buildingId: string;
+  biomeId: string;
+  efficiency: number;
+}[] {
+  const township = game.township;
+  const out: { buildingId: string; biomeId: string; efficiency: number }[] = [];
+
+  try {
+    for (const biome of township.biomes.allObjects) {
+      if (!township.isBiomeUnlocked(biome)) continue;
+
+      for (const building of biome.availableBuildings) {
+        try {
+          if (biome.getBuildingCount(building) <= 0) continue;
+          const efficiency = biome.getBuildingEfficiency(building);
+          if (efficiency >= REPAIR_THRESHOLD) continue;
+          if (!township.canAffordRepair(building, biome)) continue;
+
+          out.push({ buildingId: building.id, biomeId: biome.id, efficiency });
+        } catch {
+          // A building that will not report its efficiency is left alone.
+        }
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return out;
+}

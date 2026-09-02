@@ -781,3 +781,43 @@ export function sellToEscapeFullBank(
 
   return { name: 'reflex.sellToEscape', result: sell(stack.itemId, quantity) };
 }
+
+/**
+ * Repairs a degraded Township building.
+ *
+ * A reflex rather than a candidate, because there is no judgement in it. A
+ * decaying building produces less every tick it stays decayed, the resources
+ * that pay for the repair are generated passively by the town itself, and the
+ * loss compounds while nobody is looking — which is precisely the shape of
+ * thing that should never wait for a planning session.
+ *
+ * It was already offered as a candidate below 90% efficiency and never once
+ * chosen in a full day of play. That is the same failure as the 50 GP axe and
+ * the Mastery Tokens: surfacing a thing is not the same as doing it, and an
+ * efficiency the operator has to notice is an efficiency that will be missed.
+ *
+ * Township matters more than its tick rate suggests. Its tasks pay GP, items
+ * and Township XP, and Township level is what unlocks the skilling outfits —
+ * permanent XP multipliers on every skill the run will train afterwards. A town
+ * left to rot stalls all of that quietly.
+ *
+ * Affordability is the adapter's precondition, so a town that cannot pay simply
+ * produces no candidate and this does nothing.
+ */
+export function repairDegradedBuildings(
+  state: {
+    /** Degraded buildings the town can afford to repair, worst first. */
+    repairable: readonly { buildingId: string; biomeId: string; efficiency: number }[];
+  },
+  repair: (buildingId: string, biomeId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  // Sorted here rather than trusting the caller: "worst first" is a policy
+  // decision, and this is the tier that can be tested without a live game.
+  const worst = [...state.repairable].sort((a, b) => a.efficiency - b.efficiency)[0];
+  if (worst === undefined) return null;
+
+  return {
+    name: 'reflex.repairTownship',
+    result: repair(worst.buildingId, worst.biomeId),
+  };
+}

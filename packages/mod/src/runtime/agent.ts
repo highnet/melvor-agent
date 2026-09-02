@@ -86,6 +86,7 @@ import {
   readPlantableSeeds,
   readPlayerHitpoints,
   readRaidCandidates,
+  readRepairableBuildings,
   readSellCandidates,
   readShopObjectiveCandidates,
   readShortSeedIds,
@@ -160,6 +161,7 @@ import {
   plantEmptyPlots,
   refillFood,
   removePenalisingGear,
+  repairDegradedBuildings,
   sellToEscapeFullBank,
   stopWhenStarving,
   unlockAffordablePlots,
@@ -680,6 +682,12 @@ export class Agent {
         kind === 'casual'
           ? claimCasualTask(taskId, isSuspended)
           : claimTownshipTask(taskId, isSuspended),
+      ),
+      // A decayed building produces less every tick it stays decayed, and the
+      // resources that pay for the repair are generated passively by the town
+      // itself. Waiting for a planning session to notice is pure loss.
+      repairDegradedBuildings({ repairable: readRepairableBuildings() }, (buildingId, biomeId) =>
+        repairTownshipBuilding(buildingId, biomeId, isSuspended),
       ),
       // Ahead of every other farm reflex: a plot that does not exist cannot be
       // composted, planted or harvested.

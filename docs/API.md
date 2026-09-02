@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-187 exports.
+188 exports.
 
 ## `act`
 
@@ -1658,6 +1658,20 @@ can bring, and a failed raid pays nothing for the time spent.
 
 ```ts
 readRaidCandidates: () => Candidate[]
+```
+
+## `readRepairableBuildings`
+
+`function`
+
+Degraded buildings the town can afford to repair.
+
+Reads only, and deliberately unordered: which one to repair first is a
+decision, and decisions live in the reflex tier where they can be tested
+without a live game.
+
+```ts
+readRepairableBuildings: () => { buildingId: string; biomeId: string; efficiency: number; }[]
 ```
 
 ## `readSeedShortfalls`

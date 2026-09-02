@@ -13,6 +13,7 @@ import {
   openPendingContainers,
   plantEmptyPlots,
   refillFood,
+  repairDegradedBuildings,
   unlockAffordablePlots,
 } from '../src/runtime/combat-reflex.js';
 
@@ -703,5 +704,44 @@ describe('upgrading the food in the slot', () => {
     });
 
     expect(equipped).toEqual(['melvorD:Seahorse']);
+  });
+});
+
+describe('repairDegradedBuildings', () => {
+  const ok = () => ({ ok: true }) as never;
+
+  it('repairs the worst building first', () => {
+    // One repair per pass, so the pass has to spend it on the building losing
+    // the most production rather than whichever the registry happened to list
+    // first.
+    const repaired: string[] = [];
+    repairDegradedBuildings(
+      {
+        repairable: [
+          { buildingId: 'melvorF:Statue', biomeId: 'melvorF:Grasslands', efficiency: 80 },
+          { buildingId: 'melvorF:Farmland', biomeId: 'melvorF:Grasslands', efficiency: 20 },
+        ],
+      },
+      (buildingId, biomeId) => {
+        repaired.push(`${biomeId}/${buildingId}`);
+        return ok();
+      },
+    );
+
+    expect(repaired).toEqual(['melvorF:Grasslands/melvorF:Farmland']);
+  });
+
+  it('does nothing when the town is healthy', () => {
+    // The adapter filters on both efficiency and affordability, so an empty
+    // list is the normal case and must stay silent rather than reporting a
+    // no-op every tick.
+    const repaired: string[] = [];
+    const outcome = repairDegradedBuildings({ repairable: [] }, (buildingId) => {
+      repaired.push(buildingId);
+      return ok();
+    });
+
+    expect(outcome).toBeNull();
+    expect(repaired).toEqual([]);
   });
 });

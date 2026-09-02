@@ -60,6 +60,36 @@ interface RecipeLike {
   name: string;
   level: number;
   baseExperience: number;
+  /** Into the Abyss content gates on this instead; see recipeRequirement. */
+  abyssalLevel?: number;
+  baseAbyssalExperience?: number;
+}
+
+/**
+ * The level and XP a recipe actually uses.
+ *
+ * `BasicSkillRecipe` carries two parallel tracks (`skill.d.ts:950-955`):
+ * `level`/`baseExperience` for Melvor-realm content and
+ * `abyssalLevel`/`baseAbyssalExperience` for Into the Abyss content. A recipe
+ * uses one or the other, and the unused pair reads 0.
+ *
+ * Reading only the standard pair made every Abyssal recipe advertise itself as
+ * `needs lvl 0` worth `0 xp/h` — which reads as "free and worthless" when the
+ * truth is "gated behind a track we have not started". The `abyssal` flag is
+ * returned so callers can compare against `skill.abyssalLevel` (`skill.d.ts:177`)
+ * rather than `skill.level`; the two are separate progressions and comparing
+ * across them is how a 0 became an invitation.
+ */
+function recipeRequirement(recipe: RecipeLike): {
+  level: number;
+  xp: number;
+  abyssal: boolean;
+} {
+  const abyssalLevel = recipe.abyssalLevel ?? 0;
+  if (abyssalLevel > 0) {
+    return { level: abyssalLevel, xp: recipe.baseAbyssalExperience ?? 0, abyssal: true };
+  }
+  return { level: recipe.level, xp: recipe.baseExperience, abyssal: false };
 }
 
 /**
@@ -126,12 +156,16 @@ function genericSkillCandidates(): Candidate[] {
         continue;
       }
 
+      const requirement = recipeRequirement(recipe);
+
       candidates.push({
         kind: 'gather_resource',
         params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
-        label: `${skill.name}: ${recipe.name}`,
-        xpPerHour: lapXpPerHour ?? actionsPerHour * recipe.baseExperience,
-        requiresLevel: recipe.level,
+        label: requirement.abyssal
+          ? `${skill.name}: ${recipe.name} — Abyssal realm, needs Abyssal lvl ${requirement.level}`
+          : `${skill.name}: ${recipe.name}`,
+        xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp,
+        requiresLevel: requirement.level,
         available: true,
       });
     }
@@ -154,12 +188,13 @@ function gpValue(product: AnyItem): number {
 function candidate(
   skillId: string,
   skillName: string,
-  recipe: { id: string; name: string; level: number; baseExperience: number },
+  recipe: RecipeLike,
   intervalMs: number,
   productGp: number,
 ): Candidate {
   const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
   const salePerHour = actionsPerHour * productGp;
+  const requirement = recipeRequirement(recipe);
   return {
     kind: 'gather_resource',
     params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
@@ -178,9 +213,9 @@ function candidate(
       salePerHour > 0
         ? `${skillName}: ${recipe.name} — output worth ${Math.round(salePerHour).toLocaleString()} GP/h if sold, not GP earned`
         : `${skillName}: ${recipe.name}`,
-    xpPerHour: actionsPerHour * recipe.baseExperience,
+    xpPerHour: actionsPerHour * requirement.xp,
     gpPerHour: salePerHour,
-    requiresLevel: recipe.level,
+    requiresLevel: requirement.level,
     available: true,
   };
 }

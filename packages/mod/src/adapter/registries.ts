@@ -47,14 +47,57 @@ function safeList(read: () => string[]): string[] {
   }
 }
 
+function safeBoolean(read: () => boolean, fallback: boolean): boolean {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Describes a requirement list without pretending to know every shape.
+ *
+ * Flattening an unrecognised requirement to its bare type name is what made
+ * the Abyssal realm question unanswerable from the dump: `DungeonCompletion`
+ * says a dungeon gates the content but not *which* dungeon, which is the only
+ * part anyone needs. So the two shapes that actually gate progression are
+ * spelled out, `isMet` is recorded so a satisfied gate is visibly satisfied,
+ * and anything else still appears by type rather than being dropped.
+ */
+function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
+  try {
+    return read().map((requirement) => {
+      const met = safeBoolean(() => requirement.isMet(), false) ? ' (met)' : '';
+
+      if (requirement.type === 'SkillLevel') {
+        return `${requirement.skill.name} ${requirement.level}${met}`;
+      }
+      if (requirement.type === 'DungeonCompletion') {
+        return `Complete ${requirement.dungeon.name} x${requirement.count}${met}`;
+      }
+      return `${requirement.type}${met}`;
+    });
+  } catch {
+    return [];
+  }
+}
+
 export function dumpRegistries(): KnowledgeDump {
   return {
     gameVersion: gameVersion,
     capturedAt: Date.now(),
     gamemodeId: game.currentGamemode.id,
+    // `isUnlocked` and `unlockRequirements` (realms.d.ts:15,23) are the whole
+    // reason to dump realms at all: Corruption and Harvesting sit behind the
+    // Abyssal realm, and without these two fields the dump could say the realm
+    // exists but not one word about how to open it. Requirements are flattened
+    // to their type names, matching how skill requirements are recorded below.
     realms: game.realms.allObjects.map((realm) => ({
       id: realm.id,
       name: realm.name,
+      unlocked: safeBoolean(() => realm.isUnlocked, false),
+      requirements: safeRequirementTypes(() => realm.unlockRequirements),
     })),
     skills: game.skills.allObjects.map((skill) => ({
       id: skill.id,
