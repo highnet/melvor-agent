@@ -2,6 +2,7 @@ import type { ActionResult, Candidate, CombatGateInputs } from '@melvor-agent/sh
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
+import { noteSwallowed } from './safe.js';
 
 /** Stats measured from a probe enemy, plus the damage type they arrive as. */
 interface ProbedStats {
@@ -171,7 +172,8 @@ export function readTargetCombatLevel(targetId: string): number | null {
       hardest = Math.max(hardest, inhabitant.combatLevel);
     }
     return hardest > 0 ? hardest : null;
-  } catch {
+  } catch (error) {
+    noteSwallowed('combat.readTargetCombatLevel', error);
     return null;
   }
 }
@@ -203,7 +205,8 @@ function playerCombatLevel(): number {
   try {
     // Lives on Game, not on Player — the same place the snapshot reads it.
     return game.playerCombatLevel;
-  } catch {
+  } catch (error) {
+    noteSwallowed('combat.playerCombatLevel', error);
     return 0;
   }
 }
@@ -602,7 +605,8 @@ function combatLevelOf(monster: Monster | undefined): number {
   try {
     const level = monster.combatLevel;
     return Number.isFinite(level) ? level : Number.POSITIVE_INFINITY;
-  } catch {
+  } catch (error) {
+    noteSwallowed('combat.combatLevelOf', error);
     return Number.POSITIVE_INFINITY;
   }
 }
@@ -694,7 +698,8 @@ export function shouldCollectLoot(): boolean {
   try {
     const loot = game.combat.loot;
     return loot.drops.length >= Math.min(LOOT_COLLECT_THRESHOLD, loot.maxLoot);
-  } catch {
+  } catch (error) {
+    noteSwallowed('combat.shouldCollectLoot', error);
     return false;
   }
 }
@@ -724,7 +729,8 @@ export function readSpellRuneIds(): Set<string> {
       if (spell.level > magicLevel) continue;
       for (const rune of spell.runesRequired) runes.add(rune.item.id);
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('combat.readSpellRuneIds', error);
     // Failing to protect a rune beats failing to build the sell list at all.
   }
 
@@ -767,7 +773,8 @@ export function readMonsterDropsOfInterest(
     if (bones !== undefined && wanted.has(bones.id)) names.push(bones.name);
 
     return names;
-  } catch {
+  } catch (error) {
+    noteSwallowed('combat.readMonsterDropsOfInterest', error);
     // A monster whose table cannot be read is not annotated, rather than
     // annotated wrongly.
     return [];

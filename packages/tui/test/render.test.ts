@@ -62,6 +62,7 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
       blockedOpportunities: [],
       planRemaining: 0,
       journalEntries: [],
+      adapterFailures: [],
       logs: [
         { at: 1_700_000_000_000, level: 'info', source: 'policy', message: 'started cutting' },
       ],
@@ -128,6 +129,39 @@ describe('render', () => {
     );
     expect(text).toContain('BLOCKED');
     expect(text).toContain('version_mismatch');
+  });
+
+  it('surfaces adapter reads that are failing', () => {
+    // The failure mode with no other symptom: a renamed accessor takes a
+    // candidate off the list or drops a rate to its nominal fallback, and the
+    // run otherwise looks entirely healthy. Around a hundred bare catches used
+    // to swallow these with no signal anywhere.
+    const failing = dashboard();
+    if (failing.report === null) throw new Error('fixture must include a report');
+    const text = plain(
+      render(
+        {
+          ...failing,
+          report: {
+            ...failing.report,
+            adapterFailures: [
+              { site: 'candidates.thievingSuccessRate', count: 412, lastError: 'not a function' },
+              { site: 'township.readTaskCandidates', count: 9, lastError: 'undefined' },
+            ],
+          },
+        },
+        null,
+        120,
+        30,
+      ),
+    );
+    expect(text).toContain('candidates.thievingSuccessRate ×412');
+    expect(text).toContain('+1 more');
+  });
+
+  it('says nothing about adapter reads while they all work', () => {
+    // A permanent warning line is a warning nobody reads.
+    expect(plain(render(dashboard(), null, 100, 30))).not.toContain('adapter reads failing');
   });
 
   it('reads auto-eat as not owned rather than zero', () => {

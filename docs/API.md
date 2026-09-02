@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-196 exports.
+198 exports.
 
 ## `act`
 
@@ -67,6 +67,16 @@ Options for a single verified action.
 
 ```ts
 ActSpec: any
+```
+
+## `AdapterFailure`
+
+`interface`
+
+One site's failure tally, with the most recent reason.
+
+```ts
+AdapterFailure: any
 ```
 
 ## `addSidebarPanel`
@@ -959,6 +969,20 @@ wrong one for an hour is not.
 
 ```ts
 readActiveRecipeIds: () => string[]
+```
+
+## `readAdapterFailures`
+
+`function`
+
+Every site that has failed, worst first.
+
+Cumulative for the run rather than drained per report, because the question
+an operator asks at 8am is "what has been failing all night", and a counter
+that resets every three seconds cannot answer it.
+
+```ts
+readAdapterFailures: () => AdapterFailure[]
 ```
 
 ## `readAgilityCandidates`

@@ -1,6 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /** What buying claims to change: one more owned, some currency gone. */
 export interface PurchaseProjection {
@@ -258,7 +259,8 @@ export function readShopGoals(): {
       }))
       .filter((goal) => goal.gpCost > 0 && goal.shortfall > 0)
       .sort((a, b) => a.shortfall - b.shortfall);
-  } catch {
+  } catch (error) {
+    noteSwallowed('shop.readShopGoals', error);
     return [];
   }
 }

@@ -1,6 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { THIEVING_ID, stopGathering } from './gathering.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Produces the save-export string.
@@ -105,7 +106,8 @@ function stopDamagingActivity(): string | null {
       stopGathering(THIEVING_ID, () => false);
       return THIEVING_ID;
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('save.stopDamagingActivity', error);
     // Reported as "not stopped"; the reload proceeds either way.
   }
 
@@ -131,7 +133,8 @@ export function readLocalSaveSlots(): { slotId: number; characterName: string }[
       if (!('characterName' in header)) continue;
 
       slots.push({ slotId, characterName: header.characterName });
-    } catch {
+    } catch (error) {
+      noteSwallowed('save.readLocalSaveSlots', error);
       // A slot that will not describe itself is not a slot worth loading.
     }
   }

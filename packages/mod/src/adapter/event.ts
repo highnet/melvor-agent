@@ -2,6 +2,7 @@ import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Combat events — the end-game gauntlet.
@@ -181,7 +182,8 @@ export function readEventCandidates(): Candidate[] {
         label: `Start the combat event ending in ${event.finalBossMonster.name} — ${event.slayerAreas.length} stages, the hardest fight in the game`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('event.readEventCandidates', error);
       // An event that cannot describe itself is not a candidate.
     }
   }

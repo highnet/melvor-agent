@@ -2,6 +2,7 @@ import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isArtisanSkill, startArtisan, stopArtisan } from './artisan.js';
+import { noteSwallowed } from './safe.js';
 import { isMiscSkill, startMiscSkill, stopMiscSkill } from './skills-misc.js';
 
 /**
@@ -95,7 +96,8 @@ function bankCannotHoldProduct(skillId: string, recipeId: string): string | null
     if (game.bank.getQty(product) > 0) return null;
 
     return `bank is full (${game.bank.occupiedSlots}/${game.bank.maximumSlots}) and holds no ${product.name}; the skill would run and every item it made would be discarded`;
-  } catch {
+  } catch (error) {
+    noteSwallowed('gathering.bankCannotHoldProduct', error);
     return null;
   }
 }
@@ -477,11 +479,13 @@ function fillRemainingTreeSlots(primary: { id: string }): void {
       if (skill.activeTrees.size >= skill.treeCutLimit) return;
       try {
         skill.selectTree(other);
-      } catch {
+      } catch (error) {
+        noteSwallowed('gathering.fillRemainingTreeSlots', error);
         // One unselectable tree must not stop the rest.
       }
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('gathering.fillRemainingTreeSlots', error);
     // No filling is worse than the primary tree failing to start.
   }
 }

@@ -21,6 +21,7 @@ import {
   WOODCUTTING_ID,
 } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
+import { noteSwallowed, recordFallback, safeList, safeNumber } from './safe.js';
 import { readShopCandidates, readShopGoals } from './shop.js';
 import { readTaskWantedQuantities } from './township.js';
 
@@ -38,11 +39,11 @@ const MS_PER_HOUR = 3_600_000;
  */
 export function readGatherCandidates(): Candidate[] {
   return [
-    ...safely('woodcutting', woodcuttingCandidates),
-    ...safely('mining', miningCandidates),
-    ...safely('fishing', fishingCandidates),
-    ...safely('thieving', thievingCandidates),
-    ...safely('other skills', genericSkillCandidates),
+    ...safeCandidates('woodcutting', woodcuttingCandidates),
+    ...safeCandidates('mining', miningCandidates),
+    ...safeCandidates('fishing', fishingCandidates),
+    ...safeCandidates('thieving', thievingCandidates),
+    ...safeCandidates('other-skills', genericSkillCandidates),
   ].sort((a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0));
 }
 
@@ -50,7 +51,8 @@ export function readGatherCandidates(): Candidate[] {
 function safeRecipes(skill: { actions?: { allObjects: RecipeLike[] } }): RecipeLike[] | null {
   try {
     return skill.actions?.allObjects ?? null;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.safeRecipes', error);
     return null;
   }
 }
@@ -89,7 +91,8 @@ export interface RecipeLike {
 function isRecipeRealmUnlocked(recipe: RecipeLike): boolean {
   try {
     return recipe.realm?.isUnlocked ?? true;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.isRecipeRealmUnlocked', error);
     return true;
   }
 }
@@ -177,10 +180,14 @@ function genericSkillCandidates(): Candidate[] {
     // Herblore, 5000 for Summoning. The fallback understated the first group by
     // half and overstated Summoning by two thirds, in opposite directions, from
     // a number that was never read off anything.
+    //
+    // The nominal three seconds is no longer a third source in this chain, it
+    // is what `firstPositive` returns when the chain runs out — which is what
+    // makes reaching it countable. Same number, same behaviour, now visible.
     const skillInterval = firstPositive(
+      `candidates.skillInterval:${skillId}`,
       () => withActions.actionInterval,
       () => withActions.baseInterval,
-      () => NOMINAL_INTERVAL_MS,
     );
 
     // A course skill earns a whole lap at a time; see readAgilityLapRate. Every
@@ -207,7 +214,8 @@ function genericSkillCandidates(): Candidate[] {
       let masteryLocked = false;
       try {
         masteryLocked = withActions.isMasteryActionUnlocked?.(recipe) === false;
-      } catch {
+      } catch (error) {
+        noteSwallowed('candidates.genericSkillCandidates', error);
         masteryLocked = false;
       }
       if (masteryLocked) continue;
@@ -217,7 +225,8 @@ function genericSkillCandidates(): Candidate[] {
         // Affordability is different: a candidate the adapter would then refuse
         // is a planner trap, so an unanswerable cost check does skip.
         if (!canAfford(withActions, recipe)) continue;
-      } catch {
+      } catch (error) {
+        noteSwallowed('candidates.genericSkillCandidates', error);
         continue;
       }
 
@@ -301,7 +310,8 @@ function alchemyGpPerCast(skill: AnySkill, recipe: RecipeLike): number | null {
     }
 
     return best;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.alchemyGpPerCast', error);
     return null;
   }
 }
@@ -336,7 +346,8 @@ export function productChanceFor(skill: AnySkill, recipe: RecipeLike): number {
     }
 
     return 1;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.productChanceFor', error);
     return 1;
   }
 }
@@ -369,13 +380,15 @@ function superheatGpPerCast(): number {
 
         const net = revenue - spent;
         if (net > best) best = net;
-      } catch {
+      } catch (error) {
+        noteSwallowed('candidates.superheatGpPerCast', error);
         // A recipe that will not price itself is not the best one.
       }
     }
 
     return best;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.superheatGpPerCast', error);
     return 0;
   }
 }
@@ -431,7 +444,8 @@ function netProductGpFor(skill: AnySkill, recipe: RecipeLike, yielded: number): 
     }
 
     return revenue - spent;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.netProductGpFor', error);
     return 0;
   }
 }
@@ -508,7 +522,7 @@ function woodcuttingCandidates(): Candidate[] {
         skill.getTreeInterval(tree) /
           Math.max(
             1,
-            safeNumber(() => skill.treeCutLimit, 1),
+            safeNumber('candidates.treeCutLimit', () => skill.treeCutLimit, 1),
           ),
         gpValue(tree.product),
         skill,
@@ -530,14 +544,14 @@ function woodcuttingCandidates(): Candidate[] {
  * Without per-skill isolation one such getter empties the entire candidate list
  * and the agent has nothing at all to do — a far worse outcome than losing one
  * skill's options.
+ *
+ * Renamed from `safely`, which was also the name of an unrelated helper in
+ * `active.ts` with a different signature: two functions of the same name doing
+ * different things is how a reader concludes the codebase already reports these
+ * failures everywhere. It did not; this was the only one that reported at all.
  */
-function safely(name: string, enumerate: () => Candidate[]): Candidate[] {
-  try {
-    return enumerate();
-  } catch (error) {
-    console.warn(`[play-agent] ${name} candidates unavailable:`, error);
-    return [];
-  }
+function safeCandidates(name: string, enumerate: () => Candidate[]): Candidate[] {
+  return safeList(`candidates.${name}`, enumerate);
 }
 
 /**
@@ -629,7 +643,8 @@ export function affordableNonShardItem(
     for (const item of options) {
       try {
         if (skill.getAltRecipeCosts(recipe, item).checkIfOwned()) return item;
-      } catch {
+      } catch (error) {
+        noteSwallowed('candidates.affordableNonShardItem', error);
         // An unpriceable option is skipped, not treated as affordable.
       }
     }
@@ -702,43 +717,35 @@ function canAfford(
 }
 
 /**
- * Reads a getter that may throw when the game has nothing selected.
- *
- * Returns the fallback rather than propagating, because "this number is
- * currently unknowable" is a normal state here, not an error.
- */
-/**
  * The first reading that is a usable interval.
  *
- * Positivity matters more than presence here: `safeNumber` falls back only on
- * null or undefined, so a getter returning 0 passes straight through -- and a
- * zero interval divides into an infinite rate, which would put that recipe at
- * the top of the board and keep it there. An interval of zero is not a very
- * fast action, it is an unreadable one.
+ * Positivity matters more than presence here: a getter returning 0 would
+ * otherwise pass straight through, and a zero interval divides into an infinite
+ * rate, which would put that recipe at the top of the board and keep it there.
+ * An interval of zero is not a very fast action, it is an unreadable one.
+ *
+ * Only the *last* source is counted as a failure, deliberately. Falling through
+ * from `actionInterval` to `baseInterval` is the designed path and happens on
+ * every enumeration; counting it would bury the reads that genuinely broke
+ * under noise. Reaching the end of the chain is the event worth seeing.
  */
-function firstPositive(...reads: (() => number | undefined)[]): number {
+function firstPositive(site: string, ...reads: (() => number | undefined)[]): number {
   for (const read of reads) {
     try {
       const value = read();
       if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
-    } catch {
+    } catch (error) {
+      noteSwallowed('candidates.firstPositive', error);
       // Try the next source.
     }
   }
 
+  recordFallback(site, 'no source reported a usable interval');
   return NOMINAL_INTERVAL_MS;
 }
 
 /** Last-resort interval when a skill will not report one at all. */
 const NOMINAL_INTERVAL_MS = 3000;
-
-function safeNumber(read: () => number | undefined, fallback: number): number {
-  try {
-    return read() ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
 
 function miningCandidates(): Candidate[] {
   const skill = game.mining;
@@ -820,7 +827,8 @@ export function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantit
     const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
     const modified = Number.isFinite(yielded) && yielded > 0 ? yielded : baseQuantity;
     return modified * landed;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.productYieldFor', error);
     return baseQuantity;
   }
 }
@@ -835,7 +843,8 @@ export function xpMultiplierFor(skill: AnySkill, recipe: RecipeLike): number {
     // A modifier of -100% would zero the rate and sort the recipe off the
     // board; clamp rather than let a hostile value rewrite the ranking.
     return Math.max(0, 1 + percent / 100);
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.xpMultiplierFor', error);
     return 1;
   }
 }
@@ -911,7 +920,8 @@ export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: nu
 
     const interval = getter.call(skill, recipe);
     return Number.isFinite(interval) && interval > 0 ? interval : fallback;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.masteryIntervalFor', error);
     return fallback;
   }
 }
@@ -946,7 +956,8 @@ export function masteryNote(skill: AnySkill, recipe: { id: string }): string {
     if (level >= MASTERY_HEADROOM_LEVEL) return '';
 
     return ` — mastery ${level}/99, so this rate improves with sustained use`;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.masteryNote', error);
     return '';
   }
 }
@@ -977,7 +988,8 @@ export function miningIntervalFor(rock: MiningRock): number {
     if (actionsPerCycle <= 0 || respawn <= 0) return base;
 
     return base + respawn / actionsPerCycle;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.miningIntervalFor', error);
     return base;
   }
 }
@@ -1037,7 +1049,11 @@ function thievingCandidates(): Candidate[] {
       .map((npc) => {
         const successRate = Math.max(
           0,
-          Math.min(1, safeNumber(() => skill.getNPCSuccessRate(npc), 0) / 100),
+          Math.min(
+            1,
+            safeNumber('candidates.thievingSuccessRate', () => skill.getNPCSuccessRate(npc), 0) /
+              100,
+          ),
         );
 
         // `getNPCInterval(npc)` (thieving2.d.ts:193), not `skill.actionInterval`.
@@ -1057,10 +1073,15 @@ function thievingCandidates(): Candidate[] {
         // as a mining respawn, and ignoring it overstates exactly the low-level
         // NPCs whose success rate is worst.
         const baseIntervalMs = safeNumber(
+          'candidates.thievingNPCInterval',
           () => skill.getNPCInterval(npc),
-          safeNumber(() => skill.actionInterval, 3000),
+          safeNumber('candidates.thievingInterval', () => skill.actionInterval, 3000),
         );
-        const stunMs = safeNumber(() => skill.getStunInterval(npc), 0);
+        const stunMs = safeNumber(
+          'candidates.thievingStunInterval',
+          () => skill.getStunInterval(npc),
+          0,
+        );
         const intervalMs = baseIntervalMs + (1 - successRate) * stunMs;
         const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
 
@@ -1131,7 +1152,8 @@ function hitsTooHardForNow(maxHit: number): boolean {
     const current = game.combat.player.hitpoints;
     if (current <= 0) return false;
     return maxHit > current * THIEVING_MAX_HIT_FRACTION;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.hitsTooHardForNow', error);
     return false;
   }
 }
@@ -1148,7 +1170,8 @@ function hpShare(maxHit: number): string {
     const current = game.combat.player.hitpoints;
     if (current <= 0) return 'unknown share';
     return `${Math.round((maxHit / current) * 100)}%`;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.hpShare', error);
     return 'unknown share';
   }
 }
@@ -1212,7 +1235,8 @@ const FOOD_SELL_FLOOR = 40;
 function isAmmunition(item: AnyItem): boolean {
   try {
     return item instanceof EquipmentItem && item.ammoType !== undefined;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.isAmmunition', error);
     return false;
   }
 }
@@ -1405,7 +1429,11 @@ export function readBlockedOpportunities(): {
     const recipes = safeRecipes(withActions);
     if (recipes === null) continue;
 
-    const interval = safeNumber(() => withActions.actionInterval, 3000);
+    const interval = safeNumber(
+      'candidates.blockedActionInterval',
+      () => withActions.actionInterval,
+      3000,
+    );
     const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
     for (const recipe of recipes) {
@@ -1431,7 +1459,8 @@ export function readBlockedOpportunities(): {
           xpPerHour: actionsPerHour * recipe.baseExperience,
           missing,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('candidates.readBlockedOpportunities', error);
         // Same reasoning as enumeration: an unreadable recipe is skipped, not
         // reported as an opportunity we cannot describe.
       }
@@ -1673,7 +1702,8 @@ function describeNpcDrops(
     if (unique !== undefined && wanted.has(unique.id)) names.add(`${unique.name} (guaranteed)`);
 
     return names.size === 0 ? '' : ` — drops ${[...names].join(', ')}, which you are short of`;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.describeNpcDrops', error);
     return '';
   }
 }
@@ -1719,7 +1749,8 @@ export function readCheapestExpendableStack(): {
     }
 
     return cheapest;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.readCheapestExpendableStack', error);
     return null;
   }
 }
@@ -1784,7 +1815,8 @@ export function readUnstockedSkills(): {
         missing: [],
       });
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.readUnstockedSkills', error);
     // A skill that cannot be inspected is left unmentioned rather than guessed
     // at; a wrong reason is worse than none.
   }
@@ -1828,7 +1860,8 @@ export function readMostValuableExpendableStack(): {
     }
 
     return best;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.readMostValuableExpendableStack', error);
     return null;
   }
 }
@@ -1863,7 +1896,8 @@ function saleExclusionReason(item: AnyItem, held = 0): string | null {
     }
     if (gpValue(item) <= 0) return 'it does not sell for GP';
     return null;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.saleExclusionReason', error);
     // Unreadable means unsellable: refusing to sell is the recoverable error.
     return 'its sell guards could not be evaluated';
   }
@@ -1907,7 +1941,8 @@ export function readUnsellableNotice(): {
         xpPerHour: 0,
         missing: [],
       }));
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.readUnsellableNotice', error);
     return [];
   }
 }
@@ -1938,7 +1973,8 @@ export function readShopGoalNotice(): {
         xpPerHour: 0,
         missing: [],
       }));
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.readShopGoalNotice', error);
     return [];
   }
 }
@@ -1993,7 +2029,8 @@ export function sustainableMinutes(recipe: RecipeLike, intervalMs: number): numb
 
     if (!Number.isFinite(actions)) return null;
     return (actions * intervalMs) / 60_000;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.sustainableMinutes', error);
     return null;
   }
 }
@@ -2021,7 +2058,8 @@ function describeProducers(missing: readonly { itemId: string; name: string }[])
     }
 
     return named.length === 0 ? '' : ` — ${named.join(', ')}`;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.describeProducers', error);
     return '';
   }
 }
@@ -2044,7 +2082,8 @@ function findProducer(itemId: string): string | null {
     }
 
     return null;
-  } catch {
+  } catch (error) {
+    noteSwallowed('candidates.findProducer', error);
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * The Township Trader — the bridge between skilling and the town.
@@ -231,7 +232,8 @@ export function readTraderCandidates(): Candidate[] {
           available: true,
         });
       }
-    } catch {
+    } catch (error) {
+      noteSwallowed('trader.readTraderCandidates', error);
       // A resource that cannot report its conversions is not a candidate.
     }
   }
@@ -277,7 +279,8 @@ export function readTownshipGoodsCandidates(): Candidate[] {
           available: true,
         });
       }
-    } catch {
+    } catch (error) {
+      noteSwallowed('trader.readTownshipGoodsCandidates', error);
       // A resource that cannot report its conversions is not a candidate.
     }
   }

@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /** What selling claims to change: less of the item, more of the currency. */
 export interface SaleProjection {
@@ -230,7 +231,8 @@ export function readBoneCandidates(): Candidate[] {
         label: `Bury ${entry.quantity}x ${entry.item.name} for ${points} prayer points each — points are what prayers spend, and spending them in combat is what trains Prayer`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('bank.readBoneCandidates', error);
       // A bone that cannot price itself is not a candidate.
     }
   }
@@ -427,7 +429,8 @@ export function readMasteryTokenIds(): Set<string> {
     for (const entry of game.bank.items.values()) {
       if (entry.item instanceof MasteryTokenItem) ids.add(entry.item.id);
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('bank.readMasteryTokenIds', error);
     // Failing to protect a token beats failing to build the sell list.
   }
   return ids;

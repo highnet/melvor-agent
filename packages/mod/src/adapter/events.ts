@@ -1,3 +1,4 @@
+import { noteSwallowed } from './safe.js';
 /** Undoes a subscription. Every listener the mod creates returns one of these. */
 export type Disposer = () => void;
 
@@ -76,7 +77,8 @@ export class Subscriptions {
     for (const dispose of pending) {
       try {
         dispose();
-      } catch {
+      } catch (error) {
+        noteSwallowed('events.onGameLoop', error);
         // Teardown is best-effort by design; see class doc.
       }
     }

@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 export const FARMING_ID = 'melvorD:Farming';
 
@@ -267,7 +268,8 @@ export function readAllSeedIds(): Set<string> {
   for (const recipe of game.farming.actions.allObjects) {
     try {
       seeds.add(recipe.seedCost.item.id);
-    } catch {
+    } catch (error) {
+      noteSwallowed('farming.readAllSeedIds', error);
       // A recipe with no readable seed cost is skipped rather than throwing:
       // failing to protect one seed beats failing to build the sell list.
     }
@@ -303,7 +305,8 @@ export function readBarelyEnoughIngredientIds(): Set<string> {
       const seed = recipe.seedCost;
       consider(seed.item.id, seed.quantity, game.bank.getQty(seed.item));
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('farming.readBarelyEnoughIngredientIds', error);
     // A skill that cannot report its recipes protects nothing.
   }
 
@@ -313,7 +316,8 @@ export function readBarelyEnoughIngredientIds(): Set<string> {
         consider(cost.item.id, cost.quantity, game.bank.getQty(cost.item));
       }
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('farming.readBarelyEnoughIngredientIds', error);
     // Same.
   }
 
@@ -422,7 +426,8 @@ export function readCompostCandidates(): Candidate[] {
         label: `Compost ${plot.plantedRecipe?.name ?? 'the crop'} in ${plot.id} with ${affordable.name} (${plot.compostLevel}% — protects against the crop dying)`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('farming.readCompostCandidates', error);
       // A plot that cannot report its state is not a candidate.
     }
   }
@@ -447,7 +452,8 @@ export function readFarmCandidates(): Candidate[] {
   let plots: FarmPlotState[];
   try {
     plots = readFarmPlots();
-  } catch {
+  } catch (error) {
+    noteSwallowed('farming.readFarmCandidates', error);
     return [];
   }
 
@@ -546,7 +552,8 @@ export function readSeedShortfalls(): {
           },
         ],
       }));
-  } catch {
+  } catch (error) {
+    noteSwallowed('farming.readSeedShortfalls', error);
     return [];
   }
 }
@@ -578,7 +585,8 @@ export function readShortSeedIds(): Set<string> {
       const held = game.bank.getQty(recipe.seedCost.item);
       if (held < recipe.seedCost.quantity) ids.add(recipe.seedCost.item.id);
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('farming.readShortSeedIds', error);
     // An unreadable recipe is skipped rather than guessed at.
   }
   return ids;

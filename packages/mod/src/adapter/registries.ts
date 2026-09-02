@@ -1,4 +1,5 @@
 import type { KnowledgeDump } from '@melvor-agent/knowledge';
+import { noteSwallowed, safeBoolean, safeList, safeNumber, safeText } from './safe.js';
 import { gpCostOf } from './shop.js';
 
 /**
@@ -22,39 +23,13 @@ import { gpCostOf } from './shop.js';
  * worse. These return a stated empty value so a missing field is visibly empty
  * rather than plausibly wrong — the distinction that made "no monster drops
  * seeds" indistinguishable from "monster drops were never dumped".
+ *
+ * The four helpers that used to live here are now `adapter/safe.ts`, shared
+ * with the rest of the adapter and counting what they swallow. There were two
+ * different `safeNumber`s in this codebase with different signatures, which is
+ * how "the adapter reports its failures" became something a reader could
+ * believe while about a hundred bare catches said nothing at all.
  */
-function safeNumber(read: () => number, fallback: number): number {
-  try {
-    const value = read();
-    return Number.isFinite(value) ? value : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function safeText(read: () => string): string {
-  try {
-    return read();
-  } catch {
-    return '';
-  }
-}
-
-function safeList(read: () => string[]): string[] {
-  try {
-    return read();
-  } catch {
-    return [];
-  }
-}
-
-function safeBoolean(read: () => boolean, fallback: boolean): boolean {
-  try {
-    return read();
-  } catch {
-    return fallback;
-  }
-}
 
 /**
  * Describes a requirement list without pretending to know every shape.
@@ -69,7 +44,9 @@ function safeBoolean(read: () => boolean, fallback: boolean): boolean {
 function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
   try {
     return read().map((requirement) => {
-      const met = safeBoolean(() => requirement.isMet(), false) ? ' (met)' : '';
+      const met = safeBoolean('registries.requirementIsMet', () => requirement.isMet(), false)
+        ? ' (met)'
+        : '';
 
       if (requirement.type === 'SkillLevel') {
         return `${requirement.skill.name} ${requirement.level}${met}`;
@@ -79,7 +56,8 @@ function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
       }
       return `${requirement.type}${met}`;
     });
-  } catch {
+  } catch (error) {
+    noteSwallowed('registries.safeRequirementTypes', error);
     return [];
   }
 }
@@ -97,7 +75,7 @@ export function dumpRegistries(): KnowledgeDump {
     realms: game.realms.allObjects.map((realm) => ({
       id: realm.id,
       name: realm.name,
-      unlocked: safeBoolean(() => realm.isUnlocked, false),
+      unlocked: safeBoolean('registries.realmIsUnlocked', () => realm.isUnlocked, false),
       requirements: safeRequirementTypes(() => realm.unlockRequirements),
     })),
     skills: game.skills.allObjects.map((skill) => ({
@@ -139,7 +117,8 @@ export function dumpRegistries(): KnowledgeDump {
             quantity: cost.quantity,
           })),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -177,12 +156,14 @@ export function dumpRegistries(): KnowledgeDump {
                 itemName: drop.item.name,
                 quantity: drop.quantity,
               });
-            } catch {
+            } catch (error) {
+              noteSwallowed('registries.dumpRegistries', error);
               // A drop that cannot describe itself is skipped, not invented.
             }
           }
         }
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
       return out.slice(0, 60);
@@ -215,7 +196,8 @@ export function dumpRegistries(): KnowledgeDump {
             itemName: item.name,
           })),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -238,7 +220,8 @@ export function dumpRegistries(): KnowledgeDump {
           plantedRecipeId: plot.plantedRecipe?.id ?? null,
           hasGrowthTimer: game.farming.growthTimerMap.has(plot),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -260,7 +243,8 @@ export function dumpRegistries(): KnowledgeDump {
           seedItemId: recipe.seedCost.item.id,
           seedCost: recipe.seedCost.quantity,
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -286,7 +270,8 @@ export function dumpRegistries(): KnowledgeDump {
               : requirement.type,
           ),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -316,7 +301,8 @@ export function dumpRegistries(): KnowledgeDump {
             ),
           ],
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -335,7 +321,8 @@ export function dumpRegistries(): KnowledgeDump {
             itemName: conversion.item.name,
           })),
         );
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -356,7 +343,8 @@ export function dumpRegistries(): KnowledgeDump {
             itemName: conversion.item.name,
           })),
         );
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         // A save with no town reports nothing rather than failing the dump.
         return [];
       }
@@ -385,7 +373,7 @@ export function dumpRegistries(): KnowledgeDump {
       lootTable: npc.lootTable.drops.map((drop) => drop.item.name),
       // The guaranteed drop, which the table does not include and which was
       // invisible for the same reason monster loot was.
-      uniqueDrop: safeText(() => npc.uniqueDrop?.item.name ?? ''),
+      uniqueDrop: safeText('registries.npcUniqueDrop', () => npc.uniqueDrop?.item.name ?? ''),
     })),
     monsters: game.monsters.allObjects.map((monster) => ({
       id: monster.id,
@@ -404,8 +392,10 @@ export function dumpRegistries(): KnowledgeDump {
       // `lootChance` is carried alongside the table because presence is not a
       // rate: a seed on a table that rolls one kill in fifty is not comparable
       // to a Bird Nest, and comparing them was the entire point of asking.
-      lootChance: safeNumber(() => monster.lootChance, 0),
-      lootTable: safeList(() => monster.lootTable.drops.map((drop) => drop.item.name)),
+      lootChance: safeNumber('registries.monsterLootChance', () => monster.lootChance, 0),
+      lootTable: safeList('registries.monsterLootTable', () =>
+        monster.lootTable.drops.map((drop) => drop.item.name),
+      ),
       // Weights, because `lootChance` alone is not a rate and reading it as one
       // produced a wrong claim within minutes of the table being dumped:
       // "Golbin drops Garum Seeds at 100% loot chance" is two facts welded into
@@ -415,11 +405,15 @@ export function dumpRegistries(): KnowledgeDump {
       //
       // With these, seeds-per-kill is arithmetic instead of a guess, which is
       // the whole difference between choosing a fight and hoping about one.
-      lootTotalWeight: safeNumber(() => monster.lootTable.totalWeight, 0),
-      lootWeights: safeList(() =>
+      lootTotalWeight: safeNumber(
+        'registries.monsterLootTotalWeight',
+        () => monster.lootTable.totalWeight,
+        0,
+      ),
+      lootWeights: safeList('registries.monsterLootWeights', () =>
         monster.lootTable.drops.map((drop) => `${drop.item.name}:${drop.weight}`),
       ),
-      bones: safeText(() => monster.bones?.item.name ?? ''),
+      bones: safeText('registries.monsterBones', () => monster.bones?.item.name ?? ''),
     })),
     dungeons: game.dungeons.allObjects.map((dungeon) => ({
       id: dungeon.id,
@@ -440,17 +434,21 @@ export function dumpRegistries(): KnowledgeDump {
       id: purchase.id,
       name: purchase.name,
       allowQuantityPurchase: purchase.allowQuantityPurchase,
-      gpCost: safeNumber(() => gpCostOf(purchase), 0),
+      gpCost: safeNumber('registries.purchaseGpCost', () => gpCostOf(purchase), 0),
       // 143 purchases priced in another currency dumped gpCost 0, which reads
       // as free. The full cost list says what they actually take.
-      costs: safeList(() =>
+      costs: safeList('registries.purchaseCosts', () =>
         game.shop
           .getPurchaseCosts(purchase, 1)
           .getCurrencyQuantityArray()
           .map((entry) => `${entry.quantity} ${entry.currency.name}`),
       ),
-      owned: safeNumber(() => game.shop.getPurchaseCount(purchase), 0),
-      atBuyLimit: safeBoolean(() => game.shop.isPurchaseAtBuyLimit(purchase), false),
+      owned: safeNumber('registries.purchaseCount', () => game.shop.getPurchaseCount(purchase), 0),
+      atBuyLimit: safeBoolean(
+        'registries.purchaseAtBuyLimit',
+        () => game.shop.isPurchaseAtBuyLimit(purchase),
+        false,
+      ),
       requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
       // What the purchase actually does, in the game's own words.
       //
@@ -460,7 +458,10 @@ export function dumpRegistries(): KnowledgeDump {
       // a 30% interval cut, 39 at 10% -- because nothing recorded which it is.
       // `describePlain` (statProvider.d.ts:34) is the game's own summary of the
       // modifiers a purchase grants.
-      effect: safeText(() => purchase.contains.stats?.describePlain() ?? ''),
+      effect: safeText(
+        'registries.purchaseEffect',
+        () => purchase.contains.stats?.describePlain() ?? '',
+      ),
     })),
   };
 }
@@ -521,11 +522,16 @@ function dumpSkillRecipes(): {
     let recipes: unknown[];
     try {
       recipes = withActions.actions?.allObjects ?? [];
-    } catch {
+    } catch (error) {
+      noteSwallowed('registries.dumpSkillRecipes', error);
       continue;
     }
 
-    const baseInterval = safeNumber(() => withActions.baseInterval ?? 0, 0);
+    const baseInterval = safeNumber(
+      'registries.skillBaseInterval',
+      () => withActions.baseInterval ?? 0,
+      0,
+    );
 
     for (const raw of recipes) {
       const recipe = raw as {
@@ -555,15 +561,27 @@ function dumpSkillRecipes(): {
           skillName: skill.name,
           baseInterval,
           recipeId: recipe.id,
-          name: safeText(() => recipe.name ?? ''),
-          level: safeNumber(() => recipe.level ?? 0, 0),
-          baseExperience: safeNumber(() => recipe.baseExperience ?? 0, 0),
+          name: safeText('registries.recipeName', () => recipe.name ?? ''),
+          level: safeNumber('registries.recipeLevel', () => recipe.level ?? 0, 0),
+          baseExperience: safeNumber(
+            'registries.recipeBaseExperience',
+            () => recipe.baseExperience ?? 0,
+            0,
+          ),
           // Into the Abyss content earns on a separate track, so 384 recipes
           // dumped `baseExperience: 0` and were indistinguishable from a
           // reachable level-1 action that pays nothing.
-          baseAbyssalExperience: safeNumber(() => recipe.baseAbyssalExperience ?? 0, 0),
-          abyssalLevel: safeNumber(() => recipe.abyssalLevel ?? 0, 0),
-          realmId: safeText(() => recipe.realm?.id ?? ''),
+          baseAbyssalExperience: safeNumber(
+            'registries.recipeAbyssalExperience',
+            () => recipe.baseAbyssalExperience ?? 0,
+            0,
+          ),
+          abyssalLevel: safeNumber(
+            'registries.recipeAbyssalLevel',
+            () => recipe.abyssalLevel ?? 0,
+            0,
+          ),
+          realmId: safeText('registries.recipeRealmId', () => recipe.realm?.id ?? ''),
           itemCosts: dumpItemCosts(recipe.itemCosts),
           // Alt Magic prices its casts in runes, not itemCosts, so a spell
           // dumped without them looks free -- and when the candidate list then
@@ -573,13 +591,25 @@ function dumpSkillRecipes(): {
           // itemCosts (altMagic.d.ts:57).
           runeCosts: dumpItemCosts(recipe.runesRequired),
           fixedItemCosts: dumpItemCosts(recipe.fixedItemCosts),
-          productId: safeText(() => recipe.product?.id ?? ''),
-          productName: safeText(() => recipe.product?.name ?? ''),
-          baseQuantity: safeNumber(() => recipe.baseQuantity ?? 1, 1),
-          productSellsFor: safeNumber(() => recipe.product?.sellsFor?.quantity ?? 0, 0),
-          productSellsForCurrencyId: safeText(() => recipe.product?.sellsFor?.currency.id ?? ''),
+          productId: safeText('registries.recipeProductId', () => recipe.product?.id ?? ''),
+          productName: safeText('registries.recipeProductName', () => recipe.product?.name ?? ''),
+          baseQuantity: safeNumber(
+            'registries.recipeBaseQuantity',
+            () => recipe.baseQuantity ?? 1,
+            1,
+          ),
+          productSellsFor: safeNumber(
+            'registries.recipeProductSellsFor',
+            () => recipe.product?.sellsFor?.quantity ?? 0,
+            0,
+          ),
+          productSellsForCurrencyId: safeText(
+            'registries.recipeProductSellsForCurrency',
+            () => recipe.product?.sellsFor?.currency.id ?? '',
+          ),
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpSkillRecipes', error);
         // A recipe that will not describe itself is skipped rather than
         // half-recorded: a partial row reads as a real one downstream.
       }
@@ -599,7 +629,8 @@ function dumpItemCosts(
       name: cost.item.name,
       quantity: cost.quantity,
     }));
-  } catch {
+  } catch (error) {
+    noteSwallowed('registries.dumpItemCosts', error);
     return [];
   }
 }

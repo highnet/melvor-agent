@@ -1,4 +1,5 @@
 import { type ActionResult, fail, ok } from '@melvor-agent/shared';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Options for a single verified action.
@@ -101,7 +102,8 @@ function describe(error: unknown): string {
 function safeJson(value: unknown): string {
   try {
     return JSON.stringify(value) ?? String(value);
-  } catch {
+  } catch (error) {
+    noteSwallowed('act.safeJson', error);
     return String(value);
   }
 }
