@@ -40,7 +40,10 @@ describe('dungeon objectives', () => {
         ...snapshot().combat,
         inCombat: true,
         hitpoints: 20,
-        food: [{ id: 'melvorD:Shrimp', name: 'Shrimp', qty: 50 }],
+        // `id`/`name` here for a long time, which are not the field names
+        // `foodSlotStateSchema` uses — so the slot read as empty food and the
+        // disengage below could have been proving the wrong thing.
+        food: [{ itemId: 'melvorD:Shrimp', itemName: 'Shrimp', qty: 50, healsFor: 30 }],
       },
     });
 

@@ -20,7 +20,12 @@ const snapshot = {
   currencies: [{ id: 'melvorD:GP', name: 'GP', amount: 12_345 }],
   skills: [{ id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true }],
   bank: { slotsUsed: 4, slotsMax: 20, items: [] },
-  activeAction: { id: 'melvorD:Woodcutting', name: 'Woodcutting', isActive: true },
+  activeAction: {
+    id: 'melvorD:Woodcutting',
+    name: 'Woodcutting',
+    isActive: true,
+    recipeIds: ['melvorD:Normal_Logs'],
+  },
   farm: [],
   combat: {
     inCombat: false,
@@ -38,9 +43,11 @@ const snapshot = {
     combatLevel: 12,
     food: [],
     selectedEquipmentSet: 0,
+    selectedFoodSlot: 0,
     equipment: [],
     enemy: null,
   },
+  township: null,
 };
 
 function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
@@ -52,6 +59,9 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
       snapshot,
       objective: null,
       candidates: [],
+      blockedOpportunities: [],
+      planRemaining: 0,
+      journalEntries: [],
       logs: [
         { at: 1_700_000_000_000, level: 'info', source: 'policy', message: 'started cutting' },
       ],

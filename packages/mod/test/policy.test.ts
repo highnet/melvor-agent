@@ -262,7 +262,7 @@ describe('gatherResource', () => {
     // agent exists for. Refusing to preempt would pin it to whatever it started
     // first — exactly what the game already does for free.
     const busy = snapshot({
-      activeAction: { id: 'melvorD:Fishing', name: 'Fishing', isActive: true },
+      activeAction: { id: 'melvorD:Fishing', name: 'Fishing', isActive: true, recipeIds: [] },
     });
     expect(gatherResource(context({ snapshot: busy }))).toMatchObject({
       kind: 'act',
@@ -273,7 +273,7 @@ describe('gatherResource', () => {
   it('stops and starts on separate ticks, never batched', () => {
     // `stop` must be observed to have freed the slot before `gather` claims it.
     const busy = snapshot({
-      activeAction: { id: 'melvorD:Fishing', name: 'Fishing', isActive: true },
+      activeAction: { id: 'melvorD:Fishing', name: 'Fishing', isActive: true, recipeIds: [] },
     });
     const decision = gatherResource(context({ snapshot: busy }));
     expect(decision.kind).toBe('act');
@@ -356,10 +356,14 @@ describe('the critical hitpoints floor', () => {
       combat: { ...snapshot().combat, hitpoints: 5, maxHitpoints: 110, food: [] },
     });
 
-    const verdict = checkAbort(dying, noAbort, 1, 0);
-
-    expect(verdict.abort).toBe(true);
-    expect(verdict.detail).toMatch(/no food/);
+    // Asserted through `toMatchObject` rather than two reads, because `detail`
+    // only exists on the aborting variant of `AbortVerdict` -- reading it off
+    // the union would be `undefined` on a verdict that did not fire, and
+    // `toMatch(/no food/)` against `undefined` is a green test for a broken guard.
+    expect(checkAbort(dying, noAbort, 1, 0)).toMatchObject({
+      abort: true,
+      detail: expect.stringMatching(/no food/),
+    });
   });
 
   it('keeps going at low HP while food remains', () => {
@@ -401,10 +405,10 @@ describe('the emergency hitpoints floor', () => {
       },
     });
 
-    const verdict = checkAbort(losing, noAbort, 1, 0);
-
-    expect(verdict.abort).toBe(true);
-    expect(verdict.detail).toMatch(/not keeping up/);
+    expect(checkAbort(losing, noAbort, 1, 0)).toMatchObject({
+      abort: true,
+      detail: expect.stringMatching(/not keeping up/),
+    });
   });
 
   it('keeps going at merely low HP while food can still recover it', () => {
