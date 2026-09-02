@@ -738,3 +738,46 @@ export function stopWhenStarving(
 
 /** Health below which, with no food at all, a damaging activity is stopped. */
 const STARVING_HP_FRACTION = 0.5;
+
+/**
+ * Sells one cheap stack when the bank is full and no slot can be bought.
+ *
+ * The last resort, and the only place in this codebase that sells without being
+ * told to. It exists because "buying, never selling" turned out to have a hole
+ * exactly the size of a two-hour outage: bank at 59/59, a slot priced above
+ * what the character could pay, every gathering action refused because its
+ * output had nowhere to go, and therefore no way to ever earn the difference.
+ *
+ * The ordering carries the whole argument. {@link expandBankWhenFull} runs
+ * first and now spends up to the entire balance, so this only fires when even
+ * that failed — when buying is not merely expensive but impossible. At that
+ * point the choice is not between selling and keeping; it is between selling
+ * and never acting again, and a stack of Rusty Keys is not worth a stopped run.
+ *
+ * The stack is the cheapest one that survives every existing sell guard, so the
+ * cost is the smallest available. Selling one and only one per pass, because a
+ * single freed slot is enough to restart the loop and anything more is a
+ * judgement nobody asked this reflex to make.
+ */
+export function sellToEscapeFullBank(
+  state: {
+    freeSlots: number;
+    /** True when a slot could be bought; then this must not fire. */
+    canBuySlot: boolean;
+    expendable: { itemId: string; name: string; value: number } | null;
+    quantityOf: (itemId: string) => number;
+  },
+  sell: (itemId: string, quantity: number) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.freeSlots > 0) return null;
+  // Buying is strictly better and runs first; never pre-empt it.
+  if (state.canBuySlot) return null;
+
+  const stack = state.expendable;
+  if (stack === null) return null;
+
+  const quantity = state.quantityOf(stack.itemId);
+  if (quantity <= 0) return null;
+
+  return { name: 'reflex.sellToEscape', result: sell(stack.itemId, quantity) };
+}

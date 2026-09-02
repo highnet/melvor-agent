@@ -103,6 +103,7 @@ export {
   readBlockedOpportunities,
   readLockedActions,
   readGatherCandidates,
+  readCheapestExpendableStack,
   readSellCandidates,
   readShopObjectiveCandidates,
 } from './candidates.js';

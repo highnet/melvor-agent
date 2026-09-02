@@ -1041,3 +1041,49 @@ function describeNpcDrops(
     return '';
   }
 }
+
+/**
+ * The least valuable stack that is safe to sell, for breaking a full-bank
+ * deadlock and nothing else.
+ *
+ * This codebase has said "buying, never selling" since the bank reflex was
+ * written, on the grounds that which stack is worth destroying is a judgement
+ * with no undo. That held right up until the case it did not cover: a bank at
+ * 59/59 with a slot priced above what the character could pay. Every gathering
+ * action was refused because its output had nowhere to go, income was zero, the
+ * price never moved, and the agent re-planned into the same wall for two hours.
+ *
+ * Buying stays the first answer and runs first. This exists only for the case
+ * where buying is impossible, where the choice is not "sell or keep" but "sell
+ * or stop playing".
+ *
+ * Every guard the sell list already applies is inherited by construction, since
+ * this picks from `readSellCandidates`: task items, seeds, runes a castable
+ * spell needs, mastery tokens, the last of a recipe ingredient and locked items
+ * are all excluded. The *cheapest* surviving stack is chosen, because the point
+ * is to free one slot at the smallest cost rather than to raise money.
+ */
+export function readCheapestExpendableStack(): {
+  itemId: string;
+  name: string;
+  value: number;
+} | null {
+  try {
+    let cheapest: { itemId: string; name: string; value: number } | null = null;
+
+    for (const option of readSellCandidates()) {
+      const itemId = String((option.params as { itemId?: unknown }).itemId ?? '');
+      const item = game.items.getObjectByID(itemId);
+      if (item === undefined) continue;
+
+      const value = gpValue(item) * game.bank.getQty(item);
+      if (cheapest === null || value < cheapest.value) {
+        cheapest = { itemId, name: item.name, value };
+      }
+    }
+
+    return cheapest;
+  } catch {
+    return null;
+  }
+}

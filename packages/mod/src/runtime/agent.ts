@@ -47,10 +47,12 @@ import {
   readAstrologyCandidates,
   readBankExpansion,
   readBankPressure,
+  readBankQuantity,
   readBankedFood,
   readBlockedOpportunities,
   readBoneCandidates,
   readCheapPermanentUpgrades,
+  readCheapestExpendableStack,
   readClaimableTasks,
   readCombatGateInputs,
   readCombatSetupCandidates,
@@ -157,6 +159,7 @@ import {
   plantEmptyPlots,
   refillFood,
   removePenalisingGear,
+  sellToEscapeFullBank,
   stopWhenStarving,
   unlockAffordablePlots,
 } from './combat-reflex.js';
@@ -624,6 +627,21 @@ export class Agent {
           expansion: readBankExpansion(),
         },
         (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
+      ),
+      // Last resort, after the slot purchase above has had its chance: a full
+      // bank with no affordable slot is a permanent stop, and one cheap stack
+      // is cheaper than that. See sellToEscapeFullBank.
+      sellToEscapeFullBank(
+        {
+          freeSlots: snapshot.bank.slotsMax - snapshot.bank.slotsUsed,
+          canBuySlot: (() => {
+            const slot = readBankExpansion();
+            return slot !== null && slot.gpCost <= slot.held;
+          })(),
+          expendable: readCheapestExpendableStack(),
+          quantityOf: (itemId) => readBankQuantity(itemId),
+        },
+        (itemId, quantity) => sellItem(itemId, quantity, isSuspended),
       ),
       // After the bank slot, which is the one purchase that pays for itself
       // immediately, and before anything that spends time: a permanent -5%
