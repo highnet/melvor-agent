@@ -88,7 +88,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [ ] **Aborting on the HP/food floor does not stop the damage** — M. The abort
       returns before the disengage path and emits no action, so at 14% HP the
       agent clears its objective and keeps fighting.
-- [ ] **`stopWhenStarving` cannot fire in combat** — S. `CombatManager` implements
+- [x] **`stopWhenStarving` cannot fire in combat** — S. `CombatManager` implements
       `PassiveAction`, so `activeAction` is undefined in a plain fight and
       `damagingSkillId` resolves to null; the stop callback cannot end a fight
       either.

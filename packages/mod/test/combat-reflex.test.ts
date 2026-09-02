@@ -812,6 +812,7 @@ describe('stopWhenStarving with food in the bank', () => {
     hasAutoEat: false,
     maxHitpoints: 150,
     damagingSkillId: 'melvorD:Thieving',
+    inCombat: false,
   };
 
   it('stops at critical health even though meals are banked', () => {
@@ -820,8 +821,8 @@ describe('stopWhenStarving with food in the bank', () => {
     // food existed anywhere. Eating happens from the equipped slot, so 99
     // banked Seahorse proved nothing about whether the character could eat.
     const stopped: string[] = [];
-    stopWhenStarving({ ...base, meals: 99, hitpoints: 30 }, (skillId) => {
-      stopped.push(skillId);
+    stopWhenStarving({ ...base, meals: 99, hitpoints: 30 }, (damaging) => {
+      stopped.push(damaging.kind === 'combat' ? 'combat' : damaging.skillId);
       return ok();
     });
 
@@ -832,8 +833,8 @@ describe('stopWhenStarving with food in the bank', () => {
     // Dipping under half with food available is ordinary play. Stopping there
     // would cost the run for nothing, which is why the two thresholds differ.
     const stopped: string[] = [];
-    const outcome = stopWhenStarving({ ...base, meals: 99, hitpoints: 100 }, (skillId) => {
-      stopped.push(skillId);
+    const outcome = stopWhenStarving({ ...base, meals: 99, hitpoints: 100 }, (damaging) => {
+      stopped.push(damaging.kind === 'combat' ? 'combat' : damaging.skillId);
       return ok();
     });
 
@@ -844,8 +845,8 @@ describe('stopWhenStarving with food in the bank', () => {
   it('still stops at half health when there is no food at all', () => {
     // The original behaviour, which must survive the fix above.
     const stopped: string[] = [];
-    stopWhenStarving({ ...base, meals: 0, hitpoints: 70 }, (skillId) => {
-      stopped.push(skillId);
+    stopWhenStarving({ ...base, meals: 0, hitpoints: 70 }, (damaging) => {
+      stopped.push(damaging.kind === 'combat' ? 'combat' : damaging.skillId);
       return ok();
     });
 
@@ -856,7 +857,7 @@ describe('stopWhenStarving with food in the bank', () => {
     // Runecrafting does not cost health, so stopping it would strand the plan
     // for a danger that is not coming from the action slot.
     const outcome = stopWhenStarving(
-      { ...base, damagingSkillId: null, meals: 0, hitpoints: 1 },
+      { ...base, damagingSkillId: null, inCombat: false, meals: 0, hitpoints: 1 },
       () => ok(),
     );
 

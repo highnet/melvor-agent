@@ -777,14 +777,36 @@ export function stopWhenStarving(
     maxHitpoints: number;
     /** The skill currently holding the action slot, if it damages. */
     damagingSkillId: string | null;
+    /** Whether a fight is in progress, which the action slot does not report. */
+    inCombat: boolean;
   },
-  stop: (skillId: string) => ActionResult<unknown>,
+  stop: (
+    damaging: { kind: 'combat' } | { kind: 'skill'; skillId: string },
+  ) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   // Ownership is not capability; see cookWhenFoodLow. An Auto Eat with nothing
   // to eat heals for nothing, and this is the guard that stops the activity.
   if (state.hasAutoEat && state.meals > 0) return null;
-  if (state.damagingSkillId === null) return null;
   if (state.maxHitpoints <= 0) return null;
+
+  // Combat is a damage source the action slot never reports.
+  //
+  // `CombatManager` implements PassiveAction, not ActiveAction, so in a plain
+  // fight `activeAction` is undefined and `damagingSkillId` resolved to null --
+  // and this guard, written after a starvation death and described in its own
+  // doc as covering combat, returned immediately every time. It was dead code
+  // for one of the two damage sources it names.
+  //
+  // Stopping also has to branch. A combat id could not be passed to
+  // stopGathering, which has no routine for combat and would have reported a
+  // refusal rather than ending the fight.
+  const damaging: { kind: 'combat' } | { kind: 'skill'; skillId: string } | null = state.inCombat
+    ? { kind: 'combat' }
+    : state.damagingSkillId === null
+      ? null
+      : { kind: 'skill', skillId: state.damagingSkillId };
+
+  if (damaging === null) return null;
 
   const fraction = state.hitpoints / state.maxHitpoints;
 
@@ -794,7 +816,7 @@ export function stopWhenStarving(
   if (state.meals <= 0) {
     return fraction > STARVING_HP_FRACTION
       ? null
-      : { name: 'reflex.stopStarving', result: stop(state.damagingSkillId) };
+      : { name: 'reflex.stopStarving', result: stop(damaging) };
   }
 
   // Meals in the bank are not the same as health restored, and this guard used
@@ -810,7 +832,7 @@ export function stopWhenStarving(
   // and at that point the reading to trust is the health.
   return fraction > CRITICAL_HP_FRACTION
     ? null
-    : { name: 'reflex.stopStarving', result: stop(state.damagingSkillId) };
+    : { name: 'reflex.stopStarving', result: stop(damaging) };
 }
 
 /** Health below which, with no food at all, a damaging activity is stopped. */

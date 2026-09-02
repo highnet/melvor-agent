@@ -62,14 +62,15 @@ describe('stopping when there is nothing left to eat', () => {
     hitpoints: hp,
     maxHitpoints: 150,
     damagingSkillId: 'melvorD:Thieving',
+    inCombat: false,
   });
 
   it('stops the damaging skill once health is falling with no food', () => {
     // The line whose absence killed this character: it kept pickpocketing at 37
     // health and then at none.
     const stopped: string[] = [];
-    stopWhenStarving(starving(37), (id) => {
-      stopped.push(id);
+    stopWhenStarving(starving(37), (damaging) => {
+      stopped.push(damaging.kind === 'combat' ? 'combat' : damaging.skillId);
       return ok();
     });
 
@@ -95,8 +96,8 @@ describe('stopping when there is nothing left to eat', () => {
     // cooked Seahorse, with this guard returning early on `meals > 0` the
     // whole way down.
     const stopped: string[] = [];
-    stopWhenStarving(starving(37, 5), (skillId) => {
-      stopped.push(skillId);
+    stopWhenStarving(starving(37, 5), (damaging) => {
+      stopped.push(damaging.kind === 'combat' ? 'combat' : damaging.skillId);
       return ok();
     });
 

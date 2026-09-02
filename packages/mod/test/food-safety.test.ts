@@ -50,9 +50,10 @@ describe('Auto Eat does not disable the food guards when there is no food', () =
         hitpoints: 40,
         maxHitpoints: 150,
         damagingSkillId: 'melvorD:Thieving',
+        inCombat: false,
       },
-      (skillId) => {
-        stopped.push(skillId);
+      (damaging) => {
+        stopped.push(damaging.kind === 'combat' ? 'combat' : damaging.skillId);
         return ok();
       },
     );
@@ -69,6 +70,7 @@ describe('Auto Eat does not disable the food guards when there is no food', () =
           hitpoints: 120,
           maxHitpoints: 150,
           damagingSkillId: 'melvorD:Thieving',
+          inCombat: false,
         },
         () => ok(),
       ),
@@ -111,5 +113,58 @@ describe('collecting passive-cooking output', () => {
     const outcome = collectStockpiledFood({ stockpiled: [] }, () => ok());
 
     expect(outcome).toBeNull();
+  });
+});
+
+/**
+ * Combat is a damage source the action slot never reports.
+ *
+ * `CombatManager` implements PassiveAction rather than ActiveAction, so in a
+ * plain fight `activeAction` is undefined and `damagingSkillId` resolved to
+ * null -- and this guard, written after a starvation death and describing
+ * itself as covering combat, returned immediately every time. It was dead code
+ * for one of the two damage sources it names.
+ */
+describe('the starvation stop covers combat, not just Thieving', () => {
+  it('ends a fight when there is nothing left to eat', () => {
+    const stopped: string[] = [];
+    stopWhenStarving(
+      {
+        meals: 0,
+        hasAutoEat: false,
+        hitpoints: 40,
+        maxHitpoints: 150,
+        damagingSkillId: null,
+        inCombat: true,
+      },
+      (damaging) => {
+        stopped.push(damaging.kind);
+        return ok();
+      },
+    );
+
+    expect(stopped).toEqual(['combat']);
+  });
+
+  it('prefers ending the fight over stopping a skill when both are true', () => {
+    // A combat id could not be handed to stopGathering, which has no routine
+    // for combat and would report a refusal rather than ending the fight.
+    const stopped: string[] = [];
+    stopWhenStarving(
+      {
+        meals: 0,
+        hasAutoEat: false,
+        hitpoints: 40,
+        maxHitpoints: 150,
+        damagingSkillId: 'melvorD:Thieving',
+        inCombat: true,
+      },
+      (damaging) => {
+        stopped.push(damaging.kind);
+        return ok();
+      },
+    );
+
+    expect(stopped).toEqual(['combat']);
   });
 });

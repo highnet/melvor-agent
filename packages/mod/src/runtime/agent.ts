@@ -705,11 +705,13 @@ export class Agent {
           hasAutoEat: hasAutoEat(),
           ...readPlayerHitpoints(),
           damagingSkillId:
-            snapshot.activeAction?.id === THIEVING_ID || snapshot.combat.inCombat
-              ? (snapshot.activeAction?.id ?? null)
-              : null,
+            snapshot.activeAction?.id === THIEVING_ID ? (snapshot.activeAction?.id ?? null) : null,
+          inCombat: snapshot.combat.inCombat,
         },
-        (skillId) => stopGathering(skillId, isSuspended),
+        (damaging) =>
+          damaging.kind === 'combat'
+            ? disengageCombat(isSuspended)
+            : stopGathering(damaging.skillId, isSuspended),
       ),
       openPendingContainers({ hasContainer: readNextContainer() !== null }, () => {
         const container = readNextContainer();
