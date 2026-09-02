@@ -10,6 +10,26 @@ import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
  * testable; the adapter refuses an unknown skill anyway, so the two cannot
  * silently disagree about what is executable — only about what is attempted.
  */
+/**
+ * Skills where the game, not the agent, chooses which action runs.
+ *
+ * Agility is a *course*: the built obstacles run in sequence and the game
+ * advances through them on its own. There is no "select this obstacle" the way
+ * there is "select this tree", so a candidate naming one obstacle can never
+ * match what `recipeIds` reports for more than a moment.
+ *
+ * Treating it like a selectable recipe produced a thrash loop that burned
+ * fifteen minutes: an objective pinned Rope Jump, the course was on Cargo Net,
+ * the mismatch branch stopped the skill to switch, the game restarted the same
+ * course, and the whole thing repeated every three seconds with no XP at all.
+ * `Agility.stop ok` and `agility.run ok` alternating in the log, forever.
+ *
+ * For these, running the skill *is* running the objective. The obstacle in the
+ * candidate label stays useful as a description of what the course contains and
+ * what it pays; it just is not something to insist on.
+ */
+const COURSE_SKILLS: ReadonlySet<string> = new Set(['melvorD:Agility']);
+
 const SUPPORTED_GATHERING_SKILLS: ReadonlySet<string> = new Set([
   // Gathering
   'melvorD:Woodcutting',
@@ -107,6 +127,15 @@ export const gatherResource: PolicyExecutor = (context: PolicyContext): PolicyDe
     // An unreadable selection counts as wrong. Restarting the right recipe
     // costs one tick; running the wrong one costs the whole objective.
     const running = active?.recipeIds ?? [];
+    // See COURSE_SKILLS: the game picks the obstacle, so the skill being active
+    // is the whole of what can be asked for.
+    if (COURSE_SKILLS.has(skillId)) {
+      return {
+        kind: 'idle',
+        reason: 'already_running',
+        detail: `${skill.name} runs a course the game advances itself; it is active, which is all this objective can ask for`,
+      };
+    }
     if (running.includes(recipeId)) {
       return {
         kind: 'idle',

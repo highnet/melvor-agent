@@ -363,3 +363,32 @@ describe('skill coverage', () => {
     }
   });
 });
+
+describe('skills where the game picks the action', () => {
+  // Agility is a course: built obstacles run in sequence and the game advances
+  // through them. Pinning one obstacle produced a thrash loop that burned
+  // fifteen minutes — objective on Rope Jump, course on Cargo Net, mismatch
+  // branch stops to switch, game restarts the same course, repeat every three
+  // seconds with no XP. `Agility.stop ok` / `agility.run ok`, alternating.
+  const isCourse = (skillId: string) => skillId === 'melvorD:Agility';
+  const decide = (skillId: string, running: string[], wanted: string) =>
+    isCourse(skillId) || running.includes(wanted) ? 'already_running' : 'stop_to_switch';
+
+  it('treats an active course as already running whatever was asked', () => {
+    expect(decide('melvorD:Agility', ['melvorD:Cargo_Net'], 'melvorD:Rope_Jump')).toBe(
+      'already_running',
+    );
+  });
+
+  it('still switches recipes for a skill that genuinely selects one', () => {
+    // The behaviour this must not break: told to cut Willow while cutting Oak,
+    // the agent once idled and kept cutting Oak for hours.
+    expect(decide('melvorD:Woodcutting', ['melvorD:Oak'], 'melvorD:Willow')).toBe('stop_to_switch');
+  });
+
+  it('leaves a matching selection alone', () => {
+    expect(decide('melvorD:Woodcutting', ['melvorD:Willow'], 'melvorD:Willow')).toBe(
+      'already_running',
+    );
+  });
+});
