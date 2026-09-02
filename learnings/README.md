@@ -132,3 +132,31 @@ normal path and both are better than stopping.
 The same question applies to the food reserve, the Thieving damage gate and the
 survivability gate. None of them currently gate their own replenishment — but
 none of them were checked for it either, until this cost a morning.
+
+## Check what kind of thing the game thinks it is
+
+Agility thrashed for fifteen minutes — stop, run, stop, run, every three
+seconds, zero XP — because an objective pinned one obstacle and Agility runs a
+*course*. The built obstacles cycle and the game advances through them itself.
+There is no "select this obstacle" the way there is "select this tree".
+
+Every layer behaved correctly. The candidate reader emits one entry per
+obstacle, which is right: they have different rates and different level gates.
+The policy stops a skill running the wrong recipe, which is right, and exists
+because this agent once idled while cutting Oak after being told to cut Willow.
+Composed, they produced a loop that could never terminate.
+
+The tell was that it had "worked" before. Cargo Net ran fine for five levels —
+because Cargo Net happened to be the obstacle the course was on. A coincidence
+that looks like a passing test.
+
+Before modelling a game action as a `{skill, recipe}` pair, ask what the game
+lets you choose:
+
+- **Tree, ore, fish, recipe** — you select it; pinning is correct.
+- **Agility course** — you build it, the game runs it; only "active" is askable.
+- **Thieving NPC** — you select it, but its success rate is only readable while
+  the skill runs, which is a different trap in the same family.
+
+The general form: a wrong ontology produces code that is locally correct
+everywhere and globally broken, and it will often pass by luck first.
