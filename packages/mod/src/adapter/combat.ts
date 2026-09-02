@@ -1,4 +1,10 @@
-import type { ActionResult, Candidate, CombatGateInputs } from '@melvor-agent/shared';
+import type {
+  ActionResult,
+  Candidate,
+  CombatGateInputs,
+  CombatLevelScreenInputs,
+  CombatSkillLevels,
+} from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
@@ -49,9 +55,11 @@ function project(): CombatProjection {
  * reimplements the damage formulas rather than borrowing them.
  *
  * Reimplementing them here is exactly what the brief forbids, so the probe is
- * kept for the case where it does work and {@link screenByCombatLevel} covers
- * the case where it does not. A failed probe returns null, and null means
- * refuse — the untested path fails closed.
+ * kept for the case where it does work and the level screen — inputs from
+ * {@link readCombatLevelScreenInputs}, judgement in `screenByCombatSkillLevels`
+ * — covers the case where it does not, which in practice is every case. A
+ * failed probe returns null, and null means fall back to the screen, never
+ * "assume it is fine".
  *
  * @param monster - The monster to measure.
  * @returns Its max hit and attack interval, or null if the probe failed.
@@ -129,83 +137,127 @@ function worstCaseStats(monsters: readonly Monster[]): ProbedStats | null {
 }
 
 /**
- * Assembles the inputs for the survivability gate.
+ * Combat skill levels off any character, monster or player.
  *
- * Reads only; makes no decision. The decision is `assessSurvivability`, which is
- * pure and lives in the policy tier so it can be tested exhaustively.
+ * `Monster.levels` is `Omit<CombatLevels, 'Prayer'>` (`monsters.d.ts:103`) and
+ * `Character.levels` is `CombatLevels` (`character.d.ts:101`), so one reader
+ * serves both — which is the whole point of screening on these numbers rather
+ * than on `combatLevel`.
+ *
+ * Corruption is deliberately not read: `MonsterData.levels` marks it optional
+ * (`monsters.d.ts:22`), so a monster without it would read as zero and be
+ * indistinguishable from one that has it at zero.
+ */
+function readSkillLevels(levels: Omit<CombatLevels, 'Prayer'>): CombatSkillLevels {
+  return {
+    attack: numberOrZero(levels.Attack),
+    strength: numberOrZero(levels.Strength),
+    defence: numberOrZero(levels.Defence),
+    hitpoints: numberOrZero(levels.Hitpoints),
+    ranged: numberOrZero(levels.Ranged),
+    magic: numberOrZero(levels.Magic),
+  };
+}
+
+/** Undefined and NaN both mean "not read"; the screen refuses on an all-zero record. */
+function numberOrZero(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+/** Equipment stat keys that make a monster hit harder. */
+const DAMAGE_BONUS_KEYS = new Set([
+  'meleeStrengthBonus',
+  'rangedStrengthBonus',
+  'magicDamageBonus',
+]);
+
+/**
+ * The largest damage bonus on a monster's equipment.
+ *
+ * `Monster.equipmentStats` is `AnyEquipStat[]` (`monsters.d.ts:104`) — a list of
+ * `{ key, value }` pairs whose keys are `EquipStatKey` or the damage-typed
+ * `resistance` / `summoningMaxhit` (`character.d.ts:445-479`), not the
+ * `EquipmentStats` object a `Character` carries. So it is filtered by key
+ * rather than read by field.
+ *
+ * Reported by the screen, never gated on: see `screenByCombatSkillLevels`.
+ */
+function readMonsterDamageBonus(monster: Monster): number {
+  let best = 0;
+  for (const stat of monster.equipmentStats) {
+    if (DAMAGE_BONUS_KEYS.has(stat.key)) best = Math.max(best, numberOrZero(stat.value));
+  }
+  return best;
+}
+
+/**
+ * Assembles the inputs for the level screen.
+ *
+ * Reads only. The judgement is `screenByCombatSkillLevels`, which is pure and
+ * lives in the policy tier so it can be tested without a game.
+ *
+ * Every monster of a dungeon is carried through rather than summarised here:
+ * the screen judges a target by its worst inhabitant and has to be able to name
+ * which one that was, or its refusals are unarguable.
+ *
+ * A monster whose levels throw is recorded by name in `unreadableMonsters`
+ * rather than skipped. Skipping would judge a dungeon by the monsters that
+ * happened to read, which is the same failure as judging it by its first.
  *
  * @param targetId - A monster id or a dungeon id.
- * @param intendedSessionMinutes - How long the agent means to keep fighting.
- * @returns Gate inputs, or a reason they could not be gathered.
+ * @returns Screen inputs, or null when the target is not registered at all.
  */
-/**
- * A conservative screen using only data the game states plainly.
- *
- * Used when the probe cannot measure, which outside combat is always. It makes
- * no attempt to predict damage — predicting it would mean reimplementing the
- * game's formulas, which is how a safety check quietly becomes fiction. It only
- * asks the question a human answers by glancing at a monster: is this thing
- * obviously out of my league?
- *
- * Deliberately strict. Screening out a fight the character could have won costs
- * some XP; screening in one it cannot costs the run. The real judgement happens
- * a second later against the live enemy, whose stats the game computes for
- * real — see `verifyLiveEngagement`.
- */
-/**
- * A target's combat level, for the screen.
- *
- * A dungeon is rated by its hardest monster, the same way the gate judges it:
- * a dungeon cannot be left partway, so its worst fight is the one that decides.
- */
-export function readTargetCombatLevel(targetId: string): number | null {
-  try {
-    const monster = game.monsters.getObjectByID(targetId);
-    if (monster !== undefined) return monster.combatLevel;
+export function readCombatLevelScreenInputs(targetId: string): CombatLevelScreenInputs | null {
+  const monster = game.monsters.getObjectByID(targetId);
+  const dungeon = monster === undefined ? game.dungeons.getObjectByID(targetId) : undefined;
 
-    const dungeon = game.dungeons.getObjectByID(targetId);
-    if (dungeon === undefined) return null;
+  const inhabitants = monster !== undefined ? [monster] : (dungeon?.monsters ?? []);
+  if (inhabitants.length === 0) return null;
 
-    let hardest = 0;
-    for (const inhabitant of dungeon.monsters) {
-      hardest = Math.max(hardest, inhabitant.combatLevel);
+  const monsters: CombatLevelScreenInputs['monsters'] = [];
+  const unreadableMonsters: string[] = [];
+
+  for (const inhabitant of inhabitants) {
+    try {
+      monsters.push({
+        name: inhabitant.name,
+        levels: readSkillLevels(inhabitant.levels),
+        strengthBonus: readMonsterDamageBonus(inhabitant),
+      });
+    } catch (error) {
+      unreadableMonsters.push(`${inhabitant.id} (${String(error)})`);
     }
-    return hardest > 0 ? hardest : null;
-  } catch {
-    return null;
-  }
-}
-
-export function screenByCombatLevel(monsterCombatLevel: number): { ok: boolean; detail: string } {
-  const playerLevel = playerCombatLevel();
-
-  if (playerLevel <= 0) {
-    return { ok: false, detail: 'player combat level unavailable' };
   }
 
-  // Half the player's combat level, floored at 1 so a fresh character can still
-  // fight a Chicken. A human starting out fights things well below themselves,
-  // and this agent has no gear and no Auto Eat.
-  const ceiling = Math.max(1, Math.floor(playerLevel / 2));
-
-  if (monsterCombatLevel > ceiling) {
-    return {
-      ok: false,
-      detail: `combat level ${monsterCombatLevel} is above the screen ceiling ${ceiling} (half of the character's ${playerLevel}); the game cannot compute enemy stats outside combat, so this is the conservative screen`,
-    };
+  // A target every one of whose monsters failed to read still has to reach the
+  // screen, because the screen is where "unmeasurable" becomes a refusal with a
+  // reason attached. An empty list cannot express that, so a placeholder does.
+  if (monsters.length === 0) {
+    monsters.push({
+      name: dungeon?.name ?? targetId,
+      levels: { attack: 0, strength: 0, defence: 0, hitpoints: 0, ranged: 0, magic: 0 },
+      strengthBonus: 0,
+    });
   }
 
-  return { ok: true, detail: `combat level ${monsterCombatLevel} within ceiling ${ceiling}` };
-}
+  const player = game.combat.player;
+  const equipment = player.equipmentStats;
 
-/** The character's combat level, from the game's own calculation. */
-function playerCombatLevel(): number {
-  try {
-    // Lives on Game, not on Player — the same place the snapshot reads it.
-    return game.playerCombatLevel;
-  } catch {
-    return 0;
-  }
+  return {
+    targetId,
+    targetName: dungeon?.name ?? monster?.name ?? targetId,
+    isDungeon: dungeon !== undefined,
+    player: readSkillLevels(player.levels),
+    // The weakest of the three, because an enemy of the wrong attack type finds
+    // it and the screen must not be flattered by the two it does not attack.
+    playerDefenceBonus: Math.min(
+      numberOrZero(equipment.meleeDefenceBonus),
+      numberOrZero(equipment.rangedDefenceBonus),
+      numberOrZero(equipment.magicDefenceBonus),
+    ),
+    monsters,
+    unreadableMonsters,
+  };
 }
 
 /**
@@ -226,6 +278,20 @@ export function readPlayerHitpoints(): { hitpoints: number; maxHitpoints: number
   return { hitpoints: player.hitpoints, maxHitpoints: player.stats.maxHitpoints };
 }
 
+/**
+ * Assembles the inputs for the survivability gate.
+ *
+ * Reads only; makes no decision. The decision is `assessSurvivability`, which is
+ * pure and lives in the policy tier so it can be tested exhaustively.
+ *
+ * Outside combat this always fails, because {@link probeMonsterStats} always
+ * fails: the game's own `computeCombatStats` yields NaN for a detached enemy.
+ * {@link readCombatLevelScreenInputs} is what actually runs before a fight.
+ *
+ * @param targetId - A monster id or a dungeon id.
+ * @param intendedSessionMinutes - How long the agent means to keep fighting.
+ * @returns Gate inputs, or a reason they could not be gathered.
+ */
 export function readCombatGateInputs(
   targetId: string,
   intendedSessionMinutes: number,

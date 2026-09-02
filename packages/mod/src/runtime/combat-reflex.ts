@@ -355,6 +355,13 @@ const LIVE_MAX_HIT_FRACTION = 0.35;
  *
  * A third, not a half: the character must survive not just one hit but the hit
  * that lands while the eat reflex is still a second away.
+ *
+ * **For a dungeon this is not a safety net.** Abandoning a Melvor dungeon
+ * partway restarts it from the beginning, so firing here on floor nine saves
+ * the character and loses the entire run — the cost the run was for. That is
+ * why the pre-fight screen holds a dungeon to a stricter allowance than a
+ * single monster (`DUNGEON_LEVEL_ALLOWANCE` in `policy/combat-gate.ts`): for a
+ * dungeon, the screen is the only cheap refusal there is.
  */
 export function abandonIfOutmatched(
   state: {

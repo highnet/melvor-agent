@@ -299,6 +299,10 @@ Township summary reported 0% health while the repair reflex correctly computed
       depletion had to be measured by hand.
 - [x] **Monsters have no stats, only a combat level** — S.
 - [x] **No drop has a quantity, and no currency drop is recorded** — M. The dump
+- [ ] **Monsters have no stats, only a combat level** — S. Neither `levels` nor
+      `equipmentStats` is captured, which is why the pre-fight screen can compare
+      levels but cannot calibrate a threshold on equipment bonuses.
+- [ ] **No drop has a quantity, and no currency drop is recorded** — M. The dump
       currently says the agent's main GP source yields nothing.
 - [ ] **Alt Magic, Herblore and Firemaking store product and cost under names the
       generic dumper does not read** — M. 131 blank rows.
