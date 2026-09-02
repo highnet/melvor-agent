@@ -2,6 +2,7 @@ import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
+import { townHealthPercent } from './passive.js';
 
 /**
  * The town.
@@ -302,7 +303,14 @@ export function readTownshipSummary(): TownshipSummary | null {
     population: data.population,
     happiness: data.happiness,
     education: data.education,
-    healthPercent: data.healthPercent,
+    // Not `data.healthPercent`, which reads 0 on a town the game's own page
+    // shows at 100%. That was already discovered once and fixed in the reflex
+    // path (see townHealthPercent), while this reader -- the one the planner
+    // actually sees -- kept reporting a permanently dying town. Two readings of
+    // the same fact disagreeing is worse than either being wrong alone: the
+    // repair reflex correctly did nothing while the summary said the town was
+    // at zero.
+    healthPercent: townHealthPercent(),
     storageUsed: township.getUsedStorage(),
     storageMax: township.getMaxStorage(),
     worship: township.currentWorshipName,

@@ -122,7 +122,7 @@ export function readPassiveCookingCandidates(): Candidate[] {
  * why. The earlier diagnosis — that only herbs and potions are accepted — is
  * true of the API but was not what was happening here.
  */
-function townHealthPercent(): number {
+export function townHealthPercent(): number {
   const township = game.township;
   const max = township.maxHealth;
   if (max <= 0) return 0;
