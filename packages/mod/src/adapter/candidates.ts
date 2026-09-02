@@ -149,12 +149,27 @@ function candidate(
   productGp: number,
 ): Candidate {
   const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
+  const salePerHour = actionsPerHour * productGp;
   return {
     kind: 'gather_resource',
     params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
-    label: `${skillName}: ${recipe.name}`,
+    // "gp/h" means two different things across this list and the label never
+    // said which. Thieving pays coins directly, so its figure is money in
+    // pocket. Gathering produces *items*, so its figure is what those items
+    // would fetch if sold — and nothing sells them automatically.
+    //
+    // The difference is not cosmetic. Crystal was picked as "120,000 GP/h, two
+    // and a half times Thieving" to fund a 1,000,000 GP purchase, and an hour
+    // of it moves GP by exactly zero: the ore piles up in a bank that is
+    // already near full, which is how the last deadlock started. A plan aimed
+    // at a GP goal has to sell, and that step is invisible if the list calls
+    // both things the same name.
+    label:
+      salePerHour > 0
+        ? `${skillName}: ${recipe.name} — output worth ${Math.round(salePerHour).toLocaleString()} GP/h if sold, not GP earned`
+        : `${skillName}: ${recipe.name}`,
     xpPerHour: actionsPerHour * recipe.baseExperience,
-    gpPerHour: actionsPerHour * productGp,
+    gpPerHour: salePerHour,
     requiresLevel: recipe.level,
     available: true,
   };
