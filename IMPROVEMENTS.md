@@ -246,19 +246,19 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Dump
 
-- [ ] **Mining rocks are dumped without HP or respawn** — S. Which is why
+- [x] **Mining rocks are dumped without HP or respawn** — S. Which is why
       depletion had to be measured by hand.
-- [ ] **Monsters have no stats, only a combat level** — S.
-- [ ] **No drop has a quantity, and no currency drop is recorded** — M. The dump
+- [x] **Monsters have no stats, only a combat level** — S.
+- [x] **No drop has a quantity, and no currency drop is recorded** — M. The dump
       currently says the agent's main GP source yields nothing.
 - [ ] **Alt Magic, Herblore and Firemaking store product and cost under names the
       generic dumper does not read** — M. 131 blank rows.
 - [ ] **384 recipes report `baseExperience: 0`** — S. Abyssal content, whose XP
       lives in `baseAbyssalExperience`.
-- [ ] **Agility build costs are recorded as per-action inputs** — M. A one-time
+- [x] **Agility build costs are recorded as per-action inputs** — M. A one-time
       cost mislabelled as consumption, feeding wrong profit arithmetic.
 - [ ] **143 shop purchases report `gpCost: 0`**, which reads as free — S.
-- [ ] **There is still no flat item table** — M. Sale values exist only where a
+- [x] **There is still no flat item table** — M. Sale values exist only where a
       recipe happens to produce the item.
-- [ ] **Sections are silently truncated** — S. `herbloreRecipes` says 12 while
+- [x] **Sections are silently truncated** — S. `herbloreRecipes` says 12 while
       `skillRecipes` says 72, and nothing records that a cut was made.
