@@ -68,6 +68,8 @@ interface RecipeLike {
   /** Present on SingleProductArtisanSkillRecipe and the gathering recipes. */
   product?: object;
   baseQuantity?: number;
+  /** ArtisanSkillRecipe.itemCosts (artisanSkill.d.ts:82); absent on gathering. */
+  itemCosts?: { item: AnyItem; quantity: number }[];
 }
 
 /**
@@ -194,14 +196,21 @@ function genericSkillCandidates(): Candidate[] {
       // and the XP it pays, so a rate built from interval alone still
       // understates mastered work -- just by less than before.
       const xpMultiplier = xpMultiplierFor(skill, recipe);
+      const yielded = productYieldFor(skill, recipe, recipe.baseQuantity ?? 1);
+      const netPerHour = actionsPerHour * netProductGpFor(skill, recipe, yielded);
 
       candidates.push({
         kind: 'gather_resource',
         params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
         label: requirement.abyssal
           ? `${skill.name}: ${recipe.name} — Abyssal realm, needs Abyssal lvl ${requirement.level}`
-          : `${skill.name}: ${recipe.name}${masteryNote(skill, recipe)}`,
+          : `${skill.name}: ${recipe.name}${
+              netPerHour > 0
+                ? ` — output worth ${Math.round(netPerHour).toLocaleString()} GP/h net of inputs, if sold`
+                : ''
+            }${masteryNote(skill, recipe)}`,
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
+        gpPerHour: netPerHour > 0 ? netPerHour : undefined,
         requiresLevel: requirement.level,
         available: true,
       });
@@ -209,6 +218,55 @@ function genericSkillCandidates(): Candidate[] {
   }
 
   return candidates;
+}
+
+/**
+ * What one action of a production recipe is worth, net of what it consumes.
+ *
+ * Artisan recipes reported no GP at all -- not zero, absent -- so Smithing,
+ * Crafting, Fletching, Herblore, Runecrafting, Summoning, Cooking, Firemaking
+ * and Alt Magic were invisible to any planner asked to raise money, and the
+ * board showed only gathering and Thieving. The consequence was live and
+ * expensive: Gold Topaz Ring sat available with its inputs banked while the
+ * agent mined ore, and nothing on screen could say which was worth more.
+ *
+ * Net, not gross, because a production recipe *spends* to earn and the
+ * difference is frequently the whole story. Leather armour looks like 90,000
+ * GP/h gross and is negative once the leather it burns is priced; an Air
+ * Battlestaff tops any list at over a million gross and loses six hundred
+ * thousand an hour. A gross figure here would not be an approximation, it would
+ * point the wrong way.
+ *
+ * Preservation reduces what is actually consumed (`getPreservationChance`,
+ * skill.d.ts:458), so it is applied to the cost side. Where an input has no
+ * sale value the cost term is zero, which understates -- an unpriced input is
+ * not a free one, and that direction at least stays recoverable by measurement.
+ */
+function netProductGpFor(skill: AnySkill, recipe: RecipeLike, yielded: number): number {
+  try {
+    const product = recipe.product as AnyItem | undefined;
+    if (product === undefined) return 0;
+
+    const revenue = gpValue(product) * yielded;
+    if (revenue <= 0) return 0;
+
+    const withPreservation = skill as AnySkill & {
+      getPreservationChance?: (action: object) => number;
+    };
+    const preserved = Math.max(
+      0,
+      Math.min(1, (withPreservation.getPreservationChance?.(recipe) ?? 0) / 100),
+    );
+
+    let spent = 0;
+    for (const cost of recipe.itemCosts ?? []) {
+      spent += gpValue(cost.item) * cost.quantity * (1 - preserved);
+    }
+
+    return revenue - spent;
+  } catch {
+    return 0;
+  }
 }
 
 /**

@@ -109,7 +109,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       Crystal reads 120,000 GP/h against ~10,800 measured. Bound the sustained
       rate by `passiveRegenInterval / hpPerRegen`; HP per regen tick is *not* in
       the typings, so default to 1 and measure.
-- [ ] **No artisan skill reports GP at all, and no chain nets its inputs** *(3×)*
+- [x] **No artisan skill reports GP at all, and no chain nets its inputs** *(3×)*
       — M. Smithing, Crafting, Fletching, Herblore, Runecrafting, Summoning,
       Cooking, Firemaking, Astrology and Alt Magic all read 0 GP/h, so a planner
       asked to raise GP can only see gathering and Thieving.
