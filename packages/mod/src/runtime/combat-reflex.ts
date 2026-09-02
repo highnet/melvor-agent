@@ -537,6 +537,30 @@ export function claimFinishedTasks(
 const UPGRADE_GP_FRACTION = 0.5;
 
 /**
+ * Cost above which an upgrade stops being an oversight and becomes a decision.
+ *
+ * The fraction alone is proportional, and proportional is the wrong instrument
+ * at the top of the range: at 400,000 GP held it authorises a 200,000 GP
+ * Adamant Pickaxe, and at 2,000,000 a 1,000,000 GP Rune Pickaxe -- the exact
+ * price of Auto Eat, which is what the GP is being saved for. A reflex should
+ * not be able to spend a fifth of a stated goal on its own.
+ *
+ * The line is drawn from a corrected calculation. A tool upgrade does not earn
+ * the activity's GP rate; it earns some fraction of it. Judging the Mithril
+ * Pickaxe by cost / 120,000 GP-per-hour gave a twenty-five minute payback, but
+ * the honest figure divides by the *marginal* gain -- perhaps a tenth of that
+ * rate -- which is nearer four hours. Applied to Adamant the same correction
+ * turns "under two hours" into roughly seventeen. Cheap upgrades survive that
+ * correction comfortably and dear ones do not, which is precisely the boundary
+ * this constant draws.
+ *
+ * Above it, the purchase is still offered as a candidate. The planner can weigh
+ * it against whatever the run is actually saving for, which is the judgement a
+ * per-tick reflex has no way to make.
+ */
+const UPGRADE_MAX_AUTO_GP = 100_000;
+
+/**
  * Buys permanent upgrades the character can comfortably afford.
  *
  * Cheapest first, one per tick. Buying an Iron Axe shortly before a Steel Axe
@@ -555,7 +579,10 @@ export function buyTrivialUpgrades(
   buy: (purchaseId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   const affordable = state.upgrades.find(
-    (upgrade) => upgrade.gpCost <= state.gp && upgrade.gpCost <= state.gp * UPGRADE_GP_FRACTION,
+    (upgrade) =>
+      upgrade.gpCost <= UPGRADE_MAX_AUTO_GP &&
+      upgrade.gpCost <= state.gp &&
+      upgrade.gpCost <= state.gp * UPGRADE_GP_FRACTION,
   );
   if (affordable === undefined) return null;
 

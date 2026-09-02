@@ -653,6 +653,23 @@ describe('buyTrivialUpgrades', () => {
     expect(bought).toEqual(['melvorD:Mithril_Axe']);
   });
 
+  it('refuses a dear upgrade however rich the character is', () => {
+    // The failure the raised fraction introduced. At 400,000 held, half is
+    // 200,000, so the reflex would have bought the Adamant Pickaxe outright --
+    // a fifth of the Auto Eat fund the run is explicitly saving for, spent by a
+    // per-tick reflex that cannot know what the GP is for.
+    //
+    // The payback argument that made it look sound was wrong: a pickaxe does
+    // not earn the activity's whole GP rate, only a fraction of it, so cost
+    // divided by 120,000 GP-per-hour flatters every expensive tool on the list.
+    const dear = [
+      { purchaseId: 'melvorD:Adamant_Pickaxe', name: 'Adamant Pickaxe', gpCost: 200_000 },
+    ];
+
+    expect(buyTrivialUpgrades({ gp: 400_000, upgrades: dear }, () => ok())).toBeNull();
+    expect(buyTrivialUpgrades({ gp: 5_000_000, upgrades: dear }, () => ok())).toBeNull();
+  });
+
   it('still refuses to sink most of a balance into one purchase', () => {
     // The failure the cap was really guarding against, and the reason the line
     // is a half rather than no limit at all.
