@@ -216,3 +216,49 @@ export function readCheapPermanentUpgrades(): {
       .sort((a, b) => a.gpCost - b.gpCost)
   );
 }
+
+/**
+ * Purchases the character has unlocked but cannot yet afford, dearest first.
+ *
+ * Every other shop reader filters on affordability, which means the things
+ * worth *saving for* do not exist until the saving is already done. Auto Eat at
+ * 1,000,000 GP was the case that proved it: the single upgrade that removes the
+ * failure mode which has killed this character twice, and it appears on no list
+ * anywhere until the million is banked. An operator had to carry the target in
+ * their head and check it by hand every pass.
+ *
+ * Reported as goals rather than candidates, deliberately. A candidate is
+ * something the agent has proven it can do right now, and keeping that
+ * guarantee absolute is what makes choosing by index safe. These are the
+ * opposite: known, priced, and out of reach — which is exactly the information
+ * a planner needs to decide what to earn.
+ *
+ * Requirements are still checked, so this lists what is genuinely one purchase
+ * away rather than the whole catalogue.
+ */
+export function readShopGoals(): {
+  purchaseId: string;
+  name: string;
+  gpCost: number;
+  shortfall: number;
+}[] {
+  try {
+    const held = game.gp.amount;
+
+    return game.shop.purchases.allObjects
+      .filter((purchase) => categoricalRefusal(purchase) === null)
+      .filter((purchase) => !game.shop.isPurchaseAtBuyLimit(purchase))
+      .filter((purchase) => game.checkRequirements(purchase.purchaseRequirements, false))
+      .filter((purchase) => !game.shop.getPurchaseCosts(purchase, 1).checkIfOwned())
+      .map((purchase) => ({
+        purchaseId: purchase.id,
+        name: purchase.name,
+        gpCost: gpCostOf(purchase),
+        shortfall: Math.max(0, gpCostOf(purchase) - held),
+      }))
+      .filter((goal) => goal.gpCost > 0 && goal.shortfall > 0)
+      .sort((a, b) => a.shortfall - b.shortfall);
+  } catch {
+    return [];
+  }
+}

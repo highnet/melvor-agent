@@ -653,78 +653,42 @@ describe('buyTrivialUpgrades', () => {
     expect(bought).toEqual(['melvorD:Mithril_Axe']);
   });
 
-  it('refuses a dear upgrade however rich the character is', () => {
-    // The failure the raised fraction introduced. At 400,000 held, half is
-    // 200,000, so the reflex would have bought the Adamant Pickaxe outright --
-    // a fifth of the Auto Eat fund the run is explicitly saving for, spent by a
-    // per-tick reflex that cannot know what the GP is for.
-    //
-    // The payback argument that made it look sound was wrong: a pickaxe does
-    // not earn the activity's whole GP rate, only a fraction of it, so cost
-    // divided by 120,000 GP-per-hour flatters every expensive tool on the list.
+  it('buys a dear upgrade once the balance comfortably covers it', () => {
+    // The absolute ceiling that used to sit here was removed at the operator's
+    // direction. A permanent interval cut compounds across every hour that
+    // follows while its cost is paid once, so a ceiling means the better an
+    // upgrade is, the longer the agent refuses to buy it.
     const dear = [
       { purchaseId: 'melvorD:Adamant_Pickaxe', name: 'Adamant Pickaxe', gpCost: 200_000 },
     ];
 
-    expect(buyTrivialUpgrades({ gp: 400_000, upgrades: dear }, () => ok())).toBeNull();
-    expect(buyTrivialUpgrades({ gp: 5_000_000, upgrades: dear }, () => ok())).toBeNull();
-  });
-
-  it('still refuses to sink most of a balance into one purchase', () => {
-    // The failure the cap was really guarding against, and the reason the line
-    // is a half rather than no limit at all.
-    const dear = [{ purchaseId: 'melvorD:Rune_Pickaxe', name: 'Rune Pickaxe', gpCost: 1_000_000 }];
-
-    expect(buyTrivialUpgrades({ gp: 1_200_000, upgrades: dear }, () => ok())).toBeNull();
-  });
-
-  it('buys an unlocked pickaxe on a character mining for GP', () => {
-    // The purchase the old quarter-of-GP rule was quietly hardest on. Requiring
-    // cost <= gp/4 is requiring four times the price in hand, so the Mithril
-    // Pickaxe at 50,000 -- unlocked, unbought, on a character mining Crystal
-    // specifically to earn GP -- demanded 200,000 held. The better the upgrade,
-    // the further the old rule pushed it away.
     const bought: string[] = [];
-    buyTrivialUpgrades(
-      {
-        gp: 110_000,
-        upgrades: [
-          { purchaseId: 'melvorD:Mithril_Pickaxe', name: 'Mithril Pickaxe', gpCost: 50_000 },
-        ],
-      },
-      (id) => {
-        bought.push(id);
-        return ok();
-      },
-    );
-
-    expect(bought).toEqual(['melvorD:Mithril_Pickaxe']);
-  });
-
-  it('still buys a trivial upgrade for a poor character', () => {
-    // Guards the regression an absolute reserve floor would have introduced: a
-    // floor of 25,000 refuses a 50 GP axe to a character holding 1,000, which
-    // is the exact oversight this reflex exists to prevent.
-    const bought: string[] = [];
-    buyTrivialUpgrades({ gp: 1_000, upgrades: shop }, (id) => {
+    buyTrivialUpgrades({ gp: 892_946, upgrades: dear }, (id) => {
       bought.push(id);
       return ok();
     });
 
-    expect(bought).toEqual(['melvorD:Iron_Axe']);
+    expect(bought).toEqual(['melvorD:Adamant_Pickaxe']);
   });
 
-  it('buys nothing dear when the character is poor', () => {
-    // The proportional floor, at a balance where it genuinely bites: 50 GP
-    // against 60 held is nearly everything.
-    //
-    // This assertion used to sit at 150 GP held, on the reasoning that a third
-    // of everything is a real sacrifice. Raising the cap to a half deliberately
-    // reverses that case, and the reversal is right: 150 GP buys nothing else
-    // that matters — a bank slot and a restock both cost far more — while the
-    // axe is a permanent interval cut that compounds over every action after
-    // it. Idle GP earns nothing.
-    expect(buyTrivialUpgrades({ gp: 60, upgrades: shop }, () => ok())).toBeNull();
+  it('buys the dearest thing it can afford once nothing cheaper is left', () => {
+    // No fraction and no ceiling: it is either worth it or it is not, and these
+    // are pure permanent modifiers that compound over every hour after.
+    const dear = [{ purchaseId: 'melvorD:Rune_Pickaxe', name: 'Rune Pickaxe', gpCost: 1_000_000 }];
+
+    const bought: string[] = [];
+    buyTrivialUpgrades({ gp: 1_000_000, upgrades: dear }, (id) => {
+      bought.push(id);
+      return ok();
+    });
+
+    expect(bought).toEqual(['melvorD:Rune_Pickaxe']);
+  });
+
+  it('buys nothing it cannot afford', () => {
+    // Affordability is now the only constraint, so this is the whole of the
+    // protection -- and it is the one that was never in question.
+    expect(buyTrivialUpgrades({ gp: 40, upgrades: shop }, () => ok())).toBeNull();
   });
 
   it('does nothing when everything worth having is already owned', () => {

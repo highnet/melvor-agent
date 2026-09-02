@@ -491,74 +491,32 @@ export function claimFinishedTasks(
 }
 
 /**
- * Fraction of held GP a single automatic upgrade may cost.
+ * Permanent upgrades are bought whenever they can be afforded.
  *
- * Started at two percent, which was too timid and was set for the wrong reason.
- * The stated aim was "make 43,860 GP and no 50 GP axe impossible" — a floor
- * against oversights — and the argument was that anything dearer is a
- * trade-off belonging to the planner.
+ * No fraction of balance, no ceiling. Both were tried and both were wrong in
+ * the same way: they made the *better* upgrade the harder one to buy. A quarter
+ * of held GP means requiring four times the price in hand, so the Mithril
+ * Pickaxe at 50,000 demanded 200,000 and the Adamant behind it would have
+ * demanded 800,000 -- the rule bit hardest exactly where the payoff was
+ * largest. A ceiling did the same thing more bluntly.
  *
- * In practice the planner did not make it. A Mithril Axe at 10,000 GP against
- * 58,733 held is a seventeen percent purchase and an obvious one: it is -20% on
- * the cut interval of the exact action the agent was running for hours, and
- * nests roll per action. It sat unbought while the character chopped, and the
- * operator had to point at it.
+ * The operator's rule is simpler and better: it is either worth it or it is
+ * not, and a long-term boost is worth it. That holds because of what these
+ * purchases are. The reader offers only upgrades granting *no items* -- pure
+ * permanent modifiers -- so each compounds across every hour that follows while
+ * its cost is paid exactly once, the list is finite, and each entry is bought
+ * at most once. The total drain is bounded by the shop rather than open-ended.
  *
- * A quarter is the honest line. These are one-off permanent upgrades granting
- * no items, so the list is finite and each is bought once — the total drain is
- * bounded by the shop rather than open-ended. Cheapest first means the agent
- * ladders up as it earns instead of lunging at the most expensive thing it can
- * technically afford. And a quarter still refuses to sink most of a balance
- * into a single purchase, which is the failure the low cap was really guarding
- * against.
+ * Cheapest first, so the agent ladders up as it earns rather than lunging at
+ * the dearest thing it can technically afford.
  *
- * A poor character still buys nothing dear, which remains correct: the same
- * upgrade becomes automatic exactly when it stops being a real sacrifice.
- *
- * Raised from a quarter to a half, because a quarter turned out to have the
- * wrong shape rather than the wrong value. Requiring cost <= gp/4 is requiring
- * four times the price in hand, so the *better* the upgrade the further it
- * recedes: the Mithril Pickaxe at 50,000 GP -- unlocked, unbought, on a
- * character mining specifically to earn GP -- demanded 200,000 held, and the
- * Adamant behind it would have demanded 800,000. The rule was quietly hardest
- * on exactly the purchases most worth making.
- *
- * A half still refuses to sink most of a balance into one thing, which is the
- * failure the cap was really guarding against, and it keeps the Rune Pickaxe
- * (1,000,000 GP) from competing with Auto Eat at the same price.
- *
- * A proportional cap and nothing else, deliberately. An absolute reserve was
- * drafted here to protect the GP a bank slot or a restock needs, and it would
- * have re-broken the very thing this reflex was written for: a floor of 25,000
- * refuses a 50 GP axe to a character holding 1,000, which is exactly the
- * oversight the operator had to point at in the first place. The fraction
- * already scales the protection to the balance.
+ * The cost is real and worth stating: buying a 200,000 GP pickaxe while saving
+ * for a 1,000,000 GP Auto Eat delays that purchase by about two and a half
+ * hours at the current chain rate. Over a run measured in days that is the
+ * right trade; over one measured in the next hour it is not. The planner can
+ * still refuse by not arming the agent, and the goal file records which
+ * purchase the run is actually saving for.
  */
-const UPGRADE_GP_FRACTION = 0.5;
-
-/**
- * Cost above which an upgrade stops being an oversight and becomes a decision.
- *
- * The fraction alone is proportional, and proportional is the wrong instrument
- * at the top of the range: at 400,000 GP held it authorises a 200,000 GP
- * Adamant Pickaxe, and at 2,000,000 a 1,000,000 GP Rune Pickaxe -- the exact
- * price of Auto Eat, which is what the GP is being saved for. A reflex should
- * not be able to spend a fifth of a stated goal on its own.
- *
- * The line is drawn from a corrected calculation. A tool upgrade does not earn
- * the activity's GP rate; it earns some fraction of it. Judging the Mithril
- * Pickaxe by cost / 120,000 GP-per-hour gave a twenty-five minute payback, but
- * the honest figure divides by the *marginal* gain -- perhaps a tenth of that
- * rate -- which is nearer four hours. Applied to Adamant the same correction
- * turns "under two hours" into roughly seventeen. Cheap upgrades survive that
- * correction comfortably and dear ones do not, which is precisely the boundary
- * this constant draws.
- *
- * Above it, the purchase is still offered as a candidate. The planner can weigh
- * it against whatever the run is actually saving for, which is the judgement a
- * per-tick reflex has no way to make.
- */
-const UPGRADE_MAX_AUTO_GP = 100_000;
 
 /**
  * Buys permanent upgrades the character can comfortably afford.
@@ -578,12 +536,7 @@ export function buyTrivialUpgrades(
   },
   buy: (purchaseId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  const affordable = state.upgrades.find(
-    (upgrade) =>
-      upgrade.gpCost <= UPGRADE_MAX_AUTO_GP &&
-      upgrade.gpCost <= state.gp &&
-      upgrade.gpCost <= state.gp * UPGRADE_GP_FRACTION,
-  );
+  const affordable = state.upgrades.find((upgrade) => upgrade.gpCost <= state.gp);
   if (affordable === undefined) return null;
 
   return { name: 'reflex.buyUpgrade', result: buy(affordable.purchaseId) };

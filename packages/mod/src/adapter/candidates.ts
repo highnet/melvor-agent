@@ -21,7 +21,7 @@ import {
   WOODCUTTING_ID,
 } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
-import { readShopCandidates } from './shop.js';
+import { readShopCandidates, readShopGoals } from './shop.js';
 import { readTaskWantedQuantities } from './township.js';
 
 const MS_PER_HOUR = 3_600_000;
@@ -1851,3 +1851,34 @@ export function readUnsellableNotice(): {
 
 /** GP value below which an unsellable stack is not worth mentioning. */
 const UNSELLABLE_NOTICE_FLOOR = 20_000;
+
+/**
+ * The nearest shop purchases the character is saving toward.
+ *
+ * Surfaced beside the blocked list because "you are 107,054 GP from the upgrade
+ * that stops you starving" is a planning fact of exactly the same kind as "this
+ * recipe needs five bars you do not have" -- a known, priced thing standing
+ * between the run and something it wants.
+ *
+ * Only the nearest few, so this stays a horizon rather than a catalogue.
+ */
+export function readShopGoalNotice(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    return readShopGoals()
+      .slice(0, SHOP_GOAL_NOTICES)
+      .map((goal) => ({
+        label: `${goal.name} costs ${goal.gpCost.toLocaleString()} GP — ${goal.shortfall.toLocaleString()} GP short.`,
+        xpPerHour: 0,
+        missing: [],
+      }));
+  } catch {
+    return [];
+  }
+}
+
+/** How many saving targets to surface; a horizon, not a catalogue. */
+const SHOP_GOAL_NOTICES = 3;

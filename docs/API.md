@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-195 exports.
+196 exports.
 
 ## `act`
 
@@ -1848,6 +1848,23 @@ a purchase against a GP floor rather than discovering the floor by hitting it.
 
 ```ts
 readShopCandidates: () => { purchaseId: string; name: string; gpCost: number; owned: number; }[]
+```
+
+## `readShopGoalNotice`
+
+`function`
+
+The nearest shop purchases the character is saving toward.
+
+Surfaced beside the blocked list because "you are 107,054 GP from the upgrade
+that stops you starving" is a planning fact of exactly the same kind as "this
+recipe needs five bars you do not have" -- a known, priced thing standing
+between the run and something it wants.
+
+Only the nearest few, so this stays a horizon rather than a catalogue.
+
+```ts
+readShopGoalNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readShopObjectiveCandidates`

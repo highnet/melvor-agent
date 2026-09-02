@@ -93,6 +93,7 @@ import {
   readRefillableAmmo,
   readRepairableBuildings,
   readSellCandidates,
+  readShopGoalNotice,
   readShopObjectiveCandidates,
   readShortSeedIds,
   readSkillTreeCandidates,
@@ -1915,6 +1916,7 @@ export class Agent {
         // a fact to notice in passing and will still be true in an hour.
         // "Food is down to 11 meals and there is no Auto Eat" is a countdown.
         ...readUnsellableNotice(),
+        ...readShopGoalNotice(),
         ...readBlockedOpportunities(),
         ...readLockedActions(),
         ...this.blockedCombat(),

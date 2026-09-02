@@ -444,6 +444,15 @@ export function dumpRegistries(): KnowledgeDump {
       owned: safeNumber(() => game.shop.getPurchaseCount(purchase), 0),
       atBuyLimit: safeBoolean(() => game.shop.isPurchaseAtBuyLimit(purchase), false),
       requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
+      // What the purchase actually does, in the game's own words.
+      //
+      // Without it the dump can price an upgrade and say nothing about whether
+      // it is worth the price. Asked why the agent had not bought the 200,000
+      // GP Adamant Pickaxe, the payback could only be bracketed -- 11 hours at
+      // a 30% interval cut, 39 at 10% -- because nothing recorded which it is.
+      // `describePlain` (statProvider.d.ts:34) is the game's own summary of the
+      // modifiers a purchase grants.
+      effect: safeText(() => purchase.contains.stats?.describePlain() ?? ''),
     })),
   };
 }
