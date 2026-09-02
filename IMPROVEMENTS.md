@@ -150,7 +150,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [ ] **Plan steps cannot carry a quantity target** — S. `set_objective` has
       `untilItemId`/`untilQuantity` and `set_plan` does not, so "mine 200 ore,
       then smelt" is unsayable — which is exactly the chain shape that matters.
-- [ ] **No candidate says how long its inputs last** — S/M. `canAfford` checks a
+- [x] **No candidate says how long its inputs last** — S/M. `canAfford` checks a
       single action, so a smelt advertising 15,600 xp/h can run twenty seconds.
 - [ ] **The blocked list discards its rates and never links a missing input to the
       candidate that produces it** — M. That single join turns it into a chain

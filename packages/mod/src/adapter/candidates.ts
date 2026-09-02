@@ -244,7 +244,7 @@ function genericSkillCandidates(): Candidate[] {
               netPerHour > 0
                 ? ` — output worth ${Math.round(netPerHour).toLocaleString()} GP/h net of inputs, if sold`
                 : ''
-            }${masteryNote(skill, recipe)}`,
+            }${describeSustain(recipe, interval)}${masteryNote(skill, recipe)}`,
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
         gpPerHour: netPerHour > 0 ? netPerHour : undefined,
         // Alt Magic's alchemy pays currency; every other recipe here produces
@@ -1927,3 +1927,55 @@ export function readShopGoalNotice(): {
 
 /** How many saving targets to surface; a horizon, not a catalogue. */
 const SHOP_GOAL_NOTICES = 3;
+
+/** Names the input horizon when it is short enough to matter. */
+function describeSustain(recipe: RecipeLike, intervalMs: number): string {
+  const minutes = sustainableMinutes(recipe, intervalMs);
+  if (minutes === null) return '';
+  if (minutes >= SUSTAIN_NOTICE_MINUTES) return '';
+
+  return minutes < 1
+    ? ' — inputs run out almost immediately'
+    : ` — inputs last about ${Math.round(minutes)} min`;
+}
+
+/** Above this the stock is not the binding constraint and saying so is noise. */
+const SUSTAIN_NOTICE_MINUTES = 60;
+
+/**
+ * How long a recipe's banked inputs will actually sustain it.
+ *
+ * `canAfford` asks only whether one action is possible, which is a different
+ * question from whether an objective is. A recipe with five bars in the bank
+ * advertises a full rate, runs for twenty seconds and then fails until the
+ * failure limit abandons it -- and the planner that chose it had nothing on
+ * screen suggesting it would.
+ *
+ * It cost two objectives today. Runecrafting's Acolyte Wizard Robes was the
+ * highest-XP recipe on the board and aborted instantly, because it consumes
+ * runes rather than the essence that was banked; and the Gold Bar chain
+ * silently ran the smelter dry while the plan still read as healthy.
+ *
+ * Null when a recipe consumes nothing identifiable -- a gathering action is
+ * limited by time, not by stock, and reporting a horizon there would be
+ * inventing one.
+ */
+export function sustainableMinutes(recipe: RecipeLike, intervalMs: number): number | null {
+  try {
+    const costs = recipe.itemCosts ?? [];
+    if (costs.length === 0) return null;
+    if (intervalMs <= 0) return null;
+
+    let actions = Number.POSITIVE_INFINITY;
+    for (const cost of costs) {
+      if (cost.quantity <= 0) continue;
+      const held = game.bank.getQty(cost.item);
+      actions = Math.min(actions, Math.floor(held / cost.quantity));
+    }
+
+    if (!Number.isFinite(actions)) return null;
+    return (actions * intervalMs) / 60_000;
+  } catch {
+    return null;
+  }
+}
