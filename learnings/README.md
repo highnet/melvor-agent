@@ -258,3 +258,28 @@ and a fourteenfold difference in profit.
 
 So: rank production by **margin per unit of time**, never by revenue. Revenue is
 the number the game shows you and the one that is almost always wrong.
+
+## Three real bugs can hide one mundane cause
+
+Alt Magic produced no candidates, and the search found three genuine defects
+before the actual reason appeared: the skill was looked up under a plausible id
+it is not registered with, item-consuming spells were refused on the belief that
+a mapping had to be guessed when the game supplies it, and a currency-paying
+skill scored zero because the pricing assumed a product item.
+
+All three were worth fixing. None was the cause. The cause was that every spell
+costs a Nature Rune and the character has none, so the affordability filter was
+working exactly as designed.
+
+Two things follow. First, fixing a real bug is not evidence of having found
+*the* bug — after each fix the question "did that change anything?" has to be
+asked out loud, and twice here the answer was no. Second, the reason it took
+three attempts is that the data could not answer the question: spells price
+themselves in `runesRequired`, the dump only captured `itemCosts`, so a spell
+read as free and "withheld for want of a rune" was indistinguishable from
+"withheld by a bug". The fix that ended the search was not a fix at all, it was
+dumping the field — which is the same lesson as the realms, the shop prices and
+the recipe costs before it.
+
+When a search keeps turning up real but unrelated defects, suspect the
+instrument before the subject.
