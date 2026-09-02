@@ -1,5 +1,6 @@
 import { readActiveRecipeIds } from './active.js';
 import { readFarmPlots } from './farming.js';
+import { noteSwallowed } from './safe.js';
 import type { ActiveActionState, SkillState, StateSnapshot } from './surface.js';
 import { readTownshipSummary } from './township.js';
 
@@ -211,7 +212,8 @@ export function readDeathCount(): number {
   try {
     const deaths = game.stats.Combat.get(4);
     return Number.isFinite(deaths) ? deaths : 0;
-  } catch {
+  } catch (error) {
+    noteSwallowed('readers.readDeathCount', error);
     // A character whose stats cannot be read is reported as never having died,
     // which fails toward acting rather than toward a spurious emergency stop.
     return 0;

@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * The rest of the combat loadout, and the bank's safety catch.
@@ -156,7 +157,8 @@ export function readLoadoutCandidates(): Candidate[] {
     if (curse.id === slots.curse) continue;
     try {
       if (!player.canUseCombatSpell(curse)) continue;
-    } catch {
+    } catch (error) {
+      noteSwallowed('loadout.readLoadoutCandidates', error);
       continue;
     }
     candidates.push({
@@ -171,7 +173,8 @@ export function readLoadoutCandidates(): Candidate[] {
     if (aurora.id === slots.aurora) continue;
     try {
       if (!player.canUseCombatSpell(aurora)) continue;
-    } catch {
+    } catch (error) {
+      noteSwallowed('loadout.readLoadoutCandidates', error);
       continue;
     }
     candidates.push({

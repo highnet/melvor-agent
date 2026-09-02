@@ -1,4 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import {
+  MASTERY_HEADROOM_LEVEL,
+  type RecipeLike,
+  masteryIntervalFor,
+  masteryNote,
+  productYieldFor,
+  xpMultiplierFor,
+} from '../src/adapter/candidates.js';
 
 /**
  * Rates scale with mastery, so an instantaneous rate is a myopic way to choose
@@ -11,93 +19,30 @@ import { describe, expect, it } from 'vitest';
  * systematically favours whatever is already mastered and never commits long
  * enough to master anything else.
  *
- * Two behaviours are pinned here. First, the mining respawn amortisation must
- * divide by the MASTERY-ADJUSTED rock HP (`getRockMaxHP`, rockTicking.d.ts:180)
- * rather than the static field, or every rock is frozen at its unmastered rate.
- * Second, headroom is REPORTED, never folded into the rate -- the growth curve
- * is not in the typings, and projecting it would put a fabricated number where
- * a measured one belongs.
- */
-const intervalFor = (base: number, masteryAdjustedMaxHP: number, respawn: number): number =>
-  masteryAdjustedMaxHP <= 0 || respawn <= 0 ? base : base + respawn / masteryAdjustedMaxHP;
-
-const MASTERY_HEADROOM_LEVEL = 50;
-const headroom = (level: number): boolean => level > 0 && level < MASTERY_HEADROOM_LEVEL;
-
-describe('mining rate improves as mastery raises rock HP', () => {
-  it('amortises the respawn over more actions at higher mastery', () => {
-    // Same rock, same respawn. Unmastered it yields 5 before emptying; mastered
-    // it yields 20, so the identical 30s respawn costs a quarter as much per
-    // action. The rate of a given rock is not a constant.
-    const unmastered = intervalFor(3_000, 5, 30_000);
-    const mastered = intervalFor(3_000, 20, 30_000);
-
-    expect(unmastered).toBe(9_000);
-    expect(mastered).toBe(4_500);
-    expect(mastered).toBeLessThan(unmastered);
-  });
-
-  it('converges on the bare interval as yield grows', () => {
-    // The ceiling: with enough HP per cycle the respawn all but disappears, so
-    // the correction can never make a rock look worse than its swing.
-    expect(intervalFor(3_000, 1_000, 30_000)).toBeCloseTo(3_030, 0);
-  });
-});
-
-describe('mastery headroom is flagged, not projected', () => {
-  it('flags an action with room to grow', () => {
-    expect(headroom(1)).toBe(true);
-    expect(headroom(20)).toBe(true);
-  });
-
-  it('stays quiet once the growth left is not worth flagging', () => {
-    // Above the line the note would appear on nearly everything and stop
-    // carrying information.
-    expect(headroom(50)).toBe(false);
-    expect(headroom(99)).toBe(false);
-  });
-
-  it('stays quiet when mastery cannot be read at all', () => {
-    // A skill without mastery must not silently read as "fully mastered".
-    expect(headroom(0)).toBe(false);
-  });
-});
-
-/**
- * The interval resolver must be per-recipe and per-skill, not one flat number.
+ * Everything here drives the real functions. The versions this file used to
+ * hold were restatements — a private `resolveInterval` that knew three skills
+ * where the implementation knows nine, a private copy of the headroom constant,
+ * and a `yieldFor` that omitted the success-chance term entirely. A restatement
+ * cannot fail when the code changes, which makes it a test of the test.
  *
- * Nearly every skill exposes a getter taking the specific action and returning
- * its real interval with mastery applied -- getTreeInterval, getNPCInterval,
- * getRecipeCookingInterval, getObstacleInterval and so on. Only woodcutting was
- * wired up, and it was correspondingly the only rate that tracked reality: Yew
- * rose from 22,500 to 30,000 GP/h across an afternoon purely because its getter
- * reflected the mastery being earned, while every other skill sat frozen.
+ * `AnySkill` stands in as a structural type: these readers only ever reach for
+ * named accessors, and a stub carrying exactly the ones under test is a more
+ * honest fixture than a whole fake skill.
  */
-const resolveInterval = (
-  skillId: string,
-  getters: Record<string, ((action: object) => number) | undefined>,
-  recipe: object,
-  fallback: number,
-): number => {
-  const names: Record<string, string> = {
-    'melvorD:Woodcutting': 'getTreeInterval',
-    'melvorD:Thieving': 'getNPCInterval',
-    'melvorD:Cooking': 'getRecipeCookingInterval',
-  };
-  const name = names[skillId];
-  if (name === undefined) return fallback;
-  const getter = getters[name];
-  if (typeof getter !== 'function') return fallback;
-  const value = getter(recipe);
-  return Number.isFinite(value) && value > 0 ? value : fallback;
-};
+const skillWith = (id: string, accessors: Record<string, unknown> = {}): AnySkill =>
+  ({ id, ...accessors }) as unknown as AnySkill;
 
+/** The mining half of this story lives in `mining-respawn.test.ts`. */
 describe('per-recipe mastery intervals across skills', () => {
   const recipe = { id: 'melvorD:Yew' };
 
   it('prefers the skill-specific getter over the flat interval', () => {
     expect(
-      resolveInterval('melvorD:Woodcutting', { getTreeInterval: () => 9_000 }, recipe, 12_000),
+      masteryIntervalFor(
+        skillWith('melvorD:Woodcutting', { getTreeInterval: () => 9_000 }),
+        recipe,
+        12_000,
+      ),
     ).toBe(9_000);
   });
 
@@ -105,30 +50,108 @@ describe('per-recipe mastery intervals across skills', () => {
     // Thieving success and speed both scale with mastery; pricing it at a flat
     // interval understates exactly the NPC the character has practised on.
     expect(
-      resolveInterval('melvorD:Thieving', { getNPCInterval: () => 2_400 }, recipe, 3_000),
+      masteryIntervalFor(
+        skillWith('melvorD:Thieving', { getNPCInterval: () => 2_400 }),
+        recipe,
+        3_000,
+      ),
     ).toBe(2_400);
+  });
+
+  it('takes the midpoint of the Fishing range', () => {
+    // Fishing reports min and max rather than a figure. Pretending either end
+    // is *the* interval biases every fishing rate in one direction.
+    expect(
+      masteryIntervalFor(
+        skillWith('melvorD:Fishing', {
+          getMinFishInterval: () => 4_000,
+          getMaxFishInterval: () => 8_000,
+        }),
+        recipe,
+        3_000,
+      ),
+    ).toBe(6_000);
+  });
+
+  it("reads Alt Magic's base interval, which is legible with no spell selected", () => {
+    // `actionInterval` throws when no spell is chosen, which is the state
+    // candidate enumeration runs in — so every spell was priced a third slow
+    // against the generic 3s fallback.
+    expect(masteryIntervalFor(skillWith('melvorD:Magic', { baseInterval: 2_000 }), recipe, 3_000)) //
+      .toBe(2_000);
   });
 
   it('falls back when the skill has no per-action getter', () => {
     // Artisan skills share one interval across the whole skill, so the flat
     // value is already the mastery-modified one.
-    expect(resolveInterval('melvorD:Smithing', {}, recipe, 2_000)).toBe(2_000);
+    expect(masteryIntervalFor(skillWith('melvorD:Smithing'), recipe, 2_000)).toBe(2_000);
   });
 
   it('falls back when the getter returns something unusable', () => {
     // A zero or NaN interval would divide into an infinite rate and put the
     // recipe at the top of the board.
     expect(
-      resolveInterval('melvorD:Cooking', { getRecipeCookingInterval: () => 0 }, recipe, 3_000),
-    ).toBe(3_000);
-    expect(
-      resolveInterval(
-        'melvorD:Cooking',
-        { getRecipeCookingInterval: () => Number.NaN },
+      masteryIntervalFor(
+        skillWith('melvorD:Cooking', { getRecipeCookingInterval: () => 0 }),
         recipe,
         3_000,
       ),
     ).toBe(3_000);
+    expect(
+      masteryIntervalFor(
+        skillWith('melvorD:Cooking', { getRecipeCookingInterval: () => Number.NaN }),
+        recipe,
+        3_000,
+      ),
+    ).toBe(3_000);
+  });
+
+  it('falls back when the getter throws', () => {
+    expect(
+      masteryIntervalFor(
+        skillWith('melvorD:Woodcutting', {
+          getTreeInterval: () => {
+            throw new Error('accessor gone');
+          },
+        }),
+        recipe,
+        12_000,
+      ),
+    ).toBe(12_000);
+  });
+});
+
+/**
+ * Mastery headroom is flagged, never projected.
+ *
+ * The growth curve is not in the typings, and folding a guess at it into
+ * `xpPerHour` would put a fabricated number where a measured one belongs —
+ * the exact failure that had Crystal advertising an order of magnitude above
+ * what it paid.
+ */
+describe('mastery headroom is flagged, not projected', () => {
+  const note = (level: number): string =>
+    masteryNote(skillWith('melvorD:Mining', { getMasteryLevel: () => level }), {
+      id: 'melvorD:Copper_Ore',
+    });
+
+  it('flags an action with room to grow', () => {
+    expect(note(1)).toMatch(/mastery 1\/99/);
+    expect(note(20)).toMatch(/this rate improves with sustained use/);
+  });
+
+  it('stays quiet once the growth left is not worth flagging', () => {
+    // Above the line the note would appear on nearly everything and stop
+    // carrying information.
+    expect(note(MASTERY_HEADROOM_LEVEL)).toBe('');
+    expect(note(99)).toBe('');
+  });
+
+  it('stays quiet when mastery cannot be read at all', () => {
+    // A skill without mastery must not silently read as "fully mastered", nor
+    // claim headroom it has no evidence for.
+    expect(note(0)).toBe('');
+    expect(masteryNote(skillWith('melvorD:Mining'), { id: 'melvorD:Copper_Ore' })).toBe('');
   });
 });
 
@@ -141,48 +164,88 @@ describe('per-recipe mastery intervals across skills', () => {
  * percentage XP modifier. Reimplementing either would mean guessing how
  * mastery, gear, agility bonuses and pet effects combine.
  */
-const yieldFor = (
-  modify: ((item: object, qty: number, action: object) => number) | undefined,
-  baseQuantity: number,
-): number => {
-  if (modify === undefined) return baseQuantity;
-  const y = modify({}, baseQuantity, {});
-  return Number.isFinite(y) && y > 0 ? y : baseQuantity;
-};
-
-const xpMultiplier = (percent: number | undefined): number =>
-  typeof percent !== 'number' || !Number.isFinite(percent) ? 1 : Math.max(0, 1 + percent / 100);
-
 describe('yield and XP scale with mastery', () => {
+  const recipe: RecipeLike = {
+    id: 'melvorD:Yew',
+    name: 'Yew Tree',
+    level: 60,
+    baseExperience: 175,
+    product: { id: 'melvorD:Yew_Logs' },
+  };
+
   it('uses the game-modified product quantity', () => {
-    expect(yieldFor((_i, q) => q * 2, 1)).toBe(2);
+    expect(
+      productYieldFor(
+        skillWith('melvorD:Woodcutting', {
+          modifyPrimaryProductQuantity: (_i: object, q: number) => q * 2,
+        }),
+        recipe,
+        1,
+      ),
+    ).toBe(2);
+  });
+
+  it('discounts the yield by the chance the action lands its product', () => {
+    // A burnt cook and a junk catch cost the time and the inputs and produce
+    // nothing. Both used to be priced as though every action landed.
+    expect(
+      productYieldFor(
+        skillWith('melvorD:Cooking', { getRecipeSuccessChance: () => 70 }),
+        recipe,
+        1,
+      ),
+    ).toBeCloseTo(0.7, 5);
   });
 
   it('falls back to the base quantity when the accessor is absent', () => {
     // A skill without the accessor must not silently yield zero, which would
     // sort every one of its recipes off the bottom of the board.
-    expect(yieldFor(undefined, 3)).toBe(3);
+    expect(productYieldFor(skillWith('melvorD:Smithing'), recipe, 3)).toBe(3);
   });
 
   it('falls back when the accessor returns something unusable', () => {
-    expect(yieldFor(() => 0, 2)).toBe(2);
-    expect(yieldFor(() => Number.NaN, 2)).toBe(2);
+    expect(
+      productYieldFor(
+        skillWith('melvorD:Woodcutting', { modifyPrimaryProductQuantity: () => 0 }),
+        recipe,
+        2,
+      ),
+    ).toBe(2);
+    expect(
+      productYieldFor(
+        skillWith('melvorD:Woodcutting', { modifyPrimaryProductQuantity: () => Number.NaN }),
+        recipe,
+        2,
+      ),
+    ).toBe(2);
   });
 
   it('turns a percentage XP modifier into a multiplier', () => {
-    expect(xpMultiplier(0)).toBe(1);
-    expect(xpMultiplier(15)).toBeCloseTo(1.15, 5);
+    expect(xpMultiplierFor(skillWith('melvorD:Woodcutting', { getXPModifier: () => 0 }), recipe)) //
+      .toBe(1);
+    expect(
+      xpMultiplierFor(skillWith('melvorD:Woodcutting', { getXPModifier: () => 15 }), recipe),
+    ).toBeCloseTo(1.15, 5);
   });
 
   it('clamps a modifier that would zero or invert the rate', () => {
     // -100% would zero the rate and sort the recipe off the board; anything
     // worse would make it negative and sort it below unavailable work.
-    expect(xpMultiplier(-100)).toBe(0);
-    expect(xpMultiplier(-250)).toBe(0);
+    expect(
+      xpMultiplierFor(skillWith('melvorD:Woodcutting', { getXPModifier: () => -100 }), recipe),
+    ).toBe(0);
+    expect(
+      xpMultiplierFor(skillWith('melvorD:Woodcutting', { getXPModifier: () => -250 }), recipe),
+    ).toBe(0);
   });
 
   it('is neutral when the modifier cannot be read', () => {
-    expect(xpMultiplier(undefined)).toBe(1);
-    expect(xpMultiplier(Number.NaN)).toBe(1);
+    expect(xpMultiplierFor(skillWith('melvorD:Woodcutting'), recipe)).toBe(1);
+    expect(
+      xpMultiplierFor(
+        skillWith('melvorD:Woodcutting', { getXPModifier: () => Number.NaN }),
+        recipe,
+      ),
+    ).toBe(1);
   });
 });

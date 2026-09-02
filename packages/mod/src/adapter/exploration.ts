@@ -2,6 +2,7 @@ import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Cartography and Archaeology — the two skills that feed each other.
@@ -68,7 +69,8 @@ function findSurveyTarget(): SurveyTarget | null {
             ? `Survey hex (${hex.q}, ${hex.r}) — ${hex.pointOfInterest?.name ?? 'point of interest'}, survey level ${hex.surveyLevel}/${hex.maxLevel}`
             : `Survey hex (${hex.q}, ${hex.r}) — survey level ${hex.surveyLevel}/${hex.maxLevel}`,
         };
-      } catch {
+      } catch (error) {
+        noteSwallowed('exploration.findSurveyTarget', error);
         // A hex whose state cannot be read is not a target.
       }
     }
@@ -233,7 +235,8 @@ export function readTravelCandidates(): Candidate[] {
         label: `Travel to ${poi.name} (${path.length} hexes) — a surveyed point of interest stays unclaimed until someone goes there, and dig sites are found this way`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('exploration.readTravelCandidates', error);
       // A POI that cannot report a path is not a candidate.
     }
   }
@@ -322,7 +325,8 @@ export function readExplorationCandidates(): Candidate[] {
           label: `Excavate ${digSite.name} (${digSite.selectedMap?.charges ?? 0} map charges)`,
           available: true,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('exploration.readExplorationCandidates', error);
         // A dig site that cannot answer for itself is not a candidate.
       }
     }
@@ -552,7 +556,8 @@ export function readDigSiteSetupCandidates(): Candidate[] {
           });
         }
       }
-    } catch {
+    } catch (error) {
+      noteSwallowed('exploration.readDigSiteSetupCandidates', error);
       // A dig site that cannot answer for itself is not a candidate.
     }
   }
@@ -633,7 +638,8 @@ export function readPaperCandidates(): Candidate[] {
         label: `Make ${recipe.product.name} — paper makes maps, and maps are what dig sites need`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('exploration.readPaperCandidates', error);
       // A recipe that cannot price itself is not a candidate.
     }
   }

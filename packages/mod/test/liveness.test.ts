@@ -68,7 +68,7 @@ describe('game-loop liveness', () => {
   });
 
   it('clears the stall when ticks resume', () => {
-    expect(stalled(true, 1_000, 30_000)).toEqual({ stalled: false, since: null });
+    expect(stalled(true, 1_000, 30_000, 15_000)).toEqual({ stalled: false, since: null });
   });
 });
 

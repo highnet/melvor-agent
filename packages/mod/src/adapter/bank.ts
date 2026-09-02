@@ -1,6 +1,7 @@
 import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /** What selling claims to change: less of the item, more of the currency. */
 export interface SaleProjection {
@@ -528,7 +529,8 @@ export function readMasteryTokenIds(): Set<string> {
     for (const entry of game.bank.items.values()) {
       if (entry.item instanceof MasteryTokenItem) ids.add(entry.item.id);
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('bank.readMasteryTokenIds', error);
     // Failing to protect a token beats failing to build the sell list.
   }
   return ids;

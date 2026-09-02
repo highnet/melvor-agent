@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Turning items into better items.
@@ -151,7 +152,8 @@ export function readUpgradeCandidates(): Candidate[] {
           label: `Upgrade into ${upgrade.upgradedItem.name} for ${cost}`,
           available: true,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('upgrade.readUpgradeCandidates', error);
         // An upgrade that cannot price itself is not a candidate.
       }
     }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { productChanceFor } from '../src/adapter/candidates.js';
 
 /**
  * A failed action costs the time and the inputs and yields nothing.
@@ -13,15 +14,25 @@ import { describe, expect, it } from 'vitest';
  * Applied to yield rather than to XP on purpose: whether a burn or a junk catch
  * still pays experience is not stated in the typings, and guessing would move
  * the number in a direction measurement could not later correct.
+ *
+ * The real reader is imported rather than restated. The restatement this file
+ * used to hold took `{ successPercent }` / `{ fishPercent }` and so could not
+ * have noticed the implementation reading a different accessor, or dropping the
+ * clamp -- a mirror agrees with itself by construction.
  */
 const chance = (opts: { successPercent?: number; fishPercent?: number }): number => {
+  const skill: Record<string, unknown> = { id: 'melvorD:Mining' };
   if (opts.successPercent !== undefined) {
-    return opts.successPercent > 0 ? Math.min(1, opts.successPercent / 100) : 1;
+    skill.id = 'melvorD:Cooking';
+    skill.getRecipeSuccessChance = () => opts.successPercent;
   }
   if (opts.fishPercent !== undefined) {
-    return opts.fishPercent > 0 ? Math.min(1, opts.fishPercent / 100) : 1;
+    skill.id = 'melvorD:Fishing';
+    skill.getAreaChances = () => ({ fish: opts.fishPercent });
   }
-  return 1;
+
+  const recipe = { id: 'melvorD:Recipe', ...(opts.fishPercent === undefined ? {} : { area: {} }) };
+  return productChanceFor(skill as unknown as AnySkill, recipe as never);
 };
 
 describe('product chance', () => {

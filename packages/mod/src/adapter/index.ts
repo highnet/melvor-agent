@@ -127,6 +127,7 @@ export {
   readShopObjectiveCandidates,
 } from './candidates.js';
 export { ARTISAN_SKILL_IDS, isArtisanSkill } from './artisan.js';
+export { readAdapterFailures, type AdapterFailure } from './safe.js';
 export { MISC_SKILL_IDS, isMiscSkill } from './skills-misc.js';
 export {
   FISHING_ID,

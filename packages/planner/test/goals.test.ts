@@ -90,8 +90,13 @@ describe('goal annotations', () => {
 
     const statuses = evaluateGoals(goals, snapshot());
 
-    expect(statuses[0]).toMatchObject({ state: 'active' });
-    expect(statuses[0]?.progress).toBeCloseTo(2951 / 5000, 2);
+    // `progress` only exists on the `active` variant, so the state has to be
+    // narrowed before it can be read: off the bare union it is `undefined`, and
+    // `toBeCloseTo(undefined)` is not the assertion this test means to make.
+    const first = statuses[0];
+    expect(first).toMatchObject({ state: 'active' });
+    if (first?.state !== 'active') throw new Error('expected an active goal');
+    expect(first.progress).toBeCloseTo(2951 / 5000, 2);
     // Not merely "further away" — unreachable until the goal it names is done.
     expect(statuses[1]).toMatchObject({ state: 'blocked' });
   });

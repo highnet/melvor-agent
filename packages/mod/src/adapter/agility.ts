@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Building the Agility course.
@@ -108,7 +109,8 @@ export function readAgilityCandidates(): Candidate[] {
             : `Build ${obstacle.name} (level ${obstacle.level}) over ${current.name} (level ${current.level})`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('agility.readAgilityCandidates', error);
       // An obstacle whose costs cannot be read is not a candidate.
     }
   }
@@ -168,7 +170,8 @@ export function readAgilityLapRate(): number | null {
 
     if (intervalMs <= 0 || experience <= 0) return null;
     return (experience / intervalMs) * 3_600_000;
-  } catch {
+  } catch (error) {
+    noteSwallowed('agility.readAgilityLapRate', error);
     return null;
   }
 }
@@ -178,7 +181,8 @@ function safeNumber(read: () => number, fallback: number): number {
   try {
     const value = read();
     return Number.isFinite(value) && value !== 0 ? value : fallback;
-  } catch {
+  } catch (error) {
+    noteSwallowed('agility.safeNumber', error);
     return fallback;
   }
 }

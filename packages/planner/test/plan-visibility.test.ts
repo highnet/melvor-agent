@@ -1,3 +1,4 @@
+import type { Candidate } from '@melvor-agent/shared';
 import { describe, expect, it } from 'vitest';
 import { TOOLS } from '../src/mcp-tools.js';
 
@@ -16,22 +17,28 @@ const CHOP = {
   params: { kind: 'gather_resource', skillId: 'melvorD:Woodcutting', recipeId: 'melvorD:Oak_Tree' },
   label: 'Woodcutting: Oak',
   available: true,
-} as const;
+} satisfies Candidate;
 
 const SMELT = {
   kind: 'gather_resource',
   params: { kind: 'gather_resource', skillId: 'melvorD:Smithing', recipeId: 'melvorD:Bronze_Bar' },
   label: 'Smithing: Bronze Bar',
   available: true,
-} as const;
+} satisfies Candidate;
 
-function step(candidate: typeof CHOP, rationale: string) {
+function step(candidate: Candidate, rationale: string) {
   return {
     id: `plan-${rationale}`,
     kind: candidate.kind,
     params: candidate.params,
     successWhen: [
-      { type: 'skill_level_at_least', skillId: candidate.params.skillId, level: 40 } as const,
+      {
+        type: 'skill_level_at_least',
+        // Narrowed rather than asserted: `params` is a union across every
+        // objective kind and only some members carry a skill.
+        skillId: 'skillId' in candidate.params ? candidate.params.skillId : 'melvorD:Woodcutting',
+        level: 40,
+      } as const,
     ],
     abortWhen: { minutesExceed: 60 },
     expectedDurationMin: 60,

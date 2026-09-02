@@ -1,6 +1,7 @@
 import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Wearing things.
@@ -431,7 +432,8 @@ export function readSynergyCandidates(): Candidate[] {
         label: `Equip ${target.name} for the ${synergy.name} synergy: ${synergy.description}`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('equipment.readSynergyCandidates', error);
       // A synergy that cannot be read is not a candidate.
     }
   }
@@ -559,7 +561,8 @@ export function readEquipmentSetCandidates(): Candidate[] {
         label: `Switch to equipment set ${index + 1} (${equipped} item(s) equipped)`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('equipment.readEquipmentSetCandidates', error);
       // A set that cannot be inspected is not a candidate.
     }
   });
@@ -623,7 +626,8 @@ export function readBankedFood(): { itemId: string; quantity: number; heals: num
         quantity: entry.quantity,
         heals: game.combat.player.getFoodHealing(entry.item),
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('equipment.readBankedFood', error);
       // Food whose healing cannot be read is still food; rank it last.
       food.push({ itemId: entry.item.id, quantity: entry.quantity, heals: 0 });
     }
@@ -642,7 +646,8 @@ export function readEquippedFoodHealing(): number {
     const slot = game.combat.player.food.currentSlot;
     if (slot.item === game.emptyFoodItem) return 0;
     return game.combat.player.getFoodHealing(slot.item);
-  } catch {
+  } catch (error) {
+    noteSwallowed('equipment.readEquippedFoodHealing', error);
     return 0;
   }
 }
@@ -725,7 +730,8 @@ export function readFoodReserve(minimumMeals = 40): {
         ],
       },
     ];
-  } catch {
+  } catch (error) {
+    noteSwallowed('equipment.readFoodReserve', error);
     return [];
   }
 }
@@ -791,7 +797,8 @@ export function readMealCount(): number {
   try {
     const banked = readBankedFood().reduce((sum, entry) => sum + entry.quantity, 0);
     return banked + game.combat.player.food.currentSlot.quantity;
-  } catch {
+  } catch (error) {
+    noteSwallowed('equipment.readMealCount', error);
     return 0;
   }
 }
@@ -800,7 +807,8 @@ export function readMealCount(): number {
 export function hasAutoEat(): boolean {
   try {
     return game.combat.player.autoEatThreshold > 0;
-  } catch {
+  } catch (error) {
+    noteSwallowed('equipment.hasAutoEat', error);
     return false;
   }
 }
@@ -837,7 +845,8 @@ export function readRefillableAmmo(): { itemId: string; quantity: number } | nul
     }
 
     return best;
-  } catch {
+  } catch (error) {
+    noteSwallowed('equipment.readRefillableAmmo', error);
     return null;
   }
 }

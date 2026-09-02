@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * The two systems that turn accumulated materials into permanent bonuses.
@@ -125,7 +126,8 @@ export function readAstrologyCandidates(): Candidate[] {
             label: `Upgrade ${constellation.name} ${kind} modifier ${index + 1} (${modifier.timesBought}/${modifier.maxCount}) for ${cost.quantity}x ${cost.item.name}`,
             available: true,
           });
-        } catch {
+        } catch (error) {
+          noteSwallowed('progression.readAstrologyCandidates', error);
           // A modifier that cannot price itself is not a candidate.
         }
       });
@@ -216,7 +218,8 @@ export function readSkillTreeCandidates(): Candidate[] {
             available: true,
           });
         }
-      } catch {
+      } catch (error) {
+        noteSwallowed('progression.readSkillTreeCandidates', error);
         // A tree that cannot answer for itself is not a candidate.
       }
     }

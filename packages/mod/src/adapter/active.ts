@@ -14,57 +14,54 @@
  * nothing is selected rather than returning undefined.
  */
 
-/** Reads a value that may throw when the skill has nothing selected. */
-function safely<T>(read: () => T): T | undefined {
-  try {
-    return read();
-  } catch {
-    return undefined;
-  }
-}
+import { safeValue } from './safe.js';
 
 /** Ids of the actions the given skill currently has selected. */
 function activeRecipesFor(skillId: string): string[] {
   switch (skillId) {
     // Woodcutting is the only skill that runs several actions at once.
     case 'melvorD:Woodcutting':
-      return [...(safely(() => game.woodcutting.activeTrees) ?? [])].map((tree) => tree.id);
+      return [
+        ...(safeValue('active.woodcuttingTrees', () => game.woodcutting.activeTrees) ?? []),
+      ].map((tree) => tree.id);
 
     case 'melvorD:Mining': {
-      const rock = safely(() => game.mining.activeRock) ?? safely(() => game.mining.selectedRock);
+      const rock =
+        safeValue('active.miningRock', () => game.mining.activeRock) ??
+        safeValue('active.miningSelectedRock', () => game.mining.selectedRock);
       return rock === undefined ? [] : [rock.id];
     }
 
     case 'melvorD:Fishing': {
-      const fish = safely(() => game.fishing.activeFish);
+      const fish = safeValue('active.fishingFish', () => game.fishing.activeFish);
       return fish === undefined ? [] : [fish.id];
     }
 
     case 'melvorD:Thieving': {
-      const npc = safely(() => game.thieving.currentNPC);
+      const npc = safeValue('active.thievingNPC', () => game.thieving.currentNPC);
       return npc === undefined ? [] : [npc.id];
     }
 
     case 'melvorD:Astrology': {
       const constellation =
-        safely(() => game.astrology.activeConstellation) ??
-        safely(() => game.astrology.studiedConstellation);
+        safeValue('active.astrologyConstellation', () => game.astrology.activeConstellation) ??
+        safeValue('active.astrologyStudied', () => game.astrology.studiedConstellation);
       return constellation === undefined ? [] : [constellation.id];
     }
 
     case 'melvorD:Agility': {
-      const obstacle = safely(() => game.agility.activeObstacle);
+      const obstacle = safeValue('active.agilityObstacle', () => game.agility.activeObstacle);
       return obstacle === undefined ? [] : [obstacle.id];
     }
 
     case 'melvorItA:Harvesting': {
       // Harvesting only exists with the Into the Abyss expansion installed.
-      const vein = safely(() => game.harvesting?.activeVein);
+      const vein = safeValue('active.harvestingVein', () => game.harvesting?.activeVein);
       return vein === undefined ? [] : [vein.id];
     }
 
     case 'melvorD:Cooking': {
-      const recipe = safely(() => game.cooking.activeRecipe);
+      const recipe = safeValue('active.cookingRecipe', () => game.cooking.activeRecipe);
       return recipe === undefined ? [] : [recipe.id];
     }
 
@@ -75,7 +72,7 @@ function activeRecipesFor(skillId: string): string[] {
       const skill = game.skills.getObjectByID(skillId) as
         | (AnySkill & { activeRecipe?: { id: string } })
         | undefined;
-      const recipe = safely(() => skill?.activeRecipe);
+      const recipe = safeValue('active.artisanRecipe', () => skill?.activeRecipe);
       return recipe === undefined ? [] : [recipe.id];
     }
   }

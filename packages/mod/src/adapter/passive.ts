@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * The two things that keep working while the character does something else.
@@ -87,7 +88,8 @@ export function readPassiveCookingCandidates(): Candidate[] {
         label: `Passively cook ${recipe.product.name} in ${category.name} — runs in the background of whatever else is happening`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('passive.readPassiveCookingCandidates', error);
       // A category that cannot report its timer is not a candidate.
     }
   }
@@ -206,7 +208,8 @@ export function readTownHealthCandidates(): Candidate[] {
         label: `Restore town health with ${cost} ${resource.name} (currently ${Math.round(townHealthPercent())}% — low health drags every rate in the town down)`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('passive.readTownHealthCandidates', error);
       // A resource that cannot price the restore is not a candidate.
     }
   }
@@ -243,11 +246,13 @@ export function readCookedStockpile(): {
           itemName: stocked.item.name,
           quantity: stocked.quantity,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('passive.readCookedStockpile', error);
         // A category that will not describe its stockpile is left alone.
       }
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('passive.readCookedStockpile', error);
     return [];
   }
 
@@ -281,7 +286,8 @@ export function collectCookedStockpile(
   const stocked = () => {
     try {
       return cooking.stockpileItems.get(category)?.quantity ?? 0;
-    } catch {
+    } catch (error) {
+      noteSwallowed('passive.collectCookedStockpile', error);
       return 0;
     }
   };

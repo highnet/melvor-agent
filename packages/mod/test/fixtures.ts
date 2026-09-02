@@ -59,6 +59,32 @@ export function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot 
   return { ...base, ...overrides };
 }
 
+/**
+ * Installs a stand-in for `globalThis.game`, returning the uninstall.
+ *
+ * Adapter code reads `game.*` directly, and several tests answered that by
+ * copying the predicate under test rather than importing it. A copy drifts:
+ * `mining-respawn.test.ts` mirrored the respawn amortisation against the static
+ * `rock.maxHP` and kept passing for weeks after the implementation moved to the
+ * mastery-adjusted `game.mining.getRockMaxHP` — so the test pinned behaviour the
+ * code had deliberately been changed away from, which is exactly the drift it
+ * was written to catch. Stubbing the global lets the real function be imported
+ * instead, the way `gathering.test.ts` and `sell.test.ts` already do.
+ *
+ * `parts` is deliberately loose: a test stubs only the corner of `game` the
+ * code under test reaches for, and anything else it touches should throw rather
+ * than quietly read `undefined`.
+ */
+export function installFakeGame(parts: Record<string, unknown>): () => void {
+  const globals = globalThis as Record<string, unknown>;
+  const previous = globals.game;
+  globals.game = parts;
+
+  return () => {
+    globals.game = previous;
+  };
+}
+
 export function objective(overrides: Partial<Objective> = {}): Objective {
   const base: Objective = {
     id: 'obj-1',

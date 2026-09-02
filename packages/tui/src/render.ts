@@ -106,6 +106,22 @@ function renderStatus(dashboard: Dashboard, width: number): string[] {
     ` ${C.dim}rate:${C.reset} ${lvl === null ? '—' : `${lvl.toFixed(2)} levels/h`}   ${gp === null ? '—' : `${Math.round(gp).toLocaleString()} gp/h`}`,
   );
 
+  // Guarded adapter reads that threw.
+  //
+  // Shown here rather than in the log because the log is drained per report
+  // and this is the one failure mode with no other symptom: a renamed accessor
+  // takes a candidate off the list or drops a rate to its nominal fallback and
+  // otherwise looks exactly like a healthy run. The worst site alone is enough
+  // to say "go look"; the full list rides out on the report.
+  const failures = report?.adapterFailures ?? [];
+  const worst = failures[0];
+  if (worst !== undefined) {
+    const others = failures.length > 1 ? ` (+${failures.length - 1} more)` : '';
+    lines.push(
+      ` ${C.yellow}adapter reads failing: ${truncate(`${worst.site} ×${worst.count}`, width - 30)}${others}${C.reset}`,
+    );
+  }
+
   return lines;
 }
 

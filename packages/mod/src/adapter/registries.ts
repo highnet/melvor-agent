@@ -1,4 +1,5 @@
 import type { KnowledgeDump } from '@melvor-agent/knowledge';
+import { noteSwallowed, safeBoolean, safeList, safeNumber, safeText } from './safe.js';
 import { gpCostOf } from './shop.js';
 
 /**
@@ -24,39 +25,13 @@ import { gpCostOf } from './shop.js';
  * worse. These return a stated empty value so a missing field is visibly empty
  * rather than plausibly wrong — the distinction that made "no monster drops
  * seeds" indistinguishable from "monster drops were never dumped".
+ *
+ * The four helpers that used to live here are now `adapter/safe.ts`, shared
+ * with the rest of the adapter and counting what they swallow. There were two
+ * different `safeNumber`s in this codebase with different signatures, which is
+ * how "the adapter reports its failures" became something a reader could
+ * believe while about a hundred bare catches said nothing at all.
  */
-function safeNumber(read: () => number, fallback: number): number {
-  try {
-    const value = read();
-    return Number.isFinite(value) ? value : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function safeText(read: () => string): string {
-  try {
-    return read();
-  } catch {
-    return '';
-  }
-}
-
-function safeList(read: () => string[]): string[] {
-  try {
-    return read();
-  } catch {
-    return [];
-  }
-}
-
-function safeBoolean(read: () => boolean, fallback: boolean): boolean {
-  try {
-    return read();
-  } catch {
-    return fallback;
-  }
-}
 
 /**
  * Cuts an oversized section to a limit, and says that it did.
@@ -108,7 +83,9 @@ const ITEM_TABLE_LIMIT = 5000;
 function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
   try {
     return read().map((requirement) => {
-      const met = safeBoolean(() => requirement.isMet(), false) ? ' (met)' : '';
+      const met = safeBoolean('registries.requirementIsMet', () => requirement.isMet(), false)
+        ? ' (met)'
+        : '';
 
       if (requirement.type === 'SkillLevel') {
         return `${requirement.skill.name} ${requirement.level}${met}`;
@@ -118,7 +95,8 @@ function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
       }
       return `${requirement.type}${met}`;
     });
-  } catch {
+  } catch (error) {
+    noteSwallowed('registries.safeRequirementTypes', error);
     return [];
   }
 }
@@ -158,7 +136,7 @@ export function dumpRegistries(): KnowledgeDump {
     realms: game.realms.allObjects.map((realm) => ({
       id: realm.id,
       name: realm.name,
-      unlocked: safeBoolean(() => realm.isUnlocked, false),
+      unlocked: safeBoolean('registries.realmIsUnlocked', () => realm.isUnlocked, false),
       requirements: safeRequirementTypes(() => realm.unlockRequirements),
     })),
     skills: game.skills.allObjects.map((skill) => ({
@@ -209,16 +187,23 @@ export function dumpRegistries(): KnowledgeDump {
           id: rock.id,
           name: rock.name,
           level: rock.level,
-          baseExperience: safeNumber(() => rock.baseExperience, 0),
-          maxHP: safeNumber(() => game.mining.getRockMaxHP(rock), 0),
-          baseRespawnInterval: safeNumber(() => rock.baseRespawnInterval, 0),
-          hasPassiveRegen: safeBoolean(() => rock.hasPassiveRegen, false),
-          passiveRegenInterval: safeNumber(() => game.mining.passiveRegenInterval, 0),
-          baseQuantity: safeNumber(() => rock.baseQuantity, 1),
-          productId: safeText(() => rock.product.id),
-          productName: safeText(() => rock.product.name),
-          productSellsFor: safeNumber(() => rock.product.sellsFor.quantity, 0),
-          productSellsForCurrencyId: safeText(() => rock.product.sellsFor.currency.id),
+          baseExperience: safeNumber('registries.1', () => rock.baseExperience, 0),
+          maxHP: safeNumber('registries.2', () => game.mining.getRockMaxHP(rock), 0),
+          baseRespawnInterval: safeNumber('registries.3', () => rock.baseRespawnInterval, 0),
+          hasPassiveRegen: safeBoolean('registries.4', () => rock.hasPassiveRegen, false),
+          passiveRegenInterval: safeNumber(
+            'registries.5',
+            () => game.mining.passiveRegenInterval,
+            0,
+          ),
+          baseQuantity: safeNumber('registries.6', () => rock.baseQuantity, 1),
+          productId: safeText('registries.7', () => rock.product.id),
+          productName: safeText('registries.8', () => rock.product.name),
+          productSellsFor: safeNumber('registries.9', () => rock.product.sellsFor.quantity, 0),
+          productSellsForCurrencyId: safeText(
+            'registries.10',
+            () => rock.product.sellsFor.currency.id,
+          ),
         }));
       } catch {
         return [];
@@ -248,7 +233,8 @@ export function dumpRegistries(): KnowledgeDump {
             quantity: cost.quantity,
           })),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -292,12 +278,14 @@ export function dumpRegistries(): KnowledgeDump {
                 itemName: drop.item.name,
                 quantity: drop.quantity,
               });
-            } catch {
+            } catch (error) {
+              noteSwallowed('registries.dumpRegistries', error);
               // A drop that cannot describe itself is skipped, not invented.
             }
           }
         }
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
       return out;
@@ -330,7 +318,8 @@ export function dumpRegistries(): KnowledgeDump {
             itemName: item.name,
           })),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -353,7 +342,8 @@ export function dumpRegistries(): KnowledgeDump {
           plantedRecipeId: plot.plantedRecipe?.id ?? null,
           hasGrowthTimer: game.farming.growthTimerMap.has(plot),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -375,7 +365,8 @@ export function dumpRegistries(): KnowledgeDump {
           seedItemId: recipe.seedCost.item.id,
           seedCost: recipe.seedCost.quantity,
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -401,7 +392,8 @@ export function dumpRegistries(): KnowledgeDump {
               : requirement.type,
           ),
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -431,7 +423,8 @@ export function dumpRegistries(): KnowledgeDump {
             ),
           ],
         }));
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -450,7 +443,8 @@ export function dumpRegistries(): KnowledgeDump {
             itemName: conversion.item.name,
           })),
         );
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         return [];
       }
     })(),
@@ -471,7 +465,8 @@ export function dumpRegistries(): KnowledgeDump {
             itemName: conversion.item.name,
           })),
         );
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpRegistries', error);
         // A save with no town reports nothing rather than failing the dump.
         return [];
       }
@@ -501,11 +496,11 @@ export function dumpRegistries(): KnowledgeDump {
       // says a drop is possible and nothing else: not how many come out, and
       // not how often against the rest of the table.
       lootDrops: dumpDropTable(npc.lootTable.drops),
-      lootTotalWeight: safeNumber(() => npc.lootTable.totalWeight, 0),
+      lootTotalWeight: safeNumber('registries.11', () => npc.lootTable.totalWeight, 0),
       // The guaranteed drop, which the table does not include and which was
       // invisible for the same reason monster loot was.
-      uniqueDrop: safeText(() => npc.uniqueDrop?.item.name ?? ''),
-      uniqueDropQuantity: safeNumber(() => npc.uniqueDrop?.quantity ?? 0, 0),
+      uniqueDrop: safeText('registries.12', () => npc.uniqueDrop?.item.name ?? ''),
+      uniqueDropQuantity: safeNumber('registries.13', () => npc.uniqueDrop?.quantity ?? 0, 0),
       // Coins are not items, so they are in no loot table and were in no
       // section — which left the dump describing the agent's largest single
       // income as yielding nothing at all. `currencyDrops` (thieving2.d.ts:36)
@@ -529,7 +524,7 @@ export function dumpRegistries(): KnowledgeDump {
       // `lootChance` is carried alongside the table because presence is not a
       // rate: a seed on a table that rolls one kill in fifty is not comparable
       // to a Bird Nest, and comparing them was the entire point of asking.
-      lootChance: safeNumber(() => monster.lootChance, 0),
+      lootChance: safeNumber('registries.14', () => monster.lootChance, 0),
       // The table itself, because `lootChance` alone is not a rate and reading
       // it as one produced a wrong claim within minutes of the table being
       // dumped: "Golbin drops Garum Seeds at 100% loot chance" is two facts
@@ -541,14 +536,14 @@ export function dumpRegistries(): KnowledgeDump {
       // This replaces the parallel `lootTable`/`lootWeights` name lists. The
       // same table split across two string arrays is how the two halves came to
       // be read separately in the first place, and neither carried a quantity.
-      lootTotalWeight: safeNumber(() => monster.lootTable.totalWeight, 0),
+      lootTotalWeight: safeNumber('registries.15', () => monster.lootTable.totalWeight, 0),
       lootDrops: dumpDropTable(monster.lootTable.drops),
       // What a kill pays in coin. The dump priced every fight at the sale value
       // of its items and nothing else, so a monster that drops GP and no items
       // read as worth killing for exactly zero. `currencyDrops`
       // (monsters.d.ts:112) is a min/max range, not a fixed amount.
       currencyDrops: dumpCurrencyRange(monster.currencyDrops),
-      bones: safeText(() => monster.bones?.item.name ?? ''),
+      bones: safeText('registries.16', () => monster.bones?.item.name ?? ''),
       // Stats, so a fight can be assessed as something other than one number.
       //
       // `combatLevel` alone cannot say whether a monster is dangerous to *this*
@@ -561,21 +556,21 @@ export function dumpRegistries(): KnowledgeDump {
       // are stored data; a max hit is computed on an instantiated Enemy, and
       // reconstructing one here would be an invention dressed as a reading.
       levels: {
-        hitpoints: safeNumber(() => monster.levels.Hitpoints, 0),
-        attack: safeNumber(() => monster.levels.Attack, 0),
-        strength: safeNumber(() => monster.levels.Strength, 0),
-        defence: safeNumber(() => monster.levels.Defence, 0),
-        ranged: safeNumber(() => monster.levels.Ranged, 0),
-        magic: safeNumber(() => monster.levels.Magic, 0),
-        corruption: safeNumber(() => monster.levels.Corruption, 0),
+        hitpoints: safeNumber('registries.17', () => monster.levels.Hitpoints, 0),
+        attack: safeNumber('registries.18', () => monster.levels.Attack, 0),
+        strength: safeNumber('registries.19', () => monster.levels.Strength, 0),
+        defence: safeNumber('registries.20', () => monster.levels.Defence, 0),
+        ranged: safeNumber('registries.21', () => monster.levels.Ranged, 0),
+        magic: safeNumber('registries.22', () => monster.levels.Magic, 0),
+        corruption: safeNumber('registries.23', () => monster.levels.Corruption, 0),
       },
-      attackType: safeText(() => monster.attackType),
+      attackType: safeText('registries.24', () => monster.attackType),
       // A boss cannot be farmed the way a normal monster can, and a monster
       // that `canSlayer` (:118) is the only kind a Slayer task can ever ask
       // for — which is exactly the join an accepted task needs to become a
       // fight candidate.
-      isBoss: safeBoolean(() => monster.isBoss, false),
-      canSlayer: safeBoolean(() => monster.canSlayer, false),
+      isBoss: safeBoolean('registries.25', () => monster.isBoss, false),
+      canSlayer: safeBoolean('registries.26', () => monster.canSlayer, false),
     })),
     dungeons: game.dungeons.allObjects.map((dungeon) => ({
       id: dungeon.id,
@@ -596,17 +591,21 @@ export function dumpRegistries(): KnowledgeDump {
       id: purchase.id,
       name: purchase.name,
       allowQuantityPurchase: purchase.allowQuantityPurchase,
-      gpCost: safeNumber(() => gpCostOf(purchase), 0),
+      gpCost: safeNumber('registries.purchaseGpCost', () => gpCostOf(purchase), 0),
       // 143 purchases priced in another currency dumped gpCost 0, which reads
       // as free. The full cost list says what they actually take.
-      costs: safeList(() =>
+      costs: safeList('registries.purchaseCosts', () =>
         game.shop
           .getPurchaseCosts(purchase, 1)
           .getCurrencyQuantityArray()
           .map((entry) => `${entry.quantity} ${entry.currency.name}`),
       ),
-      owned: safeNumber(() => game.shop.getPurchaseCount(purchase), 0),
-      atBuyLimit: safeBoolean(() => game.shop.isPurchaseAtBuyLimit(purchase), false),
+      owned: safeNumber('registries.purchaseCount', () => game.shop.getPurchaseCount(purchase), 0),
+      atBuyLimit: safeBoolean(
+        'registries.purchaseAtBuyLimit',
+        () => game.shop.isPurchaseAtBuyLimit(purchase),
+        false,
+      ),
       requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
       // What the purchase actually does, in the game's own words.
       //
@@ -616,7 +615,10 @@ export function dumpRegistries(): KnowledgeDump {
       // a 30% interval cut, 39 at 10% -- because nothing recorded which it is.
       // `describePlain` (statProvider.d.ts:34) is the game's own summary of the
       // modifiers a purchase grants.
-      effect: safeText(() => purchase.contains.stats?.describePlain() ?? ''),
+      effect: safeText(
+        'registries.purchaseEffect',
+        () => purchase.contains.stats?.describePlain() ?? '',
+      ),
     })),
     // Every item, flat.
     //
@@ -635,11 +637,15 @@ export function dumpRegistries(): KnowledgeDump {
     items: take('items', game.items.allObjects, ITEM_TABLE_LIMIT).map((item) => ({
       id: item.id,
       name: item.name,
-      category: safeText(() => item.category),
-      type: safeText(() => item.type),
-      sellsFor: safeNumber(() => item.sellsFor.quantity, 0),
-      sellsForCurrencyId: safeText(() => item.sellsFor.currency.id),
-      healsFor: safeNumber(() => (item instanceof FoodItem ? item.healsFor : 0), 0),
+      category: safeText('registries.27', () => item.category),
+      type: safeText('registries.28', () => item.type),
+      sellsFor: safeNumber('registries.29', () => item.sellsFor.quantity, 0),
+      sellsForCurrencyId: safeText('registries.30', () => item.sellsFor.currency.id),
+      healsFor: safeNumber(
+        'registries.31',
+        () => (item instanceof FoodItem ? item.healsFor : 0),
+        0,
+      ),
     })),
     // Last, and it has to stay last: see the declaration above.
     truncations,
@@ -707,11 +713,16 @@ function dumpSkillRecipes(): {
     let recipes: unknown[];
     try {
       recipes = withActions.actions?.allObjects ?? [];
-    } catch {
+    } catch (error) {
+      noteSwallowed('registries.dumpSkillRecipes', error);
       continue;
     }
 
-    const baseInterval = safeNumber(() => withActions.baseInterval ?? 0, 0);
+    const baseInterval = safeNumber(
+      'registries.skillBaseInterval',
+      () => withActions.baseInterval ?? 0,
+      0,
+    );
 
     // Agility is the one skill whose `itemCosts` are not consumption.
     //
@@ -758,22 +769,30 @@ function dumpSkillRecipes(): {
           skillName: skill.name,
           baseInterval,
           recipeId: recipe.id,
-          name: safeText(() => recipe.name ?? ''),
-          level: safeNumber(() => recipe.level ?? 0, 0),
-          baseExperience: safeNumber(() => recipe.baseExperience ?? 0, 0),
+          name: safeText('registries.recipeName', () => recipe.name ?? ''),
+          level: safeNumber('registries.recipeLevel', () => recipe.level ?? 0, 0),
+          baseExperience: safeNumber(
+            'registries.recipeBaseExperience',
+            () => recipe.baseExperience ?? 0,
+            0,
+          ),
           // Into the Abyss content earns on a separate track, so 384 recipes
           // dumped `baseExperience: 0` and were indistinguishable from a
           // reachable level-1 action that pays nothing.
-          baseAbyssalExperience: safeNumber(() => recipe.baseAbyssalExperience ?? 0, 0),
-          abyssalLevel: safeNumber(() => recipe.abyssalLevel ?? 0, 0),
-          realmId: safeText(() => recipe.realm?.id ?? ''),
+          baseAbyssalExperience: safeNumber(
+            'registries.32',
+            () => recipe.baseAbyssalExperience ?? 0,
+            0,
+          ),
+          abyssalLevel: safeNumber('registries.33', () => recipe.abyssalLevel ?? 0, 0),
+          realmId: safeText('registries.34', () => recipe.realm?.id ?? ''),
           // The recipe's own interval where it has one, which several skills
           // do: an Agility obstacle and a Firemaking log both time themselves,
           // and the skill-level `baseInterval` above is 0 for the first and a
           // flat nominal 3,000ms for every log of the second. A rate built on
           // the skill constant alone ranks logs by XP and picks the slowest.
           // `AgilityObstacle.baseInterval` is agility.d.ts:72.
-          recipeInterval: safeNumber(() => recipe.baseInterval ?? 0, 0),
+          recipeInterval: safeNumber('registries.35', () => recipe.baseInterval ?? 0, 0),
           itemCosts: costsAreOneTime ? [] : dumpItemCosts(recipe.itemCosts),
           // A one-time build cost, kept apart from consumption so no arithmetic
           // can mistake one for the other. Empty for every skill but Agility.
@@ -797,13 +816,21 @@ function dumpSkillRecipes(): {
           // and `itemRewards` (:76) are the whole of what it yields.
           currencyRewards: dumpCurrencyQuantities(recipe.currencyRewards),
           itemRewards: dumpItemCosts(recipe.itemRewards),
-          productId: safeText(() => recipe.product?.id ?? ''),
-          productName: safeText(() => recipe.product?.name ?? ''),
-          baseQuantity: safeNumber(() => recipe.baseQuantity ?? 1, 1),
-          productSellsFor: safeNumber(() => recipe.product?.sellsFor?.quantity ?? 0, 0),
-          productSellsForCurrencyId: safeText(() => recipe.product?.sellsFor?.currency.id ?? ''),
+          productId: safeText('registries.36', () => recipe.product?.id ?? ''),
+          productName: safeText('registries.37', () => recipe.product?.name ?? ''),
+          baseQuantity: safeNumber('registries.38', () => recipe.baseQuantity ?? 1, 1),
+          productSellsFor: safeNumber(
+            'registries.39',
+            () => recipe.product?.sellsFor?.quantity ?? 0,
+            0,
+          ),
+          productSellsForCurrencyId: safeText(
+            'registries.40',
+            () => recipe.product?.sellsFor?.currency.id ?? '',
+          ),
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('registries.dumpSkillRecipes', error);
         // A recipe that will not describe itself is skipped rather than
         // half-recorded: a partial row reads as a real one downstream.
       }
@@ -899,7 +926,8 @@ function dumpItemCosts(
       name: cost.item.name,
       quantity: cost.quantity,
     }));
-  } catch {
+  } catch (error) {
+    noteSwallowed('registries.dumpItemCosts', error);
     return [];
   }
 }

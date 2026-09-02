@@ -20,7 +20,12 @@ const snapshot = {
   currencies: [{ id: 'melvorD:GP', name: 'GP', amount: 12_345 }],
   skills: [{ id: 'melvorD:Woodcutting', name: 'Woodcutting', level: 15, xp: 2200, isActive: true }],
   bank: { slotsUsed: 4, slotsMax: 20, items: [] },
-  activeAction: { id: 'melvorD:Woodcutting', name: 'Woodcutting', isActive: true },
+  activeAction: {
+    id: 'melvorD:Woodcutting',
+    name: 'Woodcutting',
+    isActive: true,
+    recipeIds: ['melvorD:Normal_Logs'],
+  },
   farm: [],
   combat: {
     inCombat: false,
@@ -38,9 +43,11 @@ const snapshot = {
     combatLevel: 12,
     food: [],
     selectedEquipmentSet: 0,
+    selectedFoodSlot: 0,
     equipment: [],
     enemy: null,
   },
+  township: null,
 };
 
 function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
@@ -53,6 +60,15 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
       snapshot,
       objective: null,
       candidates: [],
+      blockedOpportunities: [],
+      // `planRemaining` was a count; the report now carries the queue itself,
+      // because a session that can only see "3 steps" cannot tell whether any
+      // of the three still matches the game.
+      plan: [],
+      objectiveStartedAt: null,
+      needsAttention: null,
+      journalEntries: [],
+      adapterFailures: [],
       logs: [
         { at: 1_700_000_000_000, level: 'info', source: 'policy', message: 'started cutting' },
       ],
@@ -119,6 +135,39 @@ describe('render', () => {
     );
     expect(text).toContain('BLOCKED');
     expect(text).toContain('version_mismatch');
+  });
+
+  it('surfaces adapter reads that are failing', () => {
+    // The failure mode with no other symptom: a renamed accessor takes a
+    // candidate off the list or drops a rate to its nominal fallback, and the
+    // run otherwise looks entirely healthy. Around a hundred bare catches used
+    // to swallow these with no signal anywhere.
+    const failing = dashboard();
+    if (failing.report === null) throw new Error('fixture must include a report');
+    const text = plain(
+      render(
+        {
+          ...failing,
+          report: {
+            ...failing.report,
+            adapterFailures: [
+              { site: 'candidates.thievingSuccessRate', count: 412, lastError: 'not a function' },
+              { site: 'township.readTaskCandidates', count: 9, lastError: 'undefined' },
+            ],
+          },
+        },
+        null,
+        120,
+        30,
+      ),
+    );
+    expect(text).toContain('candidates.thievingSuccessRate ×412');
+    expect(text).toContain('+1 more');
+  });
+
+  it('says nothing about adapter reads while they all work', () => {
+    // A permanent warning line is a warning nobody reads.
+    expect(plain(render(dashboard(), null, 100, 30))).not.toContain('adapter reads failing');
   });
 
   it('reads auto-eat as not owned rather than zero', () => {

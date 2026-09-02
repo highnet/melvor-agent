@@ -137,6 +137,27 @@ export const TOOLS: Record<string, ToolHandler> = {
           `Delivering: ${Math.round(measured.realisedXpPerHour).toLocaleString()} xp/h over ${measured.hours.toFixed(1)}h — ${ratio}`,
         ];
       })(),
+      // Guarded adapter reads that threw, cumulative for the run.
+      //
+      // Placed next to the advertised-vs-realised comparison because it is the
+      // answer that line most often needs: a rate sitting at its nominal
+      // fallback because a getter was renamed looks identical to a rate that is
+      // merely wrong, and the difference decides whether to re-plan or to fix
+      // the adapter. Around a hundred bare catches used to swallow these with
+      // no signal anywhere.
+      // Optional at the read, because the field is newer than some reports:
+      // a mod that has not reloaded yet sends none, and an undefined here would
+      // take down the whole state summary rather than omit one line of it.
+      ...((report.adapterFailures ?? []).length === 0
+        ? []
+        : [
+            `Adapter reads failing (rates and candidates may be silently falling back): ${(
+              report.adapterFailures ?? []
+            )
+              .slice(0, 5)
+              .map((entry) => `${entry.site} ×${entry.count} (${entry.lastError})`)
+              .join('; ')}`,
+          ]),
       // "none" and "nothing" are what a stalled agent shows and also what a
       // healthy one shows for the second or two between plan steps. Naming the
       // queue separates them; without it, three snapshots this morning were

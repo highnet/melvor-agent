@@ -93,6 +93,27 @@ export const blockedOpportunitySchema = z.object({
 });
 export type BlockedOpportunity = z.infer<typeof blockedOpportunitySchema>;
 
+/**
+ * A guarded read in the adapter that threw, and how often.
+ *
+ * The adapter swallows exceptions on purpose -- game getters refuse to answer
+ * in states the agent legitimately runs in -- but it used to swallow them
+ * silently, about a hundred bare catches against one that reported anything. So
+ * a renamed accessor showed up as a candidate quietly missing from the list and
+ * a rate quietly sitting at its nominal fallback, with no signal anywhere.
+ *
+ * That is worse than an error, because the whole diagnostic loop here is
+ * comparing an advertised rate against a realised one, and a rate that fell
+ * back is not visibly a rate that is wrong.
+ */
+export const adapterFailureSchema = z.object({
+  /** `file.what`, e.g. `candidates.thievingSuccessRate`. */
+  site: z.string(),
+  count: z.number().int().nonnegative(),
+  lastError: z.string(),
+});
+export type AdapterFailure = z.infer<typeof adapterFailureSchema>;
+
 /** mod -> service. Posted on every policy tick. */
 export const agentReportSchema = z.object({
   runState: runStateSchema,
@@ -158,6 +179,14 @@ export const agentReportSchema = z.object({
    */
   journalEntries: z.array(journalEntrySchema).default([]),
   quality: z.array(qualitySampleSchema),
+  /**
+   * Guarded adapter reads that threw, worst first, cumulative for the run.
+   *
+   * Cumulative rather than drained, because the question asked at 8am is "what
+   * has been failing all night" and a counter that resets every three seconds
+   * cannot answer it. Optional so an older mod still validates.
+   */
+  adapterFailures: z.array(adapterFailureSchema).default([]),
   /** Non-null while the agent is refusing to arm; rendered verbatim by the TUI. */
   blockedReason: z.string().nullable(),
   /**

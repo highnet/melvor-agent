@@ -3,6 +3,7 @@ import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { readSellCandidates } from './candidates.js';
 import type { GatheringProjection } from './gathering.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * Skills that share no base class with anything else and need their own routine.
@@ -464,7 +465,8 @@ function miscSkillInstance(skillId: string): Startable | null {
 function needsSelection(spell: AltMagicSpell): boolean {
   try {
     return spell.specialCost.quantity > 0;
-  } catch {
+  } catch (error) {
+    noteSwallowed('skills-misc.needsSelection', error);
     return false;
   }
 }
@@ -505,7 +507,8 @@ function chooseSelection(
 
           const net = saleValueOf(recipe.product);
           if (best === null || net > best.net) best = { recipe, net };
-        } catch {
+        } catch (error) {
+          noteSwallowed('skills-misc.chooseSelection', error);
           // A recipe that will not price itself is not selected.
         }
       }
@@ -531,7 +534,8 @@ function chooseSelection(
     }
 
     return best === null ? null : { kind: 'item', item: best.item };
-  } catch {
+  } catch (error) {
+    noteSwallowed('skills-misc.chooseSelection', error);
     return null;
   }
 }
@@ -541,7 +545,8 @@ function saleValueOf(item: AnyItem): number {
   try {
     const sale = item.sellsFor;
     return sale.currency === game.gp ? sale.quantity : 0;
-  } catch {
+  } catch (error) {
+    noteSwallowed('skills-misc.saleValueOf', error);
     return 0;
   }
 }

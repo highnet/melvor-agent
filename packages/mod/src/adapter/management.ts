@@ -2,6 +2,7 @@ import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * The management actions a human performs constantly and an agent could not.
@@ -109,7 +110,8 @@ export function readMasteryCandidates(): Candidate[] {
     let poolXp = 0;
     try {
       poolXp = withMastery.getMasteryPoolXP?.(game.currentRealm) ?? 0;
-    } catch {
+    } catch (error) {
+      noteSwallowed('management.readMasteryCandidates', error);
       continue;
     }
     if (poolXp <= 0) continue;
@@ -127,7 +129,8 @@ export function readMasteryCandidates(): Candidate[] {
           lowestLevel = level;
           lowest = action;
         }
-      } catch {
+      } catch (error) {
+        noteSwallowed('management.readMasteryCandidates', error);
         // A mastery level that cannot be read is not a candidate.
       }
     }
@@ -452,7 +455,8 @@ export function readSlayerCandidates(): Candidate[] {
         label: `Take a ${category.name} Slayer task (needs Slayer ${category.level}, have ${slayerLevel}) — Slayer XP comes only from killing the assigned monster`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('management.readSlayerCandidates', error);
       // A category that cannot describe itself is not a candidate.
     }
   }
@@ -571,7 +575,8 @@ export function readCombatSetupCandidates(): Candidate[] {
           label: `Activate ${prayer.name} — ${player.prayerPoints} prayer points held, and points drain only while it is on`,
           available: true,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('management.readCombatSetupCandidates', error);
         // A prayer that cannot state its requirements is not a candidate.
       }
     }
@@ -587,7 +592,8 @@ export function readCombatSetupCandidates(): Candidate[] {
         label: `Drink ${potion.name} — ${game.bank.getQty(potion)} held, and a potion left in the bank does nothing`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('management.readCombatSetupCandidates', error);
       // A potion that cannot be counted is not a candidate.
     }
   }
@@ -622,7 +628,8 @@ export function readCombatSetupCandidates(): Candidate[] {
           label: `Fight with ${style.name} (${style.attackType}) — trains ${describeStyleTraining(style)}`,
           available: true,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('management.readCombatSetupCandidates', error);
         // A style that cannot describe itself is not a candidate.
       }
     }
@@ -707,7 +714,8 @@ function describeStyleTraining(style: {
           : gain.skill.name,
       )
       .join(' and ');
-  } catch {
+  } catch (error) {
+    noteSwallowed('management.describeStyleTraining', error);
     return 'a skill it will not name';
   }
 }

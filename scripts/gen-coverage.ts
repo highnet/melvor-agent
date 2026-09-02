@@ -155,6 +155,65 @@ const SKILL_NOTES: Record<string, string> = {
     'startable, but gated behind the Abyssal realm, which needs the Into the Abyss dungeon',
 };
 
+/** Markers around the one section that cannot be derived from the source tree. */
+const TABLE_BEGIN = '<!-- skills:begin -->';
+const TABLE_END = '<!-- skills:end -->';
+
+/**
+ * The skill table from the committed doc, when there is no dump to rebuild it.
+ *
+ * `data/` is gitignored — the dump is generated from a real save — so CI and
+ * every fresh clone have nothing to generate this section from. The generator
+ * used to answer that by writing a "(no dump available)" placeholder over it,
+ * which meant running `pnpm docs:coverage` on a machine that had not played
+ * silently deleted twenty-eight real rows, and `docs:coverage:check` failed on
+ * a clean checkout for a reason that had nothing to do with the checkout. That
+ * is why this check was never in CI, and why `docs/COVERAGE.md` could drift on
+ * main.
+ *
+ * So without a dump the section is carried through unchanged: the rest of the
+ * document is still derived and still checked, and the one part that needs a
+ * real game keeps whatever the last machine with one wrote. Delimiters rather
+ * than a line count, because the section grows when the game does.
+ */
+function committedSkillTable(): string[] | null {
+  let existing: string;
+  try {
+    existing = readFileSync(output, 'utf8');
+  } catch {
+    return null;
+  }
+
+  const start = existing.indexOf(TABLE_BEGIN);
+  const end = existing.indexOf(TABLE_END);
+  if (start < 0 || end < start) return null;
+
+  const rows = existing
+    .slice(start + TABLE_BEGIN.length, end)
+    .split('\n')
+    .filter((line) => line.startsWith('| '));
+
+  // The rows cannot be regenerated without a game, but they can still be
+  // checked against what a generator run *would* have been able to write. Every
+  // note has to be one of the strings this file produces, so a hand-edit into
+  // the preserved section is caught even on a machine with no dump — otherwise
+  // carrying the section through would quietly turn a generated table into an
+  // editable one, which is the drift the whole script exists to prevent.
+  const allowed = new Set([
+    ...Object.values(SKILL_NOTES),
+    'startable — recipes offered as candidates',
+    '**gap — no way to train it**',
+  ]);
+  const invented = rows.filter((row) => !allowed.has(row.split('|')[2]?.trim() ?? ''));
+  if (invented.length > 0) {
+    throw new Error(
+      `docs/COVERAGE.md has hand-edited skill rows this script could not have written:\n${invented.join('\n')}`,
+    );
+  }
+
+  return rows;
+}
+
 const skillRows = (() => {
   let skills: { id: string; name: string }[] = [];
   try {
@@ -164,7 +223,7 @@ const skillRows = (() => {
       }
     ).skills;
   } catch {
-    return ['| _(no dump available; run `dump_knowledge`)_ | |'];
+    return committedSkillTable() ?? ['| _(no dump available; run `dump_knowledge`)_ | |'];
   }
 
   return skills.map((skill) => {
@@ -198,9 +257,16 @@ const lines = [
   'enumeration offers its recipes; the rest are named with the capability that',
   'covers them, or with what is still missing.',
   '',
+  'This is the one section that needs a real game to rebuild. `data/` is',
+  'gitignored, so on a machine with no dump it is carried through unchanged',
+  'rather than blanked — everything else in this file is derived from the source',
+  'tree and is checked on every run.',
+  '',
   '| Skill | How it is trained |',
   '| --- | --- |',
+  TABLE_BEGIN,
   ...skillRows,
+  TABLE_END,
   '',
   '## What it deliberately does not do',
   '',

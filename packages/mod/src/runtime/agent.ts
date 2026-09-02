@@ -51,6 +51,7 @@ import {
   readActivatablePrayers,
   readActivePrayerIds,
   readActiveRecipeIds,
+  readAdapterFailures,
   readAgilityCandidates,
   readAstrologyCandidates,
   readBankExpansion,
@@ -2201,6 +2202,9 @@ export class Agent {
       logs,
       quality: this.quality.slice(-120),
       journalEntries,
+      // Cumulative, not drained: a guarded read that has been failing all night
+      // is the signal, and a per-tick counter cannot express it.
+      adapterFailures: readAdapterFailures(),
       blockedReason: this.blockedReason,
       needsAttention: this.attention,
     });

@@ -8,6 +8,7 @@
   },
   "include": [
     "src",
+    "test",
     "../../vendor/melvor-typings/gameTypes/**/*.d.ts",
     "../../vendor/melvor-typings/libraryTypes/**/*.d.ts"
   ]

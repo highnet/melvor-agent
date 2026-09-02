@@ -3,6 +3,7 @@ import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
 import { townHealthPercent } from './passive.js';
+import { noteSwallowed } from './safe.js';
 
 /**
  * The town.
@@ -294,7 +295,8 @@ export function readTownshipCandidates(): Candidate[] {
     let unlocked = false;
     try {
       unlocked = township.isBiomeUnlocked(biome);
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readTownshipCandidates', error);
       continue;
     }
     if (!unlocked) continue;
@@ -337,7 +339,8 @@ export function readTownshipCandidates(): Candidate[] {
           label: `Build ${building.name} in ${biome.name} (${count} built${effect}${describeBuildTarget(building, biome)})`,
           available: true,
         });
-      } catch {
+      } catch (error) {
+        noteSwallowed('township.readTownshipCandidates', error);
         // A building whose costs or provides cannot be read is not a candidate.
       }
     }
@@ -577,7 +580,8 @@ export function readWorshipCandidates(): Candidate[] {
           : `Found the town under ${worship.name} — creates the town and unlocks Township, its tasks and every building. Bonuses: ${describeWorship(worship)}. Free now, 50,000,000 GP to change later`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readWorshipCandidates', error);
       // A worship that cannot report its unlock state is not a candidate.
     }
   }
@@ -729,7 +733,8 @@ export function readTaskWantedQuantities(): Map<string, number> {
     try {
       if (township.tasks.completedTasks.has(task)) continue;
       collect(task.goals);
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readTaskWantedQuantities', error);
       // A task that cannot describe its goals protects nothing.
     }
   }
@@ -738,7 +743,8 @@ export function readTaskWantedQuantities(): Map<string, number> {
     try {
       if (township.casualTasks.isTaskComplete(task)) continue;
       collect(task.goals);
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readTaskWantedQuantities', error);
       // Same.
     }
   }
@@ -769,7 +775,8 @@ export function readClaimableTasks(): { kind: 'casual' | 'township'; taskId: str
       if (township.casualTasks.isTaskComplete(task)) {
         claimable.push({ kind: 'casual', taskId: task.id });
       }
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readClaimableTasks', error);
       // A task that cannot report completion is not claimable.
     }
   }
@@ -778,7 +785,8 @@ export function readClaimableTasks(): { kind: 'casual' | 'township'; taskId: str
     try {
       if (township.tasks.completedTasks.has(task)) continue;
       if (task.goals.checkIfMet()) claimable.push({ kind: 'township', taskId: task.id });
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readClaimableTasks', error);
       // Same.
     }
   }
@@ -801,7 +809,8 @@ export function readTaskCandidates(): Candidate[] {
         label: `Claim the casual task ${task.name} — done, and it is holding one of five slots`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readTaskCandidates', error);
       // A task that cannot report completion is not a candidate.
     }
   }
@@ -816,7 +825,8 @@ export function readTaskCandidates(): Candidate[] {
         label: `Claim the Township task ${task.name} — the work is already done`,
         available: true,
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readTaskCandidates', error);
       // A task that cannot report completion is not a candidate.
     }
   }
@@ -861,7 +871,8 @@ function describeModifiers(modifiers: readonly ModifierValue[]): string[] {
       if (!description.isDisabled && description.text.length > 0) {
         described.push(description.text);
       }
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.describeModifiers', error);
       // One unreadable modifier must not remove the option from the list.
     }
   }
@@ -913,7 +924,8 @@ export function readTaskOpportunities(): {
         xpPerHour: 0,
         missing: [],
       });
-    } catch {
+    } catch (error) {
+      noteSwallowed('township.readTaskOpportunities', error);
       // A task that cannot describe itself is not an opportunity.
     }
   }
@@ -935,7 +947,8 @@ function describeGoal(goal: { getDescriptionHTML(): string }): string {
       .replace(/<[^>]*>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
-  } catch {
+  } catch (error) {
+    noteSwallowed('township.describeGoal', error);
     return 'an unreadable goal';
   }
 }
@@ -967,12 +980,14 @@ export function readRepairableBuildings(): {
           if (!township.canAffordRepair(building, biome)) continue;
 
           out.push({ buildingId: building.id, biomeId: biome.id, efficiency });
-        } catch {
+        } catch (error) {
+          noteSwallowed('township.readRepairableBuildings', error);
           // A building that will not report its efficiency is left alone.
         }
       }
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('township.readRepairableBuildings', error);
     return [];
   }
 

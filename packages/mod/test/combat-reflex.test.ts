@@ -21,19 +21,27 @@ import {
   unlockAffordablePlots,
 } from '../src/runtime/combat-reflex.js';
 
+// The before/after projection lives under `observed`, not at the top level.
+// This fixture used to be a hand-written shape with `before`/`after` beside
+// `action` — a shape no adapter has ever returned. Nothing caught it because
+// test files were outside every typecheck config, which is the failure this
+// whole file now guards against: a fixture that type-checks is a fixture that
+// still resembles what the code under test actually receives.
 const ok: ActionResult<unknown> = {
   ok: true,
   action: 'test',
-  before: null,
-  after: null,
+  observed: { before: null, after: null },
   detail: 'done',
 };
 
-function fed(overrides: Partial<Parameters<typeof refillFood>[0]> = {}) {
+function fed(
+  overrides: Partial<Parameters<typeof refillFood>[0]> = {},
+): Parameters<typeof refillFood>[0] {
   return {
     inCombat: true,
     equippedFoodId: 'melvorD:Shrimp',
     equippedFoodQty: 2,
+    equippedFoodHeals: 3,
     bankQuantityOf: () => 200,
     ...overrides,
   };
@@ -93,8 +101,6 @@ describe('mid-fight reflexes', () => {
 });
 
 describe('eatWhenLow', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   function hurt(overrides: Partial<Parameters<typeof eatWhenLow>[0]> = {}) {
     return {
       hitpoints: 40,
@@ -145,8 +151,6 @@ describe('eatWhenLow', () => {
 });
 
 describe('abandonIfOutmatched', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   function fight(overrides: Partial<Parameters<typeof abandonIfOutmatched>[0]> = {}) {
     return { inCombat: true, maxHitpoints: 100, enemyMaxHit: 5, ...overrides };
   }
@@ -178,8 +182,6 @@ describe('abandonIfOutmatched', () => {
 });
 
 describe('collectPendingLoot', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   it('collects when the container is filling', () => {
     // A reflex rather than a decision: there is no judgement in it, the cost is
     // one call, and the alternative is silently losing everything the fighting
@@ -203,8 +205,6 @@ describe('collectPendingLoot', () => {
 });
 
 describe('refillFood on an empty slot', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   it('equips food from the bank when the slot is empty', () => {
     // The case the reflex used to ignore, and the one that matters most: with
     // nothing equipped the eat reflex cannot act at all. Live, Thieving emptied
@@ -216,8 +216,9 @@ describe('refillFood on an empty slot', () => {
         inCombat: false,
         equippedFoodId: null,
         equippedFoodQty: 0,
+        equippedFoodHeals: 0,
         bankQuantityOf: () => 0,
-        bankedFood: [{ itemId: 'melvorD:Shrimp', quantity: 28 }],
+        bankedFood: [{ itemId: 'melvorD:Shrimp', quantity: 28, heals: 30 }],
       },
       (itemId) => {
         equipped = itemId;
@@ -236,6 +237,7 @@ describe('refillFood on an empty slot', () => {
           inCombat: false,
           equippedFoodId: null,
           equippedFoodQty: 0,
+          equippedFoodHeals: 0,
           bankQuantityOf: () => 0,
           bankedFood: [],
         },
@@ -251,8 +253,9 @@ describe('refillFood on an empty slot', () => {
           inCombat: true,
           equippedFoodId: 'melvorD:Shrimp',
           equippedFoodQty: 50,
+          equippedFoodHeals: 30,
           bankQuantityOf: () => 100,
-          bankedFood: [{ itemId: 'melvorD:Chicken', quantity: 10 }],
+          bankedFood: [{ itemId: 'melvorD:Chicken', quantity: 10, heals: 90 }],
         },
         () => ok,
       ),
@@ -261,8 +264,6 @@ describe('refillFood on an empty slot', () => {
 });
 
 describe('reading the right food slot', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   it('eats from the slot the game actually uses', () => {
     // This killed the character. The reflex indexed food by
     // `selectedEquipmentSet`, read an empty slot, and concluded there was
@@ -284,8 +285,6 @@ describe('reading the right food slot', () => {
 });
 
 describe('an empty selected food slot', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   it('is not mistaken for having no food', () => {
     // The second bug in this area, and subtler than the first. Indexing the
     // right slot is not enough: the *selected* slot can be empty while another
@@ -318,8 +317,6 @@ describe('an empty selected food slot', () => {
 });
 
 describe('openPendingContainers', () => {
-  const ok = { ok: true as const, name: 'test', before: {}, after: {} };
-
   it('opens a container the moment one exists', () => {
     // The stopgap can open containers too, but only while idle. During a
     // three-hour objective nothing else would — which is exactly the stretch
@@ -415,8 +412,12 @@ describe('plantEmptyPlots', () => {
 
   it('does nothing when no plot is empty', () => {
     expect(
-      plantEmptyPlots({ emptyPlots: [], plentifulSeeds: [{ recipeId: 'Potato', held: 9 }] }, () =>
-        ok(),
+      plantEmptyPlots(
+        {
+          emptyPlots: [],
+          plentifulSeeds: [{ recipeId: 'Potato', categoryId: 'allotment', held: 9, cost: 3 }],
+        },
+        () => ok(),
       ),
     ).toBeNull();
   });
