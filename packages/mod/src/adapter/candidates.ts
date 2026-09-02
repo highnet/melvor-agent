@@ -155,6 +155,7 @@ function genericSkillCandidates(): Candidate[] {
     const withActions = skill as AnySkill & {
       actions?: { allObjects: RecipeLike[] };
       actionInterval?: number;
+      baseInterval?: number;
       isMasteryActionUnlocked?: (recipe: object) => boolean;
       getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean };
     };
@@ -166,7 +167,21 @@ function genericSkillCandidates(): Candidate[] {
     // keeps every recipe comparable to the others rather than dropping the
     // whole skill; it is an approximation either way, since this is the skill's
     // current interval and not a per-recipe one.
-    const skillInterval = safeNumber(() => withActions.actionInterval, 3000);
+    // The skill's own base interval before any invented constant.
+    //
+    // `actionInterval` reads the selected recipe and throws when none is
+    // chosen, which is the state enumeration runs in -- so this landed on a
+    // nominal three seconds for every artisan skill. ArtisanSkill declares
+    // `abstract readonly baseInterval` (artisanSkill.d.ts:8), so each concrete
+    // skill knows its own: 2000 for Smithing, Fletching, Runecrafting and
+    // Herblore, 5000 for Summoning. The fallback understated the first group by
+    // half and overstated Summoning by two thirds, in opposite directions, from
+    // a number that was never read off anything.
+    const skillInterval = firstPositive(
+      () => withActions.actionInterval,
+      () => withActions.baseInterval,
+      () => NOMINAL_INTERVAL_MS,
+    );
 
     // A course skill earns a whole lap at a time; see readAgilityLapRate. Every
     // obstacle reports the same lap rate, because that is what running the
@@ -682,6 +697,31 @@ function canAfford(
  * Returns the fallback rather than propagating, because "this number is
  * currently unknowable" is a normal state here, not an error.
  */
+/**
+ * The first reading that is a usable interval.
+ *
+ * Positivity matters more than presence here: `safeNumber` falls back only on
+ * null or undefined, so a getter returning 0 passes straight through -- and a
+ * zero interval divides into an infinite rate, which would put that recipe at
+ * the top of the board and keep it there. An interval of zero is not a very
+ * fast action, it is an unreadable one.
+ */
+function firstPositive(...reads: (() => number | undefined)[]): number {
+  for (const read of reads) {
+    try {
+      const value = read();
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
+    } catch {
+      // Try the next source.
+    }
+  }
+
+  return NOMINAL_INTERVAL_MS;
+}
+
+/** Last-resort interval when a skill will not report one at all. */
+const NOMINAL_INTERVAL_MS = 3000;
+
 function safeNumber(read: () => number | undefined, fallback: number): number {
   try {
     return read() ?? fallback;
