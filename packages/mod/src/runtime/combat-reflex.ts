@@ -972,8 +972,24 @@ export function liquidateSurplus(
   },
   sell: (itemId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  if (state.freeSlots > LIQUIDATE_FREE_SLOTS) return null;
   if (state.best === null) return null;
+
+  // Two triggers, because bank pressure is not the only reason to sell.
+  //
+  // Pressure alone left roughly 216,000 GP of bars sitting in a bank with five
+  // free slots while the run was short of GP for the one purchase it was saving
+  // toward. The reflex was behaving exactly as written and the stock still went
+  // unconverted, because "the bank is filling" and "this is worth money now"
+  // are different facts and only the first was being asked.
+  //
+  // A large stack is surplus by definition: gathering advertises its worth *if
+  // sold*, and an unsold pile earns nothing at all while it waits. So a stack
+  // past the large threshold is converted regardless of space -- the same
+  // reasoning as the upgrade cap, that idle value is not a saving.
+  const underPressure = state.freeSlots <= LIQUIDATE_FREE_SLOTS;
+  const worthConverting = state.best.value >= LIQUIDATE_LARGE_VALUE;
+  if (!underPressure && !worthConverting) return null;
+
   if (state.best.value < LIQUIDATE_MIN_VALUE) return null;
 
   return { name: 'reflex.liquidateSurplus', result: sell(state.best.itemId) };
@@ -994,3 +1010,13 @@ const LIQUIDATE_FREE_SLOTS = 2;
  * for pocket change.
  */
 const LIQUIDATE_MIN_VALUE = 5_000;
+
+/**
+ * Stack value at which surplus is converted even with space to spare.
+ *
+ * High on purpose. Selling is irreversible, so the bar for acting without the
+ * excuse of bank pressure should be a stack nobody would seriously argue is
+ * still needed -- not a judgement about what the run wants, which belongs to
+ * the planner.
+ */
+const LIQUIDATE_LARGE_VALUE = 100_000;

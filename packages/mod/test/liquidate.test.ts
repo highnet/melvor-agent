@@ -88,3 +88,25 @@ describe('task-wanted items keep only what is asked for', () => {
     expect(sellable(1_056, 0)).toBe(1_056);
   });
 });
+
+describe('liquidateSurplus converts a large stack without waiting for pressure', () => {
+  const big = { itemId: 'melvorD:Gold_Bar', name: 'Gold Bar', value: 149_952 };
+
+  it('sells a six-figure stack even with space to spare', () => {
+    // The actual incident: 216,000 GP of bars in a bank with five free slots,
+    // while the run was short of GP for the purchase it was saving toward.
+    const sold: string[] = [];
+    liquidateSurplus({ freeSlots: 5, best: big }, (itemId) => {
+      sold.push(itemId);
+      return ok();
+    });
+
+    expect(sold).toEqual(['melvorD:Gold_Bar']);
+  });
+
+  it('still leaves a modest stack alone when there is room', () => {
+    // Selling is irreversible; without the excuse of bank pressure the bar has
+    // to be a stack nobody would argue is still needed.
+    expect(liquidateSurplus({ freeSlots: 5, best: stack(38_000) }, () => ok())).toBeNull();
+  });
+});
