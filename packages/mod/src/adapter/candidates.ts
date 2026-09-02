@@ -55,7 +55,7 @@ function safeRecipes(skill: { actions?: { allObjects: RecipeLike[] } }): RecipeL
   }
 }
 
-interface RecipeLike {
+export interface RecipeLike {
   id: string;
   name: string;
   level: number;
@@ -316,7 +316,7 @@ function alchemyGpPerCast(skill: AnySkill, recipe: RecipeLike): number | null {
  * Fails to 1 rather than to 0, because a skill that cannot report its odds
  * should read as ordinary rather than vanish from the board.
  */
-function productChanceFor(skill: AnySkill, recipe: RecipeLike): number {
+export function productChanceFor(skill: AnySkill, recipe: RecipeLike): number {
   try {
     const cooking = skill as AnySkill & {
       getRecipeSuccessChance?: (r: object) => number;
@@ -795,7 +795,7 @@ function miningCandidates(): Candidate[] {
  * overstate every gathering rate. An unclaimed bonus understates; a
  * double-counted one is a fabrication.
  */
-function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: number): number {
+export function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: number): number {
   try {
     // A failed action still costs the time and the inputs, and yields nothing.
     //
@@ -826,7 +826,7 @@ function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: numb
 }
 
 /** XP multiplier from the skill's own percentage modifier; 1 when unreadable. */
-function xpMultiplierFor(skill: AnySkill, recipe: RecipeLike): number {
+export function xpMultiplierFor(skill: AnySkill, recipe: RecipeLike): number {
   try {
     const withXp = skill as AnySkill & { getXPModifier?: (action?: object) => number };
     const percent = withXp.getXPModifier?.(recipe);
@@ -860,7 +860,7 @@ function xpMultiplierFor(skill: AnySkill, recipe: RecipeLike): number {
  * covers the skill -- so `actionInterval` is already the mastery-modified
  * value for them.
  */
-function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): number {
+export function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): number {
   const getters: Record<string, string> = {
     'melvorD:Woodcutting': 'getTreeInterval',
     'melvorD:Cooking': 'getRecipeCookingInterval',
@@ -934,7 +934,7 @@ function masteryIntervalFor(skill: AnySkill, recipe: object, fallback: number): 
  * look like 120,000 GP/h. Naming the headroom lets a planner weigh it; guessing
  * its size would just be a new way to be confidently wrong.
  */
-function masteryNote(skill: AnySkill, recipe: { id: string }): string {
+export function masteryNote(skill: AnySkill, recipe: { id: string }): string {
   try {
     const withMastery = skill as AnySkill & {
       getMasteryLevel?: (action: object) => number;
@@ -957,9 +957,9 @@ function masteryNote(skill: AnySkill, recipe: { id: string }): string {
  * Below this there is real headroom; above it the note would appear on almost
  * everything and stop carrying information.
  */
-const MASTERY_HEADROOM_LEVEL = 50;
+export const MASTERY_HEADROOM_LEVEL = 50;
 
-function miningIntervalFor(rock: MiningRock): number {
+export function miningIntervalFor(rock: MiningRock): number {
   const base = game.mining.baseInterval;
 
   try {
