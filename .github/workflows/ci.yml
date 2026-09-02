@@ -40,6 +40,17 @@ jobs:
       - name: API docs drift
         run: pnpm docs:api:check
 
+      # `pnpm verify` has always run this and CI never did, so docs/COVERAGE.md
+      # could drift on main between one contributor's verify and the next.
+      #
+      # It could not be added before: the generator blanked its skill table
+      # whenever `data/dump.json` was absent, and `data/` is gitignored, so on a
+      # runner the check failed for a reason that had nothing to do with the
+      # change. That section is now carried through instead, and validated
+      # against the notes the script could have written.
+      - name: Coverage docs drift
+        run: pnpm docs:coverage:check
+
       - name: Tests
         run: pnpm test
 

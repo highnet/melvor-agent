@@ -39,10 +39,14 @@ const coverage = (): string => {
   }
 };
 
-describe('coverage names every skill', () => {
+// `skipIf`, not an early return. A return reports a PASS, so both checks below
+// have been claiming the coverage doc was verified against the game registry on
+// every CI run -- `data/` is gitignored, so there has never been a registry
+// there to verify against. A skip is counted in the summary; a pass is a lie.
+describe.skipIf(readSkills() === null)('coverage names every skill', () => {
   it('lists each skill in the game', () => {
     const skills = readSkills();
-    if (skills === null) return; // No dump in CI.
+    if (skills === null) return;
 
     const doc = coverage();
     const missing = skills.filter((skill) => !doc.includes(`| ${skill.name} |`));

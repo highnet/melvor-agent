@@ -14,9 +14,27 @@ import { supportedKinds } from '../src/policy/index.js';
  * registries — so a skill that exists in the player's install and has no way to
  * be trained fails the build rather than being quietly absent.
  *
- * The dump is committed state from a real character. When it is missing these
- * tests skip rather than fail: a fresh clone has no dump yet, and failing there
- * would punish someone for not having played.
+ * The dump is NOT committed -- `data/` is gitignored, because it is generated
+ * from a real save. So on CI, and on any fresh clone, there is nothing to check
+ * against.
+ *
+ * That used to be invisible. Every assertion sat behind `if (dump === null)
+ * return;`, including `expect(unreachable).toEqual([])`, so the suite reported
+ * six passing reachability checks having made none of them -- and the docstring
+ * said the dump was committed state, which was simply false. A gate that
+ * reports green while asserting nothing is worse than no gate: it is the only
+ * kind that can be trusted and be wrong.
+ *
+ * The dump-dependent checks are now declared with `describe.skipIf`, so vitest
+ * reports them as SKIPPED and the run summary says so out loud. The checks that
+ * need no dump -- the negative control, and the contract-vs-registry equality
+ * that is the reason this file catches a capability added to the shared
+ * contract while the mod is not being built -- run unconditionally, on CI
+ * included.
+ *
+ * Making the absent case a hard failure is the right end state, and it needs a
+ * redacted registry-only fixture (ids and names, no save state) committed
+ * first. Until that exists, failing here would only turn main red.
  */
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -82,17 +100,42 @@ const OTHERWISE_REACHABLE: Record<string, string> = {
   'melvorItA:Corruption': 'passive: unlocks by fighting in the Abyss',
 };
 
-describe('game reachability', () => {
-  const dump = loadDump();
+const dump = loadDump();
 
-  it('has a dump to check against', () => {
-    // Not an assertion about the game — a note about what these tests can see.
-    if (dump === null) {
-      console.warn('data/dump.json is absent; reachability checks skipped.');
-    }
-    expect(true).toBe(true);
+/** Whether a skill has any path to being trained. */
+const unreachableIn = (skills: { id: string }[]): string[] =>
+  skills
+    .map((skill) => skill.id)
+    .filter((id) => !GATHERABLE.has(id) && OTHERWISE_REACHABLE[id] === undefined);
+
+describe('game reachability', () => {
+  it('notices a skill it has no path to train', () => {
+    // The negative control, and the only reason the checks below mean anything:
+    // without it, "no unreachable skills" and "the predicate is broken" look
+    // identical. It needs no dump, so it runs everywhere -- including on the CI
+    // runs where the rest of this file cannot.
+    expect(unreachableIn([{ id: 'melvorX:Basketweaving' }])).toEqual(['melvorX:Basketweaving']);
   });
 
+  it('has an executor for every capability the contract declares', () => {
+    // The typed registry already enforces this at compile time; asserting it
+    // here is what catches a kind added to the contract while the mod is not
+    // being built — the contract is shared, and the planner would happily emit
+    // an objective nothing can perform.
+    expect([...supportedKinds()].sort()).toEqual([...objectiveKindSchema.options].sort());
+  });
+});
+
+/**
+ * Declared with `skipIf` rather than guarded with an early `return`.
+ *
+ * The difference is the whole point of this change: an early return reports a
+ * PASS, so `expect(unreachable).toEqual([])` was claiming a clean bill of
+ * health on every CI run without ever loading a skill list. `skipIf` reports a
+ * SKIP, and the run summary counts it, so "this gate did not run" is a thing
+ * anyone reading the output can see.
+ */
+describe.skipIf(dump === null)('game reachability, against the installed registries', () => {
   it('can train every skill the installed game registers', () => {
     if (dump === null) return;
 
@@ -101,25 +144,10 @@ describe('game reachability', () => {
     // notice absence.
     expect(dump.skills.length).toBeGreaterThan(20);
 
-    const unreachable = dump.skills
-      .map((skill) => skill.id)
-      .filter((id) => !GATHERABLE.has(id) && OTHERWISE_REACHABLE[id] === undefined);
-
     // A skill in the player's install with no path to train it is the exact
     // shape of "not feature complete", and it should break the build rather
     // than be discovered months later as a level 1 skill nobody noticed.
-    expect(unreachable).toEqual([]);
-  });
-
-  it('notices a skill it has no path to train', () => {
-    // Proves the check above can fail. Without this, "no unreachable skills"
-    // and "the check is broken" look identical.
-    const invented = [{ id: 'melvorX:Basketweaving', name: 'Basketweaving' }];
-    const unreachable = invented
-      .map((skill) => skill.id)
-      .filter((id) => !GATHERABLE.has(id) && OTHERWISE_REACHABLE[id] === undefined);
-
-    expect(unreachable).toEqual(['melvorX:Basketweaving']);
+    expect(unreachableIn(dump.skills)).toEqual([]);
   });
 
   it('can fight the dungeons and monsters the game registers', () => {
@@ -140,13 +168,5 @@ describe('game reachability', () => {
 
     expect(dump.shopPurchases.length).toBeGreaterThan(0);
     expect(supportedKinds()).toContain('buy_shop_upgrade');
-  });
-
-  it('has an executor for every capability the contract declares', () => {
-    // The typed registry already enforces this at compile time; asserting it
-    // here is what catches a kind added to the contract while the mod is not
-    // being built — the contract is shared, and the planner would happily emit
-    // an objective nothing can perform.
-    expect([...supportedKinds()].sort()).toEqual([...objectiveKindSchema.options].sort());
   });
 });

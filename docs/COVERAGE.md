@@ -63,8 +63,14 @@ adds cannot quietly go unlisted. "Startable" means the generic candidate
 enumeration offers its recipes; the rest are named with the capability that
 covers them, or with what is still missing.
 
+This is the one section that needs a real game to rebuild. `data/` is
+gitignored, so on a machine with no dump it is carried through unchanged
+rather than blanked — everything else in this file is derived from the source
+tree and is checked on every run.
+
 | Skill | How it is trained |
 | --- | --- |
+<!-- skills:begin -->
 | Attack | combat — `fight_monster` with `set_attack_style` |
 | Strength | combat — `fight_monster` with `set_attack_style` |
 | Defence | combat — `fight_monster` with `set_attack_style` |
@@ -93,6 +99,7 @@ covers them, or with what is still missing.
 | Archaeology | `excavate_dig_site` with `select_dig_map` and `select_dig_tool` |
 | Harvesting | startable, but gated behind the Abyssal realm, which needs the Into the Abyss dungeon |
 | Corruption | not yet — gated behind the Abyssal realm, which needs the Into the Abyss dungeon |
+<!-- skills:end -->
 
 ## What it deliberately does not do
 

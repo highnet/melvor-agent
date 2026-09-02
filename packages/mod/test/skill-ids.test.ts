@@ -40,9 +40,12 @@ describe('startable skill ids exist in the game registry', () => {
     expect(startableIds()).not.toContain('melvorD:AltMagic');
   });
 
-  it('every startable id is a real skill', () => {
+  // `skipIf`, not an early return: a return reports a PASS, so this claimed to
+  // have checked every id against the registry on every CI run while loading
+  // nothing at all. A skip is counted in the summary and can be seen.
+  it.skipIf(readDump() === null)('every startable id is a real skill', () => {
     const dump = readDump();
-    if (dump === null) return; // No dump in CI; the assertion above still holds.
+    if (dump === null) return;
 
     const known = new Set(dump.skills.map((s) => s.id));
     const unknown = startableIds().filter((id) => !known.has(id));

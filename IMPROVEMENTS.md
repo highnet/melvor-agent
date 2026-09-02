@@ -230,18 +230,31 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Architecture
 
-- [ ] **Test files are excluded from every typecheck config** — M. The
-      `ActionResult` fixture that 865 lines of reflex tests rest on does not match
-      the type it claims.
-- [ ] **Mirrored predicates have already drifted** — M. `mining-respawn.test.ts`
-      pins the static `maxHP` the implementation deliberately moved away from. A
-      `globalThis.game` stub already works elsewhere in the suite.
+- [x] **Test files are excluded from every typecheck config** — M. `test` is now in
+      every package's `include`; eight wrong fixtures fell out, including the
+      `ActionResult` one and two reads of a property that only exists on the
+      other variant of a union.
+- [x] **Mirrored predicates have already drifted** — M. `mining-respawn.test.ts`,
+      `mastery-scaling.test.ts` and `product-chance.test.ts` now import the real
+      functions; an `installFakeGame` helper in `test/fixtures.ts` stubs the
+      global for the one that reads `game.mining`.
 - [ ] **`candidates.ts` is five modules, and `agent.ts` is a 1,959-line god class
       that no test imports** — M/L.
-- [ ] **~100 silent `catch {}` against one reporting helper** — S. A changed
-      accessor makes candidates vanish with no signal at all.
-- [ ] **The reachability gate is inert in CI** — S. `data/` is gitignored, so every
-      assertion returns early.
+- [x] **~100 silent `catch {}` against one reporting helper** — S. `adapter/safe.ts`
+      counts every guarded read by site; 122 catches across 23 files now name
+      theirs, and the tally rides out on the report, the TUI and the MCP state
+      summary. The two `safely`s and the two `safeNumber`s are one set.
+- [x] **The reachability gate is inert in CI** — S. The silent `return` guards are
+      `skipIf`, so a check that cannot run is reported as SKIPPED rather than
+      PASSED — in `skill-ids.test.ts` and `skill-coverage.test.ts` too. The false
+      "the dump is committed state" docstring is corrected.
+      `pnpm docs:coverage:check` is now in CI, which needed the generator to stop
+      blanking its dump-derived section on a machine with no dump.
+      **Still open:** a redacted registry-only fixture (ids and names, no save
+      state) would let those three files assert rather than skip. It cannot be
+      written by inference — guessing ids is the bug that made
+      `melvorD:AltMagic` produce no candidates for the life of the repo — so it
+      has to come from a real dump.
 - [ ] **`ActionResult` evidence is never consumed above the adapter** — M.
 
 ## Dump
