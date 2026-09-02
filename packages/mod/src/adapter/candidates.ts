@@ -188,7 +188,7 @@ function genericSkillCandidates(): Candidate[] {
         params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
         label: requirement.abyssal
           ? `${skill.name}: ${recipe.name} — Abyssal realm, needs Abyssal lvl ${requirement.level}`
-          : `${skill.name}: ${recipe.name}`,
+          : `${skill.name}: ${recipe.name}${masteryNote(skill, recipe)}`,
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp,
         requiresLevel: requirement.level,
         available: true,
@@ -216,6 +216,7 @@ function candidate(
   recipe: RecipeLike,
   intervalMs: number,
   productGp: number,
+  skill?: AnySkill,
 ): Candidate {
   const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
   const salePerHour = actionsPerHour * productGp;
@@ -235,9 +236,9 @@ function candidate(
     // at a GP goal has to sell, and that step is invisible if the list calls
     // both things the same name.
     label:
-      salePerHour > 0
+      (salePerHour > 0
         ? `${skillName}: ${recipe.name} — output worth ${Math.round(salePerHour).toLocaleString()} GP/h if sold, not GP earned`
-        : `${skillName}: ${recipe.name}`,
+        : `${skillName}: ${recipe.name}`) + (skill === undefined ? '' : masteryNote(skill, recipe)),
     xpPerHour: actionsPerHour * requirement.xp,
     gpPerHour: salePerHour,
     requiresLevel: requirement.level,
@@ -257,6 +258,7 @@ function woodcuttingCandidates(): Candidate[] {
         // Already accounts for gear, mastery and modifiers.
         skill.getTreeInterval(tree),
         gpValue(tree.product),
+        skill,
       ),
     );
 }
@@ -470,7 +472,7 @@ function miningCandidates(): Candidate[] {
       // selected — which is exactly the state candidate enumeration runs in.
       // So this understates the real rate (it ignores modifiers) but it is
       // always readable, and a candidate list that throws is worth nothing.
-      candidate(MINING_ID, skill.name, rock, miningIntervalFor(rock), gpValue(rock.product)),
+      candidate(MINING_ID, skill.name, rock, miningIntervalFor(rock), gpValue(rock.product), skill),
     );
 }
 
@@ -493,17 +495,63 @@ function miningCandidates(): Candidate[] {
  * A rock with passive regen or no recorded HP is charged the bare interval,
  * which is correct for the first and the only safe guess for the second.
  */
-function miningIntervalFor(rock: {
-  maxHP?: number;
-  baseRespawnInterval?: number;
-  hasPassiveRegen?: boolean;
-}): number {
+/**
+ * Mastery headroom, when a rate still has room to grow.
+ *
+ * Every rate in this list is an instantaneous one, and that is a myopic way to
+ * choose work that will run for hours. Mastery scales the things the rates are
+ * built from -- a rock yields more before it empties, an interval shortens, a
+ * steal succeeds more often -- so an action sitting mid-table today can be the
+ * best on the board after a sustained run, while one already at 99 is as good
+ * as it will ever be. Comparing only the current numbers systematically favours
+ * whatever is already mastered and never commits long enough to master anything
+ * else.
+ *
+ * Reported rather than folded into `xpPerHour`, deliberately. The growth curve
+ * is not in the typings and inventing a projection would put a fabricated
+ * number where a measured one belongs -- the exact failure that made Crystal
+ * look like 120,000 GP/h. Naming the headroom lets a planner weigh it; guessing
+ * its size would just be a new way to be confidently wrong.
+ */
+function masteryNote(skill: AnySkill, recipe: { id: string }): string {
+  try {
+    const withMastery = skill as AnySkill & {
+      getMasteryLevel?: (action: object) => number;
+    };
+    if (withMastery.getMasteryLevel === undefined) return '';
+
+    const level = withMastery.getMasteryLevel(recipe);
+    if (!Number.isFinite(level) || level <= 0) return '';
+    if (level >= MASTERY_HEADROOM_LEVEL) return '';
+
+    return ` — mastery ${level}/99, so this rate improves with sustained use`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Mastery at or above which the remaining growth is not worth flagging.
+ *
+ * Below this there is real headroom; above it the note would appear on almost
+ * everything and stop carrying information.
+ */
+const MASTERY_HEADROOM_LEVEL = 50;
+
+function miningIntervalFor(rock: MiningRock): number {
   const base = game.mining.baseInterval;
 
   try {
     if (rock.hasPassiveRegen === true) return base;
 
-    const actionsPerCycle = rock.maxHP ?? 0;
+    // `getRockMaxHP` (rockTicking.d.ts:180), not the static `maxHP` field.
+    //
+    // Mastery raises how much a rock yields before it empties, so the same rock
+    // amortises the same respawn over more actions as mastery grows -- the rate
+    // of a given rock is not a constant, it improves with use. Reading the
+    // static field would freeze every rock at its unmastered value and make the
+    // respawn correction itself wrong in a second way.
+    const actionsPerCycle = game.mining.getRockMaxHP(rock);
     const respawn = rock.baseRespawnInterval ?? 0;
     if (actionsPerCycle <= 0 || respawn <= 0) return base;
 
