@@ -80,6 +80,7 @@ export {
   readEquipmentSetCandidates,
   readSynergyCandidates,
   type EquipProjection,
+  readRefillableAmmo,
 } from './equipment.js';
 export {
   newSlayerTask,

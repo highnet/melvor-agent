@@ -90,6 +90,7 @@ import {
   readPlantableSeeds,
   readPlayerHitpoints,
   readRaidCandidates,
+  readRefillableAmmo,
   readRepairableBuildings,
   readSellCandidates,
   readShopObjectiveCandidates,
@@ -167,6 +168,7 @@ import {
   openPendingContainers,
   plantEmptyPlots,
   refillFood,
+  refillQuiver,
   removePenalisingGear,
   repairDegradedBuildings,
   sellToEscapeFullBank,
@@ -837,6 +839,20 @@ export class Agent {
       // game cannot compute enemy stats, so the screen guesses from combat
       // level; here the game has computed the real max hit and the guess is
       // checked against it.
+      // Before the outmatched check: a fight landing nothing is not a fight
+      // being lost on the numbers, and the two want different responses.
+      refillQuiver(
+        {
+          inCombat: snapshot.combat.inCombat,
+          quiverEmpty: (() => {
+            const quiver = snapshot.combat.equipment.find((slot) => slot.slot === 'melvorD:Quiver');
+            return readRefillableAmmo() !== null && (quiver?.qty ?? 0) <= 0;
+          })(),
+          available: readRefillableAmmo(),
+        },
+        (itemId) => equipItem(itemId, 'melvorD:Quiver', isSuspended),
+        () => disengageCombat(isSuspended),
+      ),
       abandonIfOutmatched(
         {
           inCombat: snapshot.combat.inCombat,

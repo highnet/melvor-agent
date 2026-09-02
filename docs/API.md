@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-194 exports.
+195 exports.
 
 ## `act`
 
@@ -1771,6 +1771,26 @@ can bring, and a failed raid pays nothing for the time spent.
 
 ```ts
 readRaidCandidates: () => Candidate[]
+```
+
+## `readRefillableAmmo`
+
+`function`
+
+Ammunition in the bank that the equipped weapon can actually fire.
+
+The quiver is checked once, as a precondition of engaging, and never again --
+but arrows are consumed per shot. When it empties mid-fight the game reports
+combat as active, health stays full, and nothing lands: the same silent
+zero-damage stall the engage-time check was written to prevent, arriving
+twenty minutes later instead.
+
+Matched on `ammoTypeRequired` against `ammoType` (item.d.ts:239, :211) rather
+than on names, so bolts and javelins are handled by the same rule as arrows.
+Returns null when the weapon needs no ammunition, which is most of them.
+
+```ts
+readRefillableAmmo: () => { itemId: string; quantity: number; } | null
 ```
 
 ## `readRepairableBuildings`

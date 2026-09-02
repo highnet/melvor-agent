@@ -1042,3 +1042,43 @@ const LIQUIDATE_MIN_VALUE = 5_000;
  * the planner.
  */
 const LIQUIDATE_LARGE_VALUE = 100_000;
+
+/**
+ * Refills an empty quiver, or ends the fight when nothing can refill it.
+ *
+ * The quiver is a precondition of engaging and nothing watches it afterwards,
+ * yet arrows are consumed per shot. When it empties mid-fight the game reports
+ * combat as active and health stays full while nothing lands -- exactly the
+ * silent zero-damage stall the engage-time check exists to prevent, arriving
+ * twenty minutes into the fight instead of at the start. It is the same shape
+ * as the melee platebody on an archer: full health, no kills, every engage
+ * reporting success.
+ *
+ * Disengaging when the bank is empty too is the important half. Refilling is
+ * the good outcome, but standing in a fight that cannot be won is worse than
+ * leaving it, and without this the objective runs to its time budget doing
+ * nothing at all.
+ */
+export function refillQuiver(
+  state: {
+    inCombat: boolean;
+    /** True only when a ranged weapon needs ammunition and the quiver is empty. */
+    quiverEmpty: boolean;
+    /** Ammunition in the bank the equipped weapon can fire, if any. */
+    available: { itemId: string; quantity: number } | null;
+  },
+  equip: (itemId: string) => ActionResult<unknown>,
+  disengage: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.inCombat) return null;
+  if (!state.quiverEmpty) return null;
+
+  if (state.available === null) {
+    return { name: 'reflex.quiverEmpty', result: disengage() };
+  }
+
+  return {
+    name: 'reflex.refillQuiver',
+    result: equip(state.available.itemId),
+  };
+}

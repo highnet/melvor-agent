@@ -798,3 +798,40 @@ export function hasAutoEat(): boolean {
     return false;
   }
 }
+
+/**
+ * Ammunition in the bank that the equipped weapon can actually fire.
+ *
+ * The quiver is checked once, as a precondition of engaging, and never again --
+ * but arrows are consumed per shot. When it empties mid-fight the game reports
+ * combat as active, health stays full, and nothing lands: the same silent
+ * zero-damage stall the engage-time check was written to prevent, arriving
+ * twenty minutes later instead.
+ *
+ * Matched on `ammoTypeRequired` against `ammoType` (item.d.ts:239, :211) rather
+ * than on names, so bolts and javelins are handled by the same rule as arrows.
+ * Returns null when the weapon needs no ammunition, which is most of them.
+ */
+export function readRefillableAmmo(): { itemId: string; quantity: number } | null {
+  try {
+    const weapon = game.combat.player.equipment.getItemInSlot('melvorD:Weapon' as never);
+    if (!(weapon instanceof WeaponItem)) return null;
+
+    const required = weapon.ammoTypeRequired;
+    if (required === undefined) return null;
+
+    let best: { itemId: string; quantity: number } | null = null;
+    for (const entry of game.bank.items.values()) {
+      const item = entry.item;
+      if (!(item instanceof EquipmentItem)) continue;
+      if (item.ammoType !== required) continue;
+      if (best === null || entry.quantity > best.quantity) {
+        best = { itemId: item.id, quantity: entry.quantity };
+      }
+    }
+
+    return best;
+  } catch {
+    return null;
+  }
+}

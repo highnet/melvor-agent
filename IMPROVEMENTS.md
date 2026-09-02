@@ -97,7 +97,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **An offline-loop cycle silently re-arms a blocked agent** — S. Suspension
       restores to `running` without re-running any guard, defeating the character
       allowlist on a timer.
-- [ ] **The quiver is unwatched mid-fight** — S. Ammo is checked at engage and
+- [x] **The quiver is unwatched mid-fight** — S. Ammo is checked at engage and
       never again; an empty quiver is a silent zero-damage stall.
 - [ ] **The farm planting reflex is plot-category-blind** — S. It only ever
       considers plot `[0]`, so one Herb plot can livelock planting while
