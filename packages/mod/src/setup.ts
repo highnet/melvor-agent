@@ -1,4 +1,10 @@
-import { CharacterSettings, addSidebarPanel, dumpRegistries, onGameLoop } from './adapter/index.js';
+import {
+  CharacterSettings,
+  addSidebarPanel,
+  dumpRegistries,
+  loadCharacterByName,
+  onGameLoop,
+} from './adapter/index.js';
 import { Agent, type AgentSettings, DEFAULT_SETTINGS } from './runtime/agent.js';
 import { Logger } from './runtime/logger.js';
 import { SettingsStore } from './runtime/settings-store.js';
@@ -29,6 +35,35 @@ export function setup(ctx: Modding.ModContext): void {
   let agent: Agent | null = null;
   let panel: ReturnType<typeof createPanel> | null = null;
   let settingsStore: SettingsStore | null = null;
+
+  // A reload lands on the character-select screen and stops there: the agent is
+  // not running, the service hears nothing, and the run idles until a person
+  // clicks. Overnight that is the whole night. This hook proves the mod is
+  // alive on that screen, so the click is automatable.
+  //
+  // The character to enter is the service's to decide, not this file's. The
+  // allowlist already states which character the agent is permitted to play, so
+  // it is reused rather than adding a second, quietly divergent setting; the
+  // service is asked directly because characterStorage does not exist yet here.
+  ctx.onCharacterSelectionLoaded(async () => {
+    try {
+      const settings = await new Transport(DEFAULT_SETTINGS.serviceUrl).loadSettings();
+      const allowlist = (settings as { characterAllowlist?: string[] } | null)?.characterAllowlist;
+
+      // Exactly one, deliberately. An allowlist naming several characters does
+      // not say which one to resume, and entering the wrong save would mean the
+      // agent quietly playing someone else's run.
+      const only = allowlist?.length === 1 ? allowlist[0] : undefined;
+      if (only === undefined) return;
+
+      const result = loadCharacterByName(only);
+      if (!result.ok) log.warn('runtime', `character select: ${result.detail}`);
+    } catch (error) {
+      // Leaving the screen up for a human is exactly where this started, and a
+      // safe place to stop.
+      log.warn('runtime', `character select: ${String(error)}`);
+    }
+  });
 
   ctx.onCharacterLoaded(() => {
     // characterStorage is unusable before this hook, and nothing may await here,

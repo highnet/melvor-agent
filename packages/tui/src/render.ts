@@ -150,7 +150,10 @@ function logColour(record: LogRecord): string {
 }
 
 function renderKeys(): string {
-  return ` ${C.dim}[a]rm  [d]isarm  [k]ill  shift-[K] revive  [r]eplan  [e]xport save  [q]uit${C.reset}`;
+  return (
+    ` ${C.dim}[a]rm  [d]isarm  [k]ill  shift-[K] revive  [r]eplan  [e]xport save` +
+    `  d[u]mp  shift-[L] reload  [q]uit${C.reset}`
+  );
 }
 
 function fmtTime(at: number): string {

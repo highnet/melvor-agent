@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-188 exports.
+189 exports.
 
 ## `act`
 
@@ -716,6 +716,28 @@ Whether a realm is on the hard refusal list.
 
 ```ts
 isRefusedRealm: (realmId: string) => boolean
+```
+
+## `loadCharacterByName`
+
+`function`
+
+Enters the game as the named character, from the character-select screen.
+
+A reload lands here and stops: the agent is not running, the service reports
+nothing, and the run idles until a human clicks. Overnight that is the whole
+night. Since the mod's own `onCharacterSelectionLoaded` hook proves it is
+alive on this screen, the click is automatable and there is no good reason
+for a person to be the one making it.
+
+Refuses on anything ambiguous. Zero matches means the expected character is
+not here and guessing would enter the wrong save; more than one match means
+the name does not identify a character, and picking the first would be a coin
+toss with someone's run. In both cases doing nothing leaves the screen up for
+a human, which is exactly where this started and is a safe place to stop.
+
+```ts
+loadCharacterByName: (name: string) => ActionResult<{ slotId: number; }>
 ```
 
 ## `MasteryProjection`

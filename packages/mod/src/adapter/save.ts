@@ -111,3 +111,81 @@ function stopDamagingActivity(): string | null {
 
   return null;
 }
+
+/**
+ * Local save slots, with the character in each.
+ *
+ * Matching by `characterName` (save.d.ts:13) rather than by slot number is the
+ * whole safety property here. A slot index is positional and silently wrong if
+ * the list ever reorders; a name identifies the character actually meant, and
+ * loading the wrong save would mean the agent quietly playing someone else's
+ * run.
+ */
+export function readLocalSaveSlots(): { slotId: number; characterName: string }[] {
+  const slots: { slotId: number; characterName: string }[] = [];
+
+  for (let slotId = 0; slotId < LOCAL_SAVE_SLOT_COUNT; slotId += 1) {
+    try {
+      const header = getLocalInfoInSlot(slotId);
+      if (header === undefined) continue;
+      if (!('characterName' in header)) continue;
+
+      slots.push({ slotId, characterName: header.characterName });
+    } catch {
+      // A slot that will not describe itself is not a slot worth loading.
+    }
+  }
+
+  return slots;
+}
+
+/**
+ * How many local slots to probe.
+ *
+ * The game exposes no count, so this walks a fixed range and skips whatever is
+ * absent. Over-scanning costs nothing; under-scanning would hide a character.
+ */
+const LOCAL_SAVE_SLOT_COUNT = 16;
+
+/**
+ * Enters the game as the named character, from the character-select screen.
+ *
+ * A reload lands here and stops: the agent is not running, the service reports
+ * nothing, and the run idles until a human clicks. Overnight that is the whole
+ * night. Since the mod's own `onCharacterSelectionLoaded` hook proves it is
+ * alive on this screen, the click is automatable and there is no good reason
+ * for a person to be the one making it.
+ *
+ * Refuses on anything ambiguous. Zero matches means the expected character is
+ * not here and guessing would enter the wrong save; more than one match means
+ * the name does not identify a character, and picking the first would be a coin
+ * toss with someone's run. In both cases doing nothing leaves the screen up for
+ * a human, which is exactly where this started and is a safe place to stop.
+ */
+export function loadCharacterByName(name: string): ActionResult<{ slotId: number }> {
+  const matches = readLocalSaveSlots().filter((slot) => slot.characterName === name);
+
+  const only = matches[0];
+  if (only === undefined || matches.length > 1) {
+    return fail(
+      'save.loadCharacterByName',
+      'precondition',
+      matches.length > 1
+        ? `${matches.length} local saves are named ${name}; refusing to guess which is the agent`
+        : `no local save is named ${name}`,
+    );
+  }
+
+  try {
+    void loadLocalSave(only.slotId);
+  } catch (error) {
+    return fail('save.loadCharacterByName', 'threw', `load failed: ${String(error)}`);
+  }
+
+  return {
+    ok: true,
+    action: 'save.loadCharacterByName',
+    observed: { before: { slotId: -1 }, after: { slotId: only.slotId } },
+    detail: `loading ${name} from local slot ${only.slotId}`,
+  };
+}

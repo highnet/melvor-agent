@@ -15,6 +15,16 @@ const KEY_COMMANDS: Record<string, Command> = {
   K: { type: 'revive' },
   r: { type: 'replan', reason: 'operator requested from TUI' },
   e: { type: 'export_save' },
+  u: { type: 'dump_knowledge' },
+  // Uppercase for the same reason as revive: a reload saves, drops the game to
+  // the character-select screen and re-reads the mod from disk. It is the only
+  // way a newly built mod actually starts running, and much too disruptive to
+  // trigger by fumbling for the replan key next to it.
+  //
+  // The mod re-enters the game on its own when the service's allowlist names
+  // exactly one character, so this is no longer a one-way trip that needs a
+  // person at the keyboard.
+  L: { type: 'reload_game' },
 };
 
 let dashboard: Dashboard | null = null;
