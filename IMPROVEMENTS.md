@@ -113,7 +113,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       — M. Smithing, Crafting, Fletching, Herblore, Runecrafting, Summoning,
       Cooking, Firemaking, Astrology and Alt Magic all read 0 GP/h, so a planner
       asked to raise GP can only see gathering and Thieving.
-- [ ] **Alt Magic shows 0 GP/h and is offered with no rune check** — M.
+- [x] **Alt Magic shows 0 GP/h and is offered with no rune check** — M.
       `getAlchemyGP` (altMagic.d.ts:142) is the game's dedicated GP action;
       separately `canAfford` falls through to `return true` for every spell.
 - [ ] **Every Firemaking log is priced at the same nominal 3 seconds** — S.

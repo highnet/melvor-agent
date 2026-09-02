@@ -221,6 +221,46 @@ function genericSkillCandidates(): Candidate[] {
 }
 
 /**
+ * GP a single Alt Magic cast yields, net of the item it destroys.
+ *
+ * `getAlchemyGP` (altMagic.d.ts:142) is documented as "the modified GP to add
+ * when casting alchemy spells", and `productionRatio` is the multiplier it
+ * takes. The item consumed is subtracted because alchemy destroys it, and its
+ * sale value is the alternative -- an alchemy that pays less than selling the
+ * same item is not income, it is a slower way to sell.
+ *
+ * Returns null for any spell that is not an alchemy, so the caller falls
+ * through to the ordinary product arithmetic.
+ */
+function alchemyGpPerCast(skill: AnySkill, recipe: RecipeLike): number | null {
+  try {
+    if (skill.id !== ALT_MAGIC_ID) return null;
+
+    const spell = recipe as unknown as {
+      produces?: unknown;
+      productionRatio?: number;
+      specialCost?: { quantity: number };
+    };
+    // -1 is AltMagicProductionID.GP (altMagic.d.ts:13). Spelled out because it
+    // is a plain `declare enum`, so the runtime bundle may carry no value.
+    if (spell.produces !== -1) return null;
+    if ((spell.specialCost?.quantity ?? 0) <= 0) return null;
+
+    const magic = game.altMagic;
+    let best = 0;
+    for (const item of magic.getSpellItemSelection(recipe as never)) {
+      const gp = magic.getAlchemyGP(item, spell.productionRatio ?? 1);
+      const net = gp - gpValue(item);
+      if (Number.isFinite(net) && net > best) best = net;
+    }
+
+    return best;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * What one action of a production recipe is worth, net of what it consumes.
  *
  * Artisan recipes reported no GP at all -- not zero, absent -- so Smithing,
@@ -244,6 +284,13 @@ function genericSkillCandidates(): Candidate[] {
  */
 function netProductGpFor(skill: AnySkill, recipe: RecipeLike, yielded: number): number {
   try {
+    // Alt Magic pays a currency rather than producing an item, so the generic
+    // product arithmetic below scores it at zero -- which made the game's
+    // dedicated turn-items-into-GP action invisible on a board being read to
+    // answer "how do we earn money". Exactly the shape of the Thieving bug.
+    const alchemy = alchemyGpPerCast(skill, recipe);
+    if (alchemy !== null) return alchemy;
+
     const product = recipe.product as AnyItem | undefined;
     if (product === undefined) return 0;
 
@@ -959,6 +1006,9 @@ function fishingCandidates(): Candidate[] {
  * decides both when to cook more and when to stop selling it, so the two
  * cannot disagree about what "enough food" means.
  */
+/** Alt Magic's skill id; it pays a currency rather than producing an item. */
+const ALT_MAGIC_ID = 'melvorD:AltMagic';
+
 const FOOD_SELL_FLOOR = 40;
 
 /** Whether an item is ammunition, and so must not be liquidated. */

@@ -1,6 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { readSellCandidates } from './candidates.js';
 import type { GatheringProjection } from './gathering.js';
 
 /**
@@ -316,18 +317,34 @@ function startAltMagic(
       name: 'altMagic.cast',
       observe: project,
       precondition: () => {
-        // Spells that consume a chosen bank item need a second selection
-        // (`selectItemOnClick`) whose correct argument depends on the spell's
-        // consumption type. Rather than guess at that mapping, only
-        // no-item-selection spells are supported for now.
-        if (spell.specialCost.type !== undefined && spell.specialCost.quantity > 0) {
-          return `spell ${recipeId} requires an item selection, which is not yet supported`;
+        // Spells consuming a chosen item used to be refused outright, on the
+        // grounds that the mapping from spell to valid item would have to be
+        // guessed. It does not: `getSpellItemSelection` (altMagic.d.ts:119)
+        // returns exactly the bank items a given spell will accept, and
+        // `selectBarOnClick` (:125) does the same for Superheat's bar.
+        //
+        // The refusal cost more than one spell. Item Alchemy is the game's
+        // dedicated turn-items-into-GP action and Superheat smelts without
+        // occupying the furnace, and both were unreachable -- while Magic sat
+        // at level 2 against a stated goal of 20, and the agent had no
+        // automatic way to convert stock into money at all.
+        if (needsSelection(spell) && chooseSelection(spell) === null) {
+          return `spell ${recipeId} needs an item to consume and nothing eligible is banked`;
         }
         if (skill.isActive && skill.selectedSpell === spell) return `already casting ${recipeId}`;
         return actionSlotHeldBy('melvorD:AltMagic');
       },
       perform: () => {
         if (skill.selectedSpell !== spell) skill.selectSpellOnClick(spell);
+
+        // After the spell, because the selection menus are per-spell: choosing
+        // first would set it against whatever was previously selected.
+        const selection = chooseSelection(spell);
+        if (selection !== null) {
+          if (selection.kind === 'bar') skill.selectBarOnClick(selection.recipe);
+          else skill.selectItemOnClick(selection.item);
+        }
+
         if (!skill.isActive) skill.castButtonOnClick();
         return undefined;
       },
@@ -441,4 +458,90 @@ function miscSkillInstance(skillId: string): Startable | null {
   })();
 
   return instance === undefined || instance === null ? null : (instance as Startable);
+}
+
+/** Whether a spell needs a second selection before it can be cast. */
+function needsSelection(spell: AltMagicSpell): boolean {
+  try {
+    return spell.specialCost.quantity > 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * What a spell should consume, chosen from the game's own list of eligible items.
+ *
+ * Two shapes. Superheat consumes the ingredients of a Smithing recipe and
+ * produces its bar, so the selection is a `SmithingRecipe` and the right one is
+ * the bar with the best margin the character can both smith and afford.
+ * Everything else -- Item Alchemy and the conversion spells -- consumes a bank
+ * item, and the right one is whichever converts to the most GP.
+ *
+ * Alchemy's candidates are drawn through the sell guards rather than from the
+ * raw bank. Alchemising an item destroys it exactly as selling does, so the
+ * reasons not to sell food, ammunition, seeds, spell runes, mastery tokens or
+ * anything a Township task wants apply here unchanged. Reusing the filter means
+ * a guard added for one path protects both, instead of the two drifting until
+ * the newer one burns the larder.
+ */
+function chooseSelection(
+  spell: AltMagicSpell,
+): { kind: 'bar'; recipe: SmithingRecipe } | { kind: 'item'; item: AnyItem } | null {
+  try {
+    const magic = game.altMagic;
+
+    // Superheat: the produced thing is a bar, so the selection is the recipe.
+    if (spell.produces === AltMagicProductionID.Bar) {
+      let best: { recipe: SmithingRecipe; net: number } | null = null;
+
+      for (const recipe of game.smithing.actions.allObjects) {
+        try {
+          if (recipe.level > game.smithing.level) continue;
+          if (!game.smithing.isMasteryActionUnlocked(recipe)) continue;
+
+          const useCoal = spell.specialCost.type === AltMagicConsumptionID.BarIngredientsWithCoal;
+          if (!magic.getSuperheatBarCosts(recipe, useCoal, 1).checkIfOwned()) continue;
+
+          const net = saleValueOf(recipe.product);
+          if (best === null || net > best.net) best = { recipe, net };
+        } catch {
+          // A recipe that will not price itself is not selected.
+        }
+      }
+
+      return best === null ? null : { kind: 'bar', recipe: best.recipe };
+    }
+
+    // Everything else consumes a bank item the game will name for us.
+    const eligible = new Set(magic.getSpellItemSelection(spell).map((item) => item.id));
+    if (eligible.size === 0) return null;
+
+    let best: { item: AnyItem; gp: number } | null = null;
+    for (const option of readSellCandidates()) {
+      const itemId = String((option.params as { itemId?: unknown }).itemId ?? '');
+      if (!eligible.has(itemId)) continue;
+
+      const item = game.items.getObjectByID(itemId);
+      if (item === undefined) continue;
+
+      const gp = magic.getAlchemyGP(item, spell.productionRatio);
+      if (!Number.isFinite(gp) || gp <= 0) continue;
+      if (best === null || gp > best.gp) best = { item, gp };
+    }
+
+    return best === null ? null : { kind: 'item', item: best.item };
+  } catch {
+    return null;
+  }
+}
+
+/** GP an item sells for, or 0 when it sells for another currency. */
+function saleValueOf(item: AnyItem): number {
+  try {
+    const sale = item.sellsFor;
+    return sale.currency === game.gp ? sale.quantity : 0;
+  } catch {
+    return 0;
+  }
 }
