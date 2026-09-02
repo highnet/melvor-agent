@@ -115,3 +115,44 @@ export function readAgilityCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * The rate of one full lap of the built course, in XP per hour.
+ *
+ * Agility candidates go through the generic skill path, which pairs one
+ * obstacle's experience with the skill's interval. For a skill where you select
+ * a recipe that is right. For a course it is not: a lap runs *every* built
+ * obstacle in sequence, so the honest rate is the whole lap's experience over
+ * the whole lap's duration.
+ *
+ * The error was large and measurable rather than theoretical. Rope Jump
+ * advertised 21 levels/h and delivered about 6 — level 11 to 12 in ten minutes
+ * — while Astrology, on the same generic path, advertised 17 and delivered 16.
+ * The difference is that Astrology really does let you pick one action.
+ *
+ * This is the third time the course-versus-recipe confusion has cost something
+ * today: it made the objective thrash for fifteen minutes, it made every
+ * obstacle look individually selectable, and it inflated the rate by a factor
+ * of three and a half. Same wrong model, three different symptoms.
+ *
+ * @returns Lap experience per hour, or null when no course is built or the
+ *   game will not say — in which case the caller should not invent one.
+ */
+export function readAgilityLapRate(): number | null {
+  try {
+    const built = [...game.agility.activeCourse.builtObstacles.values()];
+    if (built.length === 0) return null;
+
+    let experience = 0;
+    let intervalMs = 0;
+    for (const obstacle of built) {
+      experience += obstacle.baseExperience;
+      intervalMs += obstacle.baseInterval;
+    }
+
+    if (intervalMs <= 0 || experience <= 0) return null;
+    return (experience / intervalMs) * 3_600_000;
+  } catch {
+    return null;
+  }
+}

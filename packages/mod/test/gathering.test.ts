@@ -392,3 +392,45 @@ describe('skills where the game picks the action', () => {
     );
   });
 });
+
+describe('the rate of a course skill', () => {
+  // Rope Jump advertised 21 levels/h and delivered about 6 — level 11 to 12 in
+  // ten minutes — while Astrology on the same code path advertised 17 and
+  // delivered 16. The difference is that Astrology really does let you pick one
+  // action. A lap runs every built obstacle, so the honest rate is the whole
+  // lap's experience over the whole lap's duration.
+  const lapRate = (built: { xp: number; ms: number }[]) => {
+    if (built.length === 0) return null;
+    const xp = built.reduce((sum, o) => sum + o.xp, 0);
+    const ms = built.reduce((sum, o) => sum + o.ms, 0);
+    return ms > 0 && xp > 0 ? (xp / ms) * 3_600_000 : null;
+  };
+
+  it('divides the lap experience by the lap duration', () => {
+    // Three obstacles: picking the best one alone overstates by roughly three.
+    const rate = lapRate([
+      { xp: 10, ms: 5000 },
+      { xp: 20, ms: 8000 },
+      { xp: 30, ms: 10_000 },
+    ]);
+
+    expect(rate).toBeCloseTo((60 / 23_000) * 3_600_000, 0);
+  });
+
+  it('is far lower than any single obstacle taken alone', () => {
+    const single = (30 / 10_000) * 3_600_000;
+    const lap = lapRate([
+      { xp: 10, ms: 5000 },
+      { xp: 20, ms: 8000 },
+      { xp: 30, ms: 10_000 },
+    ]);
+
+    expect(lap).toBeLessThan(single);
+  });
+
+  it('returns null for an empty course rather than inventing a rate', () => {
+    // Nothing built means nothing to run; a guessed number would be worse than
+    // an absent one, which the caller can fall back from.
+    expect(lapRate([])).toBeNull();
+  });
+});

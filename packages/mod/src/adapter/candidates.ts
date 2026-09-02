@@ -1,3 +1,7 @@
+import { readAgilityLapRate } from './agility.js';
+
+/** Agility's skill id; see readAgilityLapRate for why it is special-cased. */
+const AGILITY_ID = 'melvorD:Agility';
 import type { Candidate } from '@melvor-agent/shared';
 import { readActiveRecipeIds } from './active.js';
 import { readMasteryTokenIds } from './bank.js';
@@ -106,6 +110,12 @@ function genericSkillCandidates(): Candidate[] {
     const interval = safeNumber(() => withActions.actionInterval, 3000);
     const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
+    // A course skill earns a whole lap at a time; see readAgilityLapRate. Every
+    // obstacle reports the same lap rate, because that is what running the
+    // course actually pays. Rope Jump advertised 21 levels/h this way and
+    // delivered about 6.
+    const lapXpPerHour = skillId === AGILITY_ID ? readAgilityLapRate() : null;
+
     for (const recipe of recipes) {
       try {
         if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
@@ -120,7 +130,7 @@ function genericSkillCandidates(): Candidate[] {
         kind: 'gather_resource',
         params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
         label: `${skill.name}: ${recipe.name}`,
-        xpPerHour: actionsPerHour * recipe.baseExperience,
+        xpPerHour: lapXpPerHour ?? actionsPerHour * recipe.baseExperience,
         requiresLevel: recipe.level,
         available: true,
       });
