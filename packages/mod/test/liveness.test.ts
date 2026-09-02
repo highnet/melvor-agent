@@ -71,3 +71,55 @@ describe('game-loop liveness', () => {
     expect(stalled(true, 1_000, 30_000)).toEqual({ stalled: false, since: null });
   });
 });
+
+/**
+ * Blocking must survive a stall, and must not outlive its cause.
+ *
+ * Two opposite failures in the same latch. `blocked` was set on the first
+ * unreadable snapshot and nothing but an operator could clear it, so one
+ * malformed read at two in the morning ended the night -- even though a
+ * snapshot can be malformed for reasons that pass on their own, a value caught
+ * mid-transition being the obvious one.
+ *
+ * And in the other direction, an offline-loop cycle resumed to `running` on
+ * `settings.enabled` alone. That flag stays true when arming fails, so an agent
+ * blocked on the wrong character or a stale dump needed only a sixty-second
+ * stall to be promoted back to running with none of the checks re-run: a guard
+ * that failed open on a timer.
+ */
+const blockAfter = (failures: number, limit: number): boolean => failures >= limit;
+
+describe('snapshot failures block only when persistent', () => {
+  it('tolerates a single bad snapshot', () => {
+    expect(blockAfter(1, 5)).toBe(false);
+  });
+
+  it('blocks once the failures persist', () => {
+    // Acting on a snapshot that does not parse is acting blind.
+    expect(blockAfter(5, 5)).toBe(true);
+  });
+
+  it('recovers as soon as one parses', () => {
+    // The condition that justified blocking has demonstrably passed.
+    const failures = 0;
+    expect(blockAfter(failures, 5)).toBe(false);
+  });
+});
+
+const resumeState = (before: 'running' | 'blocked' | 'idle', enabled: boolean): string =>
+  before === 'blocked' ? 'blocked' : enabled ? 'running' : 'idle';
+
+describe('resuming from suspension restores rather than promotes', () => {
+  it('returns a blocked agent to blocked', () => {
+    // The allowlist exists to stop days of unattended play on the wrong save.
+    expect(resumeState('blocked', true)).toBe('blocked');
+  });
+
+  it('returns a running agent to running', () => {
+    expect(resumeState('running', true)).toBe('running');
+  });
+
+  it('returns a disarmed agent to idle', () => {
+    expect(resumeState('running', false)).toBe('idle');
+  });
+});

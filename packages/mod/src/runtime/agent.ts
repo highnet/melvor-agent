@@ -180,6 +180,15 @@ import type { Transport } from './transport.js';
 /** How often the policy tier evaluates the objective. */
 const POLICY_INTERVAL_MS = 3000;
 /** Minimum gap between reflex passes, throttling the per-tick hook. */
+/**
+ * Consecutive unreadable snapshots before the agent stops.
+ *
+ * More than one, because a single malformed read can be a value caught
+ * mid-transition. Few, because acting on a snapshot that does not parse is
+ * acting blind.
+ */
+const SNAPSHOT_FAILURES_BEFORE_BLOCK = 5;
+
 const LOOP_STALL_MS = 15_000;
 
 const REFLEX_THROTTLE_MS = 1000;
@@ -320,6 +329,12 @@ export class Agent {
 
   /** Game-loop ticks since load. The only evidence the loop is alive. */
   private tickCount = 0;
+
+  /** The state suspension interrupted, so resuming restores rather than promotes. */
+  private stateBeforeSuspend: RunState | null = null;
+
+  /** Consecutive snapshot validation failures; reset by any success. */
+  private snapshotFailures = 0;
 
   /** Tick count at the previous policy tick, for the liveness comparison. */
   private lastSeenTickCount = 0;
@@ -476,6 +491,9 @@ export class Agent {
       onGameEvent('offlineLoopEntered', () => {
         if (this.state === 'killed') return;
         this.log.info('runtime', 'offline loop entered; suspending all tiers');
+        // Remembered so resuming restores what was suspended rather than
+        // promoting it; see offlineLoopExited.
+        this.stateBeforeSuspend = this.state;
         this.state = 'suspended';
         this.notify();
       }),
@@ -487,6 +505,28 @@ export class Agent {
         // Hours may have passed. The stored objective's success and abort
         // conditions are re-validated against a fresh snapshot before resuming;
         // this is the normal path, not an edge case.
+        // A blocked agent must come back blocked.
+        //
+        // Resuming to `running` on `settings.enabled` alone was a guard that
+        // failed open on a timer. `enabled` stays true when arming fails --
+        // arm() only clears it on success -- so an agent blocked on the wrong
+        // character, a stale dump or an unreachable planner needed only a
+        // sixty-second stall to be promoted straight back to running, with none
+        // of the checks re-run. The character allowlist exists precisely to
+        // stop days of unattended play on the wrong save, and an idle window
+        // defeated it.
+        if (this.stateBeforeSuspend === 'blocked') {
+          this.state = 'blocked';
+          this.stateBeforeSuspend = null;
+          this.log.warn(
+            'runtime',
+            `offline loop exited; still blocked: ${this.blockedReason ?? 'unknown'}`,
+          );
+          this.notify();
+          return;
+        }
+
+        this.stateBeforeSuspend = null;
         this.log.info('runtime', 'offline loop exited; re-snapshotting and replanning');
         this.requestReplan('offline_loop_exited');
         this.state = this.settings.enabled ? 'running' : 'idle';
@@ -1642,11 +1682,43 @@ export class Agent {
 
     const parsed = stateSnapshotSchema.safeParse(raw);
     if (!parsed.success) {
+      // A run of bad snapshots blocks; a single one does not.
+      //
+      // This latched on the first failure with no way back: nothing clears
+      // `blocked` except an operator arming again, so one malformed snapshot at
+      // two in the morning ended the night. And a snapshot can be malformed for
+      // reasons that pass on their own -- a value read mid-transition, a
+      // registry momentarily inconsistent while the game mutates it -- which is
+      // exactly the case where stopping for good is the wrong response.
+      //
+      // Stopping is still right when the state is *persistently* unreadable,
+      // because acting on a snapshot that does not parse is acting blind. So
+      // the difference between a blip and a fault is how long it lasts.
+      this.snapshotFailures += 1;
+      const detail = `snapshot failed validation: ${parsed.error.issues[0]?.path.join('.')} ${parsed.error.issues[0]?.message}`;
+
+      if (this.snapshotFailures < SNAPSHOT_FAILURES_BEFORE_BLOCK) {
+        this.log.warn('adapter', `${detail} (${this.snapshotFailures} in a row; continuing)`);
+        return null;
+      }
+
       this.state = 'blocked';
-      this.blockedReason = `snapshot failed validation: ${parsed.error.issues[0]?.path.join('.')} ${parsed.error.issues[0]?.message}`;
-      this.log.error('adapter', this.blockedReason);
+      this.blockedReason = detail;
+      this.log.error('adapter', detail);
       this.notify();
       return null;
+    }
+
+    // Recovery is automatic, because the condition that justified blocking has
+    // demonstrably passed: a snapshot just parsed.
+    if (this.snapshotFailures > 0) {
+      this.snapshotFailures = 0;
+      if (this.state === 'blocked' && this.blockedReason?.startsWith('snapshot failed') === true) {
+        this.state = this.settings.enabled ? 'running' : 'idle';
+        this.blockedReason = null;
+        this.log.info('runtime', 'snapshots are parsing again; resuming');
+        this.notify();
+      }
     }
 
     this.lastSnapshot = parsed.data;

@@ -92,9 +92,9 @@ Township summary reported 0% health while the repair reflex correctly computed
       `PassiveAction`, so `activeAction` is undefined in a plain fight and
       `damagingSkillId` resolves to null; the stop callback cannot end a fight
       either.
-- [ ] **`blocked` is a permanent latch** *(2×)* — S. One malformed snapshot ends
+- [x] **`blocked` is a permanent latch** *(2×)* — S. One malformed snapshot ends
       the night; recover as soon as a snapshot parses again.
-- [ ] **An offline-loop cycle silently re-arms a blocked agent** — S. Suspension
+- [x] **An offline-loop cycle silently re-arms a blocked agent** — S. Suspension
       restores to `running` without re-running any guard, defeating the character
       allowlist on a timer.
 - [ ] **The quiver is unwatched mid-fight** — S. Ammo is checked at engage and
