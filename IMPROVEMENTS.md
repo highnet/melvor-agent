@@ -152,7 +152,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       then smelt" is unsayable — which is exactly the chain shape that matters.
 - [x] **No candidate says how long its inputs last** — S/M. `canAfford` checks a
       single action, so a smelt advertising 15,600 xp/h can run twenty seconds.
-- [ ] **The blocked list discards its rates and never links a missing input to the
+- [x] **The blocked list discards its rates and never links a missing input to the
       candidate that produces it** — M. That single join turns it into a chain
       planner.
 - [ ] **The queued plan is invisible** — M. Only a count is reported, so staleness

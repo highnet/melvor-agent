@@ -1419,7 +1419,15 @@ export function readBlockedOpportunities(): {
         if (missing.length === 0) continue;
 
         blocked.push({
-          label: `${skill.name}: ${recipe.name}`,
+          // Names what produces each missing input, where anything does.
+          //
+          // A blocked entry said what was missing and never what makes it, so
+          // turning "needs Iron Bar 0/5" into an action meant a human knowing
+          // that Smithing makes bars. That is exactly the join a planner should
+          // not have to supply from memory, and the reason the blocked list --
+          // whose stated purpose is "the best move is often to produce an input
+          // for something better" -- could not actually be used that way.
+          label: `${skill.name}: ${recipe.name}${describeProducers(missing)}`,
           xpPerHour: actionsPerHour * recipe.baseExperience,
           missing,
         });
@@ -1985,6 +1993,57 @@ export function sustainableMinutes(recipe: RecipeLike, intervalMs: number): numb
 
     if (!Number.isFinite(actions)) return null;
     return (actions * intervalMs) / 60_000;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Names a recipe that produces each missing input, where one exists.
+ *
+ * Searched across every startable skill rather than the blocked recipe's own,
+ * because the answer is usually in a different skill: bars come from Smithing
+ * for a Fletching recipe, logs from Woodcutting for a Firemaking one. That
+ * cross-skill hop is the whole content of a production chain and was the part
+ * left to a person to know.
+ *
+ * Silent when nothing produces the item -- a monster drop or a shop purchase
+ * has no recipe, and inventing a producer would be worse than leaving the entry
+ * as it was.
+ */
+function describeProducers(missing: readonly { itemId: string; name: string }[]): string {
+  try {
+    const named: string[] = [];
+
+    for (const want of missing) {
+      const producer = findProducer(want.itemId);
+      if (producer !== null) named.push(`${want.name} from ${producer}`);
+    }
+
+    return named.length === 0 ? '' : ` — ${named.join(', ')}`;
+  } catch {
+    return '';
+  }
+}
+
+/** The first startable recipe whose product is this item, or null. */
+function findProducer(itemId: string): string | null {
+  try {
+    for (const skillId of STARTABLE_SKILL_IDS) {
+      const skill = game.skills.getObjectByID(skillId);
+      if (skill === undefined) continue;
+
+      const recipes = safeRecipes(skill as AnySkill & { actions?: { allObjects: RecipeLike[] } });
+      if (recipes === null) continue;
+
+      for (const recipe of recipes) {
+        const product = recipe.product as { id?: string } | undefined;
+        if (product?.id !== itemId) continue;
+        return `${skill.name}: ${recipe.name}`;
+      }
+    }
+
+    return null;
   } catch {
     return null;
   }
