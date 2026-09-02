@@ -63,6 +63,30 @@ interface RecipeLike {
   /** Into the Abyss content gates on this instead; see recipeRequirement. */
   abyssalLevel?: number;
   baseAbyssalExperience?: number;
+  /** MasteryAction extends RealmedObject (mastery2.d.ts:11, realms.d.ts:46). */
+  realm?: { id: string; isUnlocked: boolean };
+}
+
+/**
+ * Whether a recipe's realm is open.
+ *
+ * Harvesting: Abyssal Vein was offered as an *available* candidate advertising
+ * 1,855,200 xp/h while `melvorItA:Abyssal` reported `unlocked: false` and
+ * "Complete Into the Abyss x1" as its requirement. Nothing was checking the
+ * realm, so the whole of Into the Abyss looked like the best move on the board
+ * by two orders of magnitude -- the exact trap this file already refuses
+ * elsewhere: a candidate the adapter would then refuse.
+ *
+ * Absent realm data is treated as open, because every Melvor-realm recipe
+ * predates realms entirely and defaulting those to "locked" would empty the
+ * board.
+ */
+function isRecipeRealmUnlocked(recipe: RecipeLike): boolean {
+  try {
+    return recipe.realm?.isUnlocked ?? true;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -149,6 +173,7 @@ function genericSkillCandidates(): Candidate[] {
     for (const recipe of recipes) {
       try {
         if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
+        if (!isRecipeRealmUnlocked(recipe)) continue;
         if (!canAfford(withActions, recipe)) continue;
       } catch {
         // A recipe whose availability cannot be determined is not offered:
@@ -223,7 +248,7 @@ function candidate(
 function woodcuttingCandidates(): Candidate[] {
   const skill = game.woodcutting;
   return skill.actions.allObjects
-    .filter((tree) => skill.isTreeUnlocked(tree))
+    .filter((tree) => skill.isTreeUnlocked(tree) && isRecipeRealmUnlocked(tree))
     .map((tree) =>
       candidate(
         WOODCUTTING_ID,
@@ -438,7 +463,7 @@ function safeNumber(read: () => number | undefined, fallback: number): number {
 function miningCandidates(): Candidate[] {
   const skill = game.mining;
   return skill.actions.allObjects
-    .filter((rock) => skill.canMineOre(rock))
+    .filter((rock) => skill.canMineOre(rock) && isRecipeRealmUnlocked(rock))
     .map((rock) =>
       // `baseInterval` is a readonly constant on the skill. The obvious choice,
       // `actionInterval`, reads `activeRock` and **throws** when no rock is
@@ -607,7 +632,12 @@ function hpShare(maxHit: number): string {
 function fishingCandidates(): Candidate[] {
   const skill = game.fishing;
   return skill.actions.allObjects
-    .filter((fish) => fish.area !== undefined && skill.isMasteryActionUnlocked(fish))
+    .filter(
+      (fish) =>
+        fish.area !== undefined &&
+        skill.isMasteryActionUnlocked(fish) &&
+        isRecipeRealmUnlocked(fish),
+    )
     .map((fish) =>
       candidate(
         FISHING_ID,
