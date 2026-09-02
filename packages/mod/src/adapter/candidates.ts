@@ -767,12 +767,20 @@ function canAfford(
  * under noise. Reaching the end of the chain is the event worth seeing.
  */
 function firstPositive(site: string, ...reads: (() => number | undefined)[]): number {
-  for (const read of reads) {
+  for (const [index, read] of reads.entries()) {
     try {
       const value = read();
       if (typeof value === 'number' && Number.isFinite(value) && value > 0) return value;
     } catch (error) {
-      noteSwallowed('candidates.firstPositive', error);
+      // Only a throw with nothing left to fall back to is worth recording.
+      //
+      // The comment above already said so and the code did not: it noted every
+      // throw in the chain, and `actionInterval` throwing during enumeration is
+      // the designed path, not a fault. The first live report showed
+      // `candidates.firstPositive x432` from Harvesting alone -- 432 entries
+      // describing the system working as intended, which is exactly the noise
+      // that buries the read that genuinely broke.
+      if (index === reads.length - 1) noteSwallowed(site, error);
       // Try the next source.
     }
   }
