@@ -739,6 +739,7 @@ export function readBlockedOpportunities(): {
   // reconsidering — it ground Woman while Marauder unlocked and paid more.
   blocked.push(...readBetterRecipeNotice());
   blocked.push(...readThievingRateNotice());
+  blocked.push(...readUnstockedSkills());
 
   for (const skillId of STARTABLE_SKILL_IDS) {
     const skill = game.skills.getObjectByID(skillId);
@@ -1101,4 +1102,72 @@ export function readCheapestExpendableStack(): {
   } catch {
     return null;
   }
+}
+
+/**
+ * Skills the character is level-qualified for but holds no materials to run.
+ *
+ * A skill with no affordable recipe emits no candidates at all, and an absent
+ * skill is indistinguishable from an impossible one. That has now cost two
+ * separate mistakes in a day.
+ *
+ * Summoning sat at level 1 and never appeared, and it took reading the adapter
+ * to establish that the capability was complete and the bank simply held 19
+ * shards against recipes that need dozens. Then Crafting, mid-plan, silently
+ * left the list the moment its 75 leather became 86 gloves — the same skill
+ * that had just been measured as the best rate on the board at 29 levels/h.
+ * Both times the planner concluded "unavailable" from silence and moved on.
+ *
+ * The distinction is worth a line each, and it is a cheap one: for every
+ * startable skill with no candidates, name the nearest recipe the character
+ * *could* run and the ingredient it lacks. "Crafting is unstocked, buy leather"
+ * is an action. Nothing at all is a dead end.
+ *
+ * Deliberately only skills with no candidates whatsoever. A skill running fine
+ * on one recipe does not need to explain the ones it cannot afford, and the
+ * blocked list has a twelve-line budget that this session already learned to
+ * respect the hard way.
+ */
+export function readUnstockedSkills(): {
+  label: string;
+  xpPerHour: number;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  const out: ReturnType<typeof readUnstockedSkills> = [];
+
+  try {
+    const available = new Set(
+      readGatherCandidates().map((candidate) =>
+        String((candidate.params as { skillId?: unknown }).skillId ?? ''),
+      ),
+    );
+
+    for (const skillId of STARTABLE_SKILL_IDS) {
+      if (available.has(skillId)) continue;
+
+      const skill = game.skills.getObjectByID(skillId);
+      if (skill === undefined) continue;
+
+      const withActions = skill as AnySkill & { actions?: { allObjects: RecipeLike[] } };
+      const recipes = safeRecipes(withActions);
+      if (recipes === null) continue;
+
+      // The best recipe the level allows. If one exists, the block is
+      // materials rather than progression, and that is the whole point.
+      const affordable = recipes.filter((recipe) => (recipe.level ?? 0) <= skill.level);
+      const best = affordable[0];
+      if (best === undefined) continue;
+
+      out.push({
+        label: `${skill.name} has no candidates because nothing it can make is in stock, not because it is unavailable — ${best.name} is unlocked at level ${best.level ?? 0} and needs materials bought or gathered.`,
+        xpPerHour: 0,
+        missing: [],
+      });
+    }
+  } catch {
+    // A skill that cannot be inspected is left unmentioned rather than guessed
+    // at; a wrong reason is worse than none.
+  }
+
+  return out;
 }

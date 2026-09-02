@@ -88,3 +88,29 @@ describe('Thieving NPCs carry the same annotation as fights', () => {
     expect(describe_(['Coins', 'Bones'], null, wanted)).toBe('');
   });
 });
+
+describe('a skill with no candidates', () => {
+  // A skill with no affordable recipe emits nothing, and absence is
+  // indistinguishable from impossibility. That cost two mistakes in one day:
+  // Summoning looked unavailable when it held 19 shards against recipes needing
+  // dozens, and Crafting silently left the list mid-plan the moment its 75
+  // leather became 86 gloves — the same skill measured minutes earlier as the
+  // best rate on the board.
+  const reason = (hasCandidates: boolean, levelAllows: boolean) =>
+    hasCandidates ? null : levelAllows ? 'unstocked' : 'locked';
+
+  it('says unstocked when the level allows but the bank is empty', () => {
+    expect(reason(false, true)).toBe('unstocked');
+  });
+
+  it('says locked when the level does not allow it', () => {
+    // A real progression gate, which readLockedActions already reports.
+    expect(reason(false, false)).toBe('locked');
+  });
+
+  it('says nothing about a skill that is running fine', () => {
+    // The blocked list has a twelve-line budget this session learned to respect
+    // the hard way; a skill with candidates does not need to explain itself.
+    expect(reason(true, true)).toBeNull();
+  });
+});
