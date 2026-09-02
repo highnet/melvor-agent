@@ -75,7 +75,17 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Run state: ${report.runState}${report.blockedReason === null ? '' : ` — BLOCKED: ${report.blockedReason}`}`,
       `Connected: ${age !== null && age < 15_000} (last report ${age}ms ago)`,
       progress === null ? 'Progress: not enough samples yet.' : `Progress: ${progress.detail}`,
-      `Objective: ${report.objective === null ? 'none' : report.objective.rationale}`,
+      // "none" and "nothing" are what a stalled agent shows and also what a
+      // healthy one shows for the second or two between plan steps. Naming the
+      // queue separates them; without it, three snapshots this morning were
+      // read as stalls and two nearly reverted working code.
+      `Objective: ${
+        report.objective !== null
+          ? report.objective.rationale
+          : report.planRemaining > 0
+            ? `none right now — ${report.planRemaining} step(s) still queued, so this is a gap between objectives rather than a stop`
+            : 'none, and nothing queued'
+      }`,
       '',
       `Character ${s.characterName} (${s.gameVersion}) — total level ${s.totalLevel}, completion ${s.completionPercent.toFixed(2)}%, GP ${gp.toLocaleString()}`,
       // The mod only reloads with the game, so a fix committed minutes ago may

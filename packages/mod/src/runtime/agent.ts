@@ -1529,6 +1529,7 @@ export class Agent {
       runState: this.state,
       snapshot: this.lastSnapshot,
       objective: this.settings.objective,
+      planRemaining: this.settings.plan.length,
       candidates: this.state === 'killed' ? [] : this.safeCandidates(),
       blockedOpportunities: this.state === 'killed' ? [] : this.safeBlocked(),
       buildStamp: readBuildStamp(),

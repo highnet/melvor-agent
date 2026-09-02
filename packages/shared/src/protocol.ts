@@ -90,6 +90,17 @@ export const agentReportSchema = z.object({
    */
   blockedOpportunities: z.array(blockedOpportunitySchema).default([]),
   /**
+   * Steps still queued behind the current objective.
+   *
+   * Exists to tell "between steps" apart from "stopped", which read
+   * identically and should not. A snapshot taken in the gap between one
+   * objective finishing and the next starting shows no objective and no active
+   * action — exactly what a stalled agent shows — and that ambiguity produced
+   * three wrong diagnoses in one morning, twice nearly undoing work that was
+   * running correctly.
+   */
+  planRemaining: z.number().int().nonnegative().default(0),
+  /**
    * When the running bundle was built.
    *
    * The mod only reloads with the game, so the code on disk and the code
@@ -131,6 +142,17 @@ export const plannerRequestSchema = z.object({
   candidates: z.array(candidateSchema),
   /** Higher-value options blocked on a missing input. Context, not choices. */
   blockedOpportunities: z.array(blockedOpportunitySchema).default([]),
+  /**
+   * Steps still queued behind the current objective.
+   *
+   * Exists to tell "between steps" apart from "stopped", which read
+   * identically and should not. A snapshot taken in the gap between one
+   * objective finishing and the next starting shows no objective and no active
+   * action — exactly what a stalled agent shows — and that ambiguity produced
+   * three wrong diagnoses in one morning, twice nearly undoing work that was
+   * running correctly.
+   */
+  planRemaining: z.number().int().nonnegative().default(0),
   digest: journalDigestSchema,
   trigger: z.enum([
     'game_start',
