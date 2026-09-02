@@ -74,6 +74,7 @@ function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {
       ],
       quality: [],
       blockedReason: null,
+      stalledCounter: null,
     },
     digest: { recent: [], aggregates: [] },
     levelsPerHour: 3.5,
