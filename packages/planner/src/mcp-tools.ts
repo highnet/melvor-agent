@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import type { Candidate, Objective, StateSnapshot } from '@melvor-agent/shared';
 import { levelsPerHour } from '@melvor-agent/shared';
-import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
+import { evaluateGoals, goalsAdvancedBy, loadGoals, planRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
 import { controlRate, measureAgainstClaim, measureProgress } from './progress.js';
-import type { Store } from './store.js';
+import { type Store, identityOf } from './store.js';
 
 /**
  * The behaviour behind every MCP tool.
@@ -123,11 +124,12 @@ export const TOOLS: Record<string, ToolHandler> = {
       // read as stalls and two nearly reverted working code.
       `Objective: ${
         report.objective !== null
-          ? report.objective.rationale
-          : report.planRemaining > 0
-            ? `none right now — ${report.planRemaining} step(s) still queued, so this is a gap between objectives rather than a stop`
+          ? `${report.objective.rationale}${describeElapsed(report.objective, report.objectiveStartedAt)}`
+          : report.plan.length > 0
+            ? `none right now — ${report.plan.length} step(s) still queued, so this is a gap between objectives rather than a stop`
             : 'none, and nothing queued'
       }`,
+      ...renderPlan(report.plan, report.candidates),
       '',
       `Character ${s.characterName} (${s.gameVersion}) — total level ${s.totalLevel}, completion ${s.completionPercent.toFixed(2)}%, GP ${gp.toLocaleString()}`,
       // The mod only reloads with the game, so a fix committed minutes ago may
@@ -241,6 +243,16 @@ export const TOOLS: Record<string, ToolHandler> = {
       return `Refused: ${alreadyThere}. Pick a level above it, or a different candidate.`;
     }
 
+    // A target level is a guess until it is checked against the rate and the
+    // budget. Unchecked, it lands on one of the two failures nextRung was
+    // written to prevent: too far and the objective always ends in
+    // `abortMinutes`, too near and it completes in minutes and spends the hour
+    // replanning. A stock target has no level, so it skips this entirely.
+    const rung =
+      stockTarget !== undefined
+        ? { level: targetLevel, note: null }
+        : rungFor(chosen, targetLevel, abortMinutes, snapshot);
+
     // Params are copied from the candidate verbatim. The caller picks *which*,
     // never *what*, so a mistyped or invented recipe id is impossible.
     store.enqueue({
@@ -249,14 +261,20 @@ export const TOOLS: Record<string, ToolHandler> = {
         id: `session-${Date.now()}`,
         kind: chosen.kind,
         params: chosen.params,
-        successWhen: successFor(chosen, targetLevel, stockTarget),
+        successWhen: successFor(chosen, rung.level, stockTarget),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
         rationale: String(args.rationale ?? 'no rationale given'),
       },
     });
 
-    return `Queued: ${chosen.label}\nTarget: level ${targetLevel}, abort after ${abortMinutes}min.\nApplies on the mod's next report.`;
+    return [
+      `Queued: ${chosen.label}`,
+      `Target: level ${rung.level}, abort after ${abortMinutes}min.`,
+      ...(rung.note === null ? [] : [rung.note]),
+      ...commitmentWarning(store.report, args.urgent === true),
+      "Applies on the mod's next report.",
+    ].join(NEWLINE);
   },
 
   async set_plan(args, { store }) {
@@ -270,6 +288,8 @@ export const TOOLS: Record<string, ToolHandler> = {
     const objectives = [];
     /** Steps whose candidate merely changed position; reported, not refused. */
     const moved: string[] = [];
+    /** Rung adjustments, so a lowered target is never applied silently. */
+    const notes: string[] = [];
     for (const [position, raw] of steps.entries()) {
       const step = raw as Record<string, unknown>;
       const stepIndex = Number(step.candidateIndex);
@@ -303,11 +323,26 @@ export const TOOLS: Record<string, ToolHandler> = {
           ? { itemId: stepItemId, quantity: stepQuantity }
           : undefined;
 
+      // Sized against the rate and the budget, exactly as a single objective
+      // is. A plan is where an unreachable rung costs most: the step does not
+      // merely fail, it burns its whole budget first and delays every step
+      // behind it.
+      //
+      // Only the first step is projected from *current* XP, which is honest
+      // rather than lazy: by the time step three runs the character is several
+      // levels further on and any projection made now would be arithmetic
+      // dressed up as foresight.
+      const stepRung =
+        stepStock !== undefined || position > 0
+          ? { level: Number(step.targetLevel ?? 0), note: null }
+          : rungFor(chosen, Number(step.targetLevel ?? 0), abortMinutes, store.report?.snapshot);
+      if (stepRung.note !== null) notes.push(`step ${position + 1}: ${stepRung.note}`);
+
       objectives.push({
         id: `plan-${Date.now()}-${position}`,
         kind: chosen.kind,
         params: chosen.params,
-        successWhen: successFor(chosen, Number(step.targetLevel ?? 0), stepStock),
+        successWhen: successFor(chosen, stepRung.level, stepStock),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
         rationale: String(step.rationale ?? 'no rationale given'),
@@ -323,6 +358,8 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Queued a plan of ${objectives.length} objectives:`,
       ...objectives.map((objective, index) => `  ${index + 1}. ${objective.rationale}`),
       '',
+      ...notes,
+      ...commitmentWarning(store.report, args.urgent === true),
       ...(moved.length === 0
         ? []
         : [
@@ -412,6 +449,160 @@ export const TOOLS: Record<string, ToolHandler> = {
     return "Recorded to today's notes as [agent]. It will not affect planning until a consolidation pass promotes it.";
   },
 };
+
+/**
+ * Sizes a requested level against the rate and the budget.
+ *
+ * The clamp is deliberately one-directional. A target beyond the budget is
+ * lowered, because an objective that *completes* produces a journal entry, a
+ * replan and a measured rate, while one that times out produces an abandonment
+ * and teaches nothing. A target inside the budget is left exactly as asked and
+ * only reported on: raising it would mean the agent grinding further than the
+ * caller chose, which is not a correction to make on someone's behalf.
+ *
+ * @returns The level to commit to, and a line for the caller when it differs
+ *          from the request or the projection is worth knowing.
+ */
+function rungFor(
+  candidate: { params: Record<string, unknown>; xpPerHour?: number | undefined },
+  targetLevel: number,
+  abortMinutes: number,
+  snapshot: StateSnapshot | null | undefined,
+): { level: number; note: string | null } {
+  const skillId = candidate.params.skillId;
+  if (snapshot === null || snapshot === undefined || typeof skillId !== 'string') {
+    return { level: targetLevel, note: null };
+  }
+
+  const skill = snapshot.skills.find((entry) => entry.id === skillId);
+  const rate = candidate.xpPerHour ?? 0;
+  if (skill === undefined || rate <= 0) return { level: targetLevel, note: null };
+
+  const rung = planRung(skill.level, skill.xp, targetLevel, rate, abortMinutes);
+  const minutes = Math.round(rung.estimatedMinutes);
+
+  if (rung.fit === 'clamped') {
+    return {
+      level: rung.level,
+      note: `Target lowered from ${targetLevel} to ${rung.level}: at ${Math.round(rate).toLocaleString()} xp/h, ${skill.name} ${targetLevel} needs far more than the ${abortMinutes}min budget, so the objective would have ended in an abort rather than a completion. ${rung.level} takes about ${minutes}min. Raise abortMinutes if you meant the longer grind.`,
+    };
+  }
+
+  if (rung.fit === 'short') {
+    return {
+      level: targetLevel,
+      note: `Projected ~${minutes}min of the ${abortMinutes}min budget. That is a short rung: the objective ends early and the agent replans, which is where skill-hopping comes from and what mastery bonuses are lost to. A higher target would fill the budget.`,
+    };
+  }
+
+  return { level: targetLevel, note: `Projected ~${minutes}min at the advertised rate.` };
+}
+
+/**
+ * How long an objective should hold before it is worth swapping.
+ *
+ * Ten minutes. Short enough that a genuine mistake is cheap to correct, long
+ * enough that the mastery every candidate's own label mentions has had some
+ * time to accrue.
+ */
+const MIN_COMMIT_MINUTES = 10;
+
+/**
+ * Warns when an objective is being replaced almost as soon as it started.
+ *
+ * A warning and not a refusal, on purpose. The pull is real in both directions:
+ * mastery pays for staying, and the ranking a session reads is instantaneous,
+ * so there is always a fresher-looking number one tool call away. Neither side
+ * is always right, so the operator is told rather than overruled — but the
+ * cost has to be visible at the moment the choice is made, which is the one
+ * place it never was.
+ */
+function commitmentWarning(
+  report: { objective: Objective | null; objectiveStartedAt?: number | null } | null,
+  urgent: boolean,
+): string[] {
+  if (urgent) return [];
+  const objective = report?.objective ?? null;
+  const startedAt = report?.objectiveStartedAt ?? null;
+  if (objective === null || startedAt === null) return [];
+
+  const minutes = (Date.now() - startedAt) / 60_000;
+  // An objective expected to run for less than the floor is not being cut
+  // short by definition -- a two-minute purchase is meant to end quickly.
+  const floor = Math.min(MIN_COMMIT_MINUTES, objective.expectedDurationMin);
+  if (minutes >= floor) return [];
+
+  return [
+    `Note: this replaces "${objective.rationale}" after only ${minutes.toFixed(1)}min of an expected ${Math.round(objective.expectedDurationMin)}min. Mastery rewards sustained use of one action and every rate here is quoted instantaneously, so a list read fresh always argues for switching. If the swap is a correction rather than a better number, pass urgent: true and this note goes away.`,
+  ];
+}
+
+/**
+ * How long the current objective has been running, and against what.
+ *
+ * Elapsed time is what makes churn visible. Mastery rewards staying on one
+ * action -- every candidate that mentions it says so -- while ranking is
+ * instantaneous and always has a fresher-looking number, so the two pull
+ * against each other on every turn. Nothing was measuring the pull: a swap
+ * made four minutes into an hour-long objective read exactly like one made
+ * after fifty.
+ */
+function describeElapsed(objective: Objective, startedAt: number | null | undefined): string {
+  if (startedAt === null || startedAt === undefined) return '';
+  const minutes = Math.max(0, Math.round((Date.now() - startedAt) / 60_000));
+  return ` — ${minutes}min in, of ${Math.round(objective.expectedDurationMin)}min expected (aborts at ${Math.round(objective.abortWhen.minutesExceed)}min)`;
+}
+
+/**
+ * The queued plan, with any step that no longer matches reality flagged.
+ *
+ * Every step was chosen from the candidate list as it stood when the plan was
+ * written, and that list moves with the character: a recipe stops being
+ * affordable, a shop purchase is bought, a fight is outgrown. A count could not
+ * express any of that, so a session had two options -- trust the queue blindly
+ * or replace it wholesale -- and it replaced it wholesale, all session.
+ *
+ * Staleness is decided by the same identity the choice guard uses, kind plus
+ * params, rather than by comparing labels: labels carry live numbers and would
+ * flag every step on every read, which is how a warning becomes noise.
+ */
+function renderPlan(plan: readonly Objective[], candidates: readonly Candidate[]): string[] {
+  if (plan.length === 0) return [];
+
+  const available = new Set(candidates.map((candidate) => identityOf(candidate)));
+
+  const lines = plan.map((step, index) => {
+    const stale = available.has(identityOf(step)) ? '' : '  [STALE: no longer a candidate]';
+    return `  ${index + 1}. ${step.kind} — ${step.rationale} (${describeTarget(step)}, abort ${Math.round(step.abortWhen.minutesExceed)}min)${stale}`;
+  });
+
+  const stale = plan.filter((step) => !available.has(identityOf(step))).length;
+
+  return [
+    `Queued (${plan.length} step(s)):`,
+    ...lines,
+    ...(stale === 0
+      ? []
+      : [
+          `  ${stale} step(s) name work the game is no longer offering. That is not always wrong -- a step that produces its own input is *meant* to be unavailable until the step before it runs -- but it is where a stale plan shows.`,
+        ]),
+  ];
+}
+
+/** A step's finish line, in the terms it was actually written in. */
+function describeTarget(objective: Objective): string {
+  const criteria = objective.successWhen.map((criterion) => {
+    switch (criterion.type) {
+      case 'skill_level_at_least':
+        return `to level ${criterion.level}`;
+      case 'item_qty_at_least':
+        return `until ${criterion.qty}x ${criterion.itemId}`;
+      case 'currency_at_least':
+        return `until ${criterion.amount.toLocaleString()} ${criterion.currencyId}`;
+    }
+  });
+  return criteria.length === 0 ? 'one-shot' : criteria.join(', ');
+}
 
 function topStacks(items: { qty: number; name: string }[]): string {
   if (items.length === 0) return 'empty';

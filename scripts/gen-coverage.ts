@@ -47,10 +47,13 @@ const DESCRIPTIONS: Record<string, string> = {
   upgrade_item: 'Combine bank materials into a better item',
   build_township: 'Build a Township building in a biome',
   repair_township: 'Repair a degraded Township building',
+  repair_all_township: 'Repair every degraded Township building the town can pay for, in one call',
   restore_town_health: 'Spend town resources to restore town health',
   survey_hex: 'Survey the best available Cartography hex',
   excavate_dig_site: 'Excavate an Archaeology dig site',
   select_dig_map: 'Select the map a dig site digs with',
+  create_dig_map:
+    'Make a new map for a dig site — maps are consumable, and Archaeology has no candidates at all once the last one is spent',
   travel_to_poi: 'Travel to a surveyed Point of Interest, which is how dig sites are reached',
   select_dig_tool: 'Select which tools a dig site uses',
   build_obstacle: 'Build an Agility course obstacle',
@@ -141,9 +144,11 @@ const SKILL_NOTES: Record<string, string> = {
   'melvorD:Prayer': 'combat — `bury_bones` for points, `toggle_prayer` to spend them',
   'melvorD:Slayer': 'combat — `new_slayer_task`, then `fight_monster`',
   'melvorD:Farming': '`tend_farm` (plant, compost, harvest)',
-  'melvorD:Township': '`build_township`, `repair_township`, `claim_township_task`',
+  'melvorD:Township':
+    '`build_township`, `repair_township`, `repair_all_township`, `claim_township_task`',
   'melvorAoD:Cartography': '`survey_hex`, `make_paper`, `travel_to_poi`',
-  'melvorAoD:Archaeology': '`excavate_dig_site` with `select_dig_map` and `select_dig_tool`',
+  'melvorAoD:Archaeology':
+    '`excavate_dig_site`, with `create_dig_map`, `select_dig_map` and `select_dig_tool`',
   'melvorItA:Corruption':
     'not yet — gated behind the Abyssal realm, which needs the Into the Abyss dungeon',
   'melvorItA:Harvesting':

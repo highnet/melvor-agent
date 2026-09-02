@@ -328,6 +328,63 @@ export function nextRung(
 }
 
 /**
+ * The rung to actually aim at, given a target somebody asked for.
+ *
+ * {@link nextRung} was exported, imported and never called, so every target
+ * level was a guess — and the two failure modes its doc comment describes were
+ * both live. A target too far always ends in `abortMinutes`, which records an
+ * abandonment rather than a completion and teaches the journal nothing; a
+ * target too near completes in minutes and spends the hour replanning.
+ *
+ * So the requested level is checked against the rate and the budget before it
+ * is committed to:
+ *
+ * - `clamped` — unreachable in the budget. The level is lowered to what fits,
+ *   because an objective that finishes is worth more than one that times out.
+ * - `short` — reachable with time to spare, which is where thrash comes from.
+ *   Reported, never raised: grinding further than asked is the caller's call.
+ * - `fits` — the requested level is about a budget's worth of work.
+ *
+ * @param currentLevel - Where the skill is now.
+ * @param currentXp - Total XP in that skill.
+ * @param requestedLevel - The level the caller asked for.
+ * @param xpPerHour - The candidate's advertised rate.
+ * @param budgetMinutes - The objective's abort budget.
+ * @param maxLevel - Ceiling for the reachability probe; the tool caps at 120.
+ */
+export function planRung(
+  currentLevel: number,
+  currentXp: number,
+  requestedLevel: number,
+  xpPerHour: number,
+  budgetMinutes: number,
+  maxLevel = 120,
+): { level: number; estimatedMinutes: number; fit: 'fits' | 'clamped' | 'short' } {
+  // No rate means nothing can be projected. Saying so beats inventing a
+  // number, and a candidate with no xpPerHour is usually a one-shot action
+  // whose target level is ignored anyway.
+  if (!Number.isFinite(xpPerHour) || xpPerHour <= 0) {
+    return { level: requestedLevel, estimatedMinutes: Number.NaN, fit: 'fits' };
+  }
+
+  // How far the budget actually reaches, asked without the requested level in
+  // the way — `nextRung` clamps to the goal it is given, so passing the
+  // request would make every request look exactly reachable.
+  const reachable = nextRung(currentLevel, currentXp, maxLevel, xpPerHour, budgetMinutes);
+
+  if (reachable.level < requestedLevel) {
+    return { level: reachable.level, estimatedMinutes: reachable.estimatedMinutes, fit: 'clamped' };
+  }
+
+  const minutes = ((xpForLevel(requestedLevel) - currentXp) / xpPerHour) * 60;
+  return {
+    level: requestedLevel,
+    estimatedMinutes: Math.max(0, minutes),
+    fit: reachable.level > requestedLevel ? 'short' : 'fits',
+  };
+}
+
+/**
  * Evaluates every goal against the current state.
  *
  * Deterministic: whether a goal is done, blocked or active is arithmetic, and
@@ -335,38 +392,58 @@ export function nextRung(
  */
 export function evaluateGoals(goals: readonly Goal[], snapshot: StateSnapshot): GoalStatus[] {
   const done = new Set<string>();
+  const measurable = new Set<string>();
 
   // Two passes so a goal can depend on one declared after it.
   for (const goal of goals) {
-    if (goal.done !== undefined && measure(goal.done, snapshot).satisfied) done.add(goal.id);
+    if (goal.done === undefined) continue;
+    measurable.add(goal.id);
+    if (measure(goal.done, snapshot).satisfied) done.add(goal.id);
   }
 
   return goals.map((goal): GoalStatus => {
-    if (goal.done === undefined) {
+    const required = goal.requires ?? [];
+    // A prerequisite with no `done:` -- or one naming a goal id that does not
+    // exist -- can never enter `done`, so enforcing it blocks every dependent
+    // for the life of the file. The prerequisite may well be finished; nothing
+    // can say. Unmeasurable and unmet are different states and only the second
+    // is a reason to withhold work, so the first is reported and stepped over.
+    const unmet = required.filter((id) => measurable.has(id) && !done.has(id));
+    const unverifiable = required.filter((id) => !measurable.has(id));
+
+    const measured = goal.done === undefined ? null : measure(goal.done, snapshot);
+    if (measured?.satisfied === true) {
+      return { goal, state: 'done', detail: measured.detail };
+    }
+
+    // Checked before the unmeasurable case below, not after it. A goal with no
+    // `done:` used to return `active` immediately, so `requires:` was ignored
+    // for exactly the goals whose prose the operator could not pin down — the
+    // ones most likely to need ordering.
+    if (unmet.length > 0) {
+      return { goal, state: 'blocked', detail: `needs ${unmet.join(', ')} first` };
+    }
+
+    const caveat =
+      unverifiable.length === 0
+        ? ''
+        : ` (not waiting on ${unverifiable.join(', ')}: no measurable completion, so it can never be confirmed)`;
+
+    if (measured === null) {
       return {
         goal,
         state: 'active',
-        detail: 'no measurable completion condition',
+        detail: `no measurable completion condition${caveat}`,
         progress: 0,
       };
     }
 
-    const measured = measure(goal.done, snapshot);
-
-    if (measured.satisfied) {
-      return { goal, state: 'done', detail: measured.detail };
-    }
-
-    const missing = (goal.requires ?? []).filter((id) => !done.has(id));
-    if (missing.length > 0) {
-      return {
-        goal,
-        state: 'blocked',
-        detail: `needs ${missing.join(', ')} first`,
-      };
-    }
-
-    return { goal, state: 'active', detail: measured.detail, progress: measured.progress };
+    return {
+      goal,
+      state: 'active',
+      detail: `${measured.detail}${caveat}`,
+      progress: measured.progress,
+    };
   });
 }
 
@@ -380,20 +457,88 @@ export function evaluateGoals(goals: readonly Goal[], snapshot: StateSnapshot): 
  */
 export function goalsAdvancedBy(candidate: Candidate, statuses: readonly GoalStatus[]): string[] {
   const active = statuses.filter((s) => s.state === 'active');
-  const skillId = (candidate.params as { skillId?: string }).skillId;
+  // Every namespaced id the candidate carries, not `skillId` alone. Matching
+  // on skillId only meant an `item_qty_at_least` goal tagged nothing at all --
+  // its condition names an item, and no candidate has an `itemId` field called
+  // `skillId` -- so "hold 250 Air Rune" served no candidate and read as a goal
+  // nothing in the game advanced.
+  const ids = namespacedIds(candidate.params);
   // Money received, not output that would fetch money if sold. An hour of
   // mining gems moves the GP balance by exactly zero unless something sells
   // them, so tagging it as advancing a GP goal is a false report -- and it is
   // the report a planner uses to decide it is already working on the goal.
   const earnsGp = candidate.gpIsEarned === true && (candidate.gpPerHour ?? 0) > 0;
+  const isCombat = COMBAT_KINDS.has(candidate.kind);
 
   return active
     .filter((status) => {
-      const advancedBy = status.goal.advancedBy ?? [];
-      if (skillId !== undefined && advancedBy.includes(skillId)) return true;
-      return earnsGp && advancedBy.includes('gp');
+      // The goal's own condition is a tag whether or not the operator wrote
+      // one: "skill melvorD:Woodcutting >= 50" says what advances it as
+      // plainly as `<!-- advances: -->` would, and an annotation nobody
+      // remembered to add is the ordinary case.
+      for (const tag of [...(status.goal.advancedBy ?? []), ...impliedTags(status.goal.done)]) {
+        if (ids.has(tag)) return true;
+        if (tag === 'gp' && earnsGp) return true;
+        // A fight carries a monster and an area and no skill: which skill it
+        // trains is chosen by the attack style, which the candidate does not
+        // know. So combat is matched as a class, the way `gp` is. Coarse, and
+        // the alternative is what was there before -- four combat goals that
+        // nothing in the list ever advanced.
+        if (isCombat && (tag === 'combat' || COMBAT_SKILL_IDS.has(tag))) return true;
+      }
+      return false;
     })
     .map((status) => status.goal.id);
+}
+
+/** Objective kinds that put the character in a fight. */
+const COMBAT_KINDS = new Set([
+  'fight_monster',
+  'run_dungeon',
+  'run_golbin_raid',
+  'start_combat_event',
+  'new_slayer_task',
+]);
+
+/** Skills a fight can train. Hitpoints always; the rest via the attack style. */
+const COMBAT_SKILL_IDS = new Set([
+  'melvorD:Attack',
+  'melvorD:Strength',
+  'melvorD:Defence',
+  'melvorD:Hitpoints',
+  'melvorD:Ranged',
+  'melvorD:Magic',
+  'melvorD:Slayer',
+]);
+
+/** Every namespaced id in a candidate's params, whatever the field is called. */
+function namespacedIds(params: unknown): Set<string> {
+  const ids = new Set<string>();
+  if (typeof params !== 'object' || params === null) return ids;
+  for (const value of Object.values(params)) {
+    if (typeof value === 'string' && value.includes(':')) ids.add(value);
+  }
+  return ids;
+}
+
+/** What a goal's own completion condition says advances it. */
+function impliedTags(done: GoalCondition | undefined): string[] {
+  if (done === undefined) return [];
+  switch (done.type) {
+    case 'skill_level_at_least':
+      return [done.skillId];
+    case 'item_qty_at_least':
+      return [done.itemId];
+    case 'currency_at_least':
+      // `gp` rather than the id, so the `gpIsEarned` distinction above still
+      // applies: producing something sellable is not earning money. Any other
+      // currency keeps its id and matches on the params like anything else.
+      return done.currencyId === 'melvorD:GP' ? ['gp'] : [done.currencyId];
+    case 'total_level_at_least':
+      // Every skilling candidate advances total level, so tagging them all
+      // would say nothing. Left untagged deliberately.
+      return [];
+  }
 }
 
 /** Renders goal status for a planning prompt or an MCP tool. */

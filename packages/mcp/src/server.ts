@@ -94,6 +94,12 @@ server.registerTool(
       rationale: z
         .string()
         .describe('One sentence for the operator log on why this beats the alternatives.'),
+      urgent: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional. Set only when the swap is a correction — the character is in danger, or the running objective is provably going nowhere. It suppresses the note warning that an objective is being replaced minutes after it started; a better-looking rate is not urgency.',
+        ),
     },
   },
   (args) => callTool('set_objective', args),
@@ -141,6 +147,12 @@ server.registerTool(
         .max(8)
         .describe(
           'The plan, in order. Earn before you spend; the agent will not reorder it. A step the game refuses as too early — smithing before the ore is mined — is moved to the back of the plan once and retried, so a chain like mine → mine → smith can be queued in one call even though the later step is not yet available as a candidate.',
+        ),
+      urgent: z
+        .boolean()
+        .optional()
+        .describe(
+          'Optional. Set only when replacing the running objective is a correction rather than a preference. It suppresses the note warning that an objective is being replaced minutes after it started.',
         ),
     },
   },

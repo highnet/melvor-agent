@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-196 exports.
+198 exports.
 
 ## `act`
 
@@ -475,6 +475,30 @@ capability that does not exist, which is how Herblore stayed unreachable.
 
 ```ts
 convertTownshipToItem: (resourceId: string, itemId: string, quantity: number, isSuspended: () => boolean) => ActionResult<ConversionProjection>
+```
+
+## `createDigSiteMap`
+
+`function`
+
+Creates a new map for a dig site.
+
+The missing half of Archaeology, and the reason the skill quietly disappears.
+Maps are consumable: each carries charges, `canExcavate` goes false when the
+selected map runs out, and every Archaeology candidate vanishes with it. The
+agent could select a map and dig with one, but nothing in the whole candidate
+list could make one — so it made paper indefinitely and never turned any of
+it into a dig, with no signal that the chain had a missing link rather than
+simply being unprofitable.
+
+Creation lives on Cartography rather than Archaeology, which is why it was
+easy to miss: `getMapCreationCosts` (cartography.d.ts:384) prices it and
+`createNewMapForDigSite` (cartography.d.ts:389) performs it, and the typings
+state the cap of three maps per dig site there while `getMaxMaps`
+(archaeology.d.ts:95) is the number to ask.
+
+```ts
+createDigSiteMap: (digSiteId: string, isSuspended: () => boolean) => ActionResult<{ maps: number; charges: number; }>
 ```
 
 ## `disengageCombat`
@@ -2246,6 +2270,34 @@ one would be exactly the kind of guess this codebase keeps paying for.
 
 ```ts
 reloadGame: () => ActionResult<{ reloading: boolean; }>
+```
+
+## `repairAllTownshipBuildings`
+
+`function`
+
+Repairs every degraded building the town can pay for, in one call.
+
+Repairing one building at a time is how this was reachable before, and it
+scales badly in exactly the wrong direction: the town grows, so the number of
+decisions grows, while each one costs a policy tick and the buildings not yet
+reached keep producing at reduced efficiency the whole time. The game ships
+the batch operation its own UI uses.
+
+`getTotalRepairCosts` prices the whole batch and `canAffordRepairAllCosts`
+answers whether the town can pay for it — asked in that order, so nothing is
+attempted that the town cannot complete.
+
+One thing the typings do not state: `repairAllBuildings` is documented as
+"Callback function for the Repair All button", and there is a separate
+`onRepairAllBuildings` beside it, so which of the two raises a confirmation
+is unknown from the typings alone. That is precisely why the verdict here is
+the efficiency total either side rather than the call returning — a
+confirmation nobody answers shows up as `no_state_change` and is reported,
+not believed.
+
+```ts
+repairAllTownshipBuildings: (isSuspended: () => boolean) => ActionResult<RepairProjection>
 ```
 
 ## `repairTownshipBuilding`

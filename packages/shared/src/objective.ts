@@ -27,7 +27,9 @@ export const objectiveKindSchema = z.enum([
   'select_spell',
   'build_township',
   'repair_township',
+  'repair_all_township',
   'survey_hex',
+  'create_dig_map',
   'excavate_dig_site',
   'toggle_curse',
   'toggle_aurora',
@@ -143,6 +145,30 @@ export const objectiveParamsSchema = z.discriminatedUnion('kind', [
     kind: z.literal('repair_township'),
     buildingId: gameIdSchema,
     biomeId: gameIdSchema,
+  }),
+  z.object({
+    /**
+     * Repair every degraded building the town can pay for, in one go.
+     *
+     * Parameterless because the game's own call is: repairing building by
+     * building is a per-building decision the agent had to make dozens of
+     * times, and each one costs a policy tick while the whole town keeps
+     * producing at reduced efficiency in between.
+     */
+    kind: z.literal('repair_all_township'),
+  }),
+  z.object({
+    /**
+     * Make a new map for a dig site.
+     *
+     * The missing half of Archaeology. Maps are consumable — each has charges —
+     * and a dig site with none cannot be excavated at all, so when the last
+     * map runs out the skill vanishes from the candidate list with nothing on
+     * that list able to bring it back. The agent kept making paper and never
+     * turned any of it into a dig.
+     */
+    kind: z.literal('create_dig_map'),
+    digSiteId: gameIdSchema,
   }),
   z.object({
     /**
