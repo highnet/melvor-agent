@@ -342,22 +342,6 @@ export function plantEmptyPlots(
 }
 
 /**
- * Fraction of held GP a single automatic bank slot may cost.
- *
- * Set at a quarter first, to protect the Auto Eat fund from a reflex buying
- * space for more logs. That was the wrong shape of caution: slot prices climb
- * with each purchase, and the bank hit 52/52 holding 55,678 GP against a 15,885
- * slot — 28.5%, just over the line — so the guard sat and watched items be
- * discarded in order to protect a balance.
- *
- * A full bank is a *continuous* loss; savings are a stock. Paying once to stop
- * the loss beats defending the stock, and each purchase permanently adds a slot
- * so the situation recurs more slowly rather than looping. The cap still exists
- * to stop a near-broke character spending its last GP here.
- */
-const BANK_SLOT_GP_FRACTION = 0.5;
-
-/**
  * Slot cost as a fraction of held GP that is worth paying *before* anything is
  * being lost.
  *
@@ -409,8 +393,25 @@ export function expandBankWhenFull(
   const expansion = state.expansion;
   if (expansion === null) return null;
 
-  const fraction = state.freeSlots <= 0 ? BANK_SLOT_GP_FRACTION : BANK_SLOT_CHEAP_FRACTION;
-  if (expansion.gpCost > expansion.held * fraction) return null;
+  // At zero free slots there is no cap at all beyond affordability, and that is
+  // the whole lesson of a two-hour deadlock.
+  //
+  // The cap used to be half of held GP, to stop a near-broke character spending
+  // its last coins on storage. That reasoning treats GP as the scarce thing. It
+  // is not, once the bank is full: every gathering action is refused because
+  // its output has nowhere to go, so income is exactly zero and the balance
+  // being protected can never grow. The agent sat at 59/59 with 59,369 GP and a
+  // slot priced at 33,068 — refused by 3,384 — and did nothing for two hours
+  // while the price and the balance both stayed frozen.
+  //
+  // A savings floor is only meaningful if something can still earn. When
+  // nothing can, spending 56% of the balance to restart a 120,000 GP/hour
+  // operation is not a risk; declining it is.
+  if (state.freeSlots <= 0) {
+    if (expansion.gpCost > expansion.held) return null;
+  } else if (expansion.gpCost > expansion.held * BANK_SLOT_CHEAP_FRACTION) {
+    return null;
+  }
 
   return { name: 'reflex.expandBank', result: buy(expansion.purchaseId) };
 }

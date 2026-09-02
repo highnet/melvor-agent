@@ -446,6 +446,23 @@ describe('expandBankWhenFull', () => {
     expect(expandBankWhenFull({ freeSlots: 2, expansion: dear }, () => ok())).toBeNull();
   });
 
+  it('buys at zero free slots even when the slot costs most of the balance', () => {
+    // The two-hour deadlock. Bank 59/59, 59,369 GP, slot priced 33,068 — over
+    // the old half-of-GP cap by 3,384. Every gathering action was refused
+    // because its output had nowhere to go, so income was zero and the balance
+    // being protected could never grow. A savings floor only means something if
+    // something can still earn.
+    const dear = { purchaseId: 'melvorD:Extra_Bank_Slot', gpCost: 33_068, held: 59_369 };
+
+    expect(expandBankWhenFull({ freeSlots: 0, expansion: dear }, () => ok())).not.toBeNull();
+  });
+
+  it('still refuses a slot it genuinely cannot afford', () => {
+    const unaffordable = { purchaseId: 'melvorD:Extra_Bank_Slot', gpCost: 60_000, held: 59_369 };
+
+    expect(expandBankWhenFull({ freeSlots: 0, expansion: unaffordable }, () => ok())).toBeNull();
+  });
+
   it('buys even when the slot is a sizeable slice of what is held', () => {
     // The live case that moved this line: 52/52 with 55,678 GP against a
     // 15,885 slot. At a quarter-cap the guard sat and watched items be
@@ -456,11 +473,18 @@ describe('expandBankWhenFull', () => {
     expect(expandBankWhenFull({ freeSlots: 0, expansion: pricey }, () => ok())).not.toBeNull();
   });
 
-  it('still refuses when the slot would take most of what is left', () => {
-    // The cap survives for the near-broke case it was really for.
+  it('buys for a near-broke character too, because idle earns nothing', () => {
+    // This test asserted the opposite, and the deadlock disproved it. The cap
+    // was described as protecting "the near-broke case", but a near-broke
+    // character with a full bank is the case that most needs the slot: it
+    // cannot earn its way out, because every gathering action is refused while
+    // its output has nowhere to go.
+    //
+    // 10,028 against 12,000 held is 84% of everything. It is still right. The
+    // alternative is not "save the money", it is "stop playing".
     const poor = { ...slot, held: 12_000 };
 
-    expect(expandBankWhenFull({ freeSlots: 0, expansion: poor }, () => ok())).toBeNull();
+    expect(expandBankWhenFull({ freeSlots: 0, expansion: poor }, () => ok())).not.toBeNull();
   });
 
   it('does nothing when no slot can be bought', () => {
