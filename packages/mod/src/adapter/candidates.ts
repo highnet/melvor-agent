@@ -746,23 +746,34 @@ function thievingCandidates(): Candidate[] {
       // file and shipped it, which is what a clever encoding buys you.
       .filter((npc) => !hitsTooHardForNow(npc.maxHit))
       .map((npc) => {
-        const intervalMs = safeNumber(() => skill.actionInterval, 3000);
-        const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
-        // Reads 0 unless Thieving is the skill currently running, the same
-        // active-selection dependency documented for Mining.actionInterval
-        // above. The consequence is quiet and one-directional: every Thieving
-        // candidate shows no rate at all while the agent is doing anything
-        // else, so a planner comparing options sees Thieving as worthless
-        // exactly when it is deciding whether to start it.
-        //
-        // Left as zero rather than filled with a guess — an invented success
-        // rate would make the comparison confidently wrong instead of visibly
-        // absent — and the absence is now stated in the blocked list so it
-        // reads as "not measurable from here" rather than "not worth doing".
         const successRate = Math.max(
           0,
           Math.min(1, safeNumber(() => skill.getNPCSuccessRate(npc), 0) / 100),
         );
+
+        // `getNPCInterval(npc)` (thieving2.d.ts:193), not `skill.actionInterval`.
+        //
+        // The old reading had the active-selection dependency documented for
+        // Mining: it returns 0 unless Thieving is the skill currently running,
+        // so every Thieving candidate showed no rate at all while the agent was
+        // doing anything else — worthless exactly when a planner is deciding
+        // whether to start it. That was accepted here as "absent rather than
+        // guessed", but the choice was never between a zero and a guess: this
+        // accessor takes the NPC as an argument and so does not care what is
+        // running. The honest number was available the whole time.
+        //
+        // A failed steal is charged too. `getStunInterval` (thieving2.d.ts:182)
+        // is time in which nothing is earned, so the expected cost of an action
+        // is its interval plus the stun that failure carries — the same shape
+        // as a mining respawn, and ignoring it overstates exactly the low-level
+        // NPCs whose success rate is worst.
+        const baseIntervalMs = safeNumber(
+          () => skill.getNPCInterval(npc),
+          safeNumber(() => skill.actionInterval, 3000),
+        );
+        const stunMs = safeNumber(() => skill.getStunInterval(npc), 0);
+        const intervalMs = baseIntervalMs + (1 - successRate) * stunMs;
+        const actionsPerHour = intervalMs > 0 ? MS_PER_HOUR / intervalMs : 0;
 
         const gpPerAction = npc.currencyDrops
           .filter((drop) => drop.currency === game.gp)
