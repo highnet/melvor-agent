@@ -1647,6 +1647,7 @@ export function readBlockedOpportunities(): {
     const withActions = skill as AnySkill & {
       actions?: { allObjects: RecipeLike[] };
       actionInterval?: number;
+      baseInterval?: number;
       isMasteryActionUnlocked?: (recipe: object) => boolean;
       getRecipeCosts?: (recipe: object) => { checkIfOwned(): boolean };
     };
@@ -1654,10 +1655,16 @@ export function readBlockedOpportunities(): {
     const recipes = safeRecipes(withActions);
     if (recipes === null) continue;
 
-    const interval = safeNumber(
-      'candidates.blockedActionInterval',
+    // Same chain as the candidate path, and for the same reason: a skill whose
+    // `actionInterval` throws during enumeration has not failed, it simply has
+    // nothing selected. Reading it through `firstPositive` means only a skill
+    // that can report no interval at all is recorded -- this site was the
+    // second source of the "x456 Tried to get active vein data" noise, after
+    // the first was fixed.
+    const interval = firstPositive(
+      `candidates.blockedInterval:${skillId}`,
       () => withActions.actionInterval,
-      3000,
+      () => withActions.baseInterval,
     );
     const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
