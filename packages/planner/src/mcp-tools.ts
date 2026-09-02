@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { levelsPerHour } from '@melvor-agent/shared';
 import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
@@ -476,10 +476,23 @@ function describeStaleBuild(running: string | null): string {
   if (running === null) return '';
 
   try {
-    const info = readFileSync(
-      join(process.cwd(), 'packages', 'mod', 'dist-local', 'BUILD_INFO.txt'),
-      'utf8',
-    );
+    // Walked up from cwd rather than assumed. The service is started from the
+    // repo root by `pnpm planner` but nothing guarantees that, and a hardcoded
+    // join silently produces no warning at all when it is wrong — which is the
+    // same failure mode this warning exists to fix.
+    let dir = process.cwd();
+    let info: string | null = null;
+    for (let depth = 0; depth < 6; depth += 1) {
+      try {
+        info = readFileSync(join(dir, 'packages', 'mod', 'dist-local', 'BUILD_INFO.txt'), 'utf8');
+        break;
+      } catch {
+        const parent = dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+    }
+    if (info === null) return '';
     const built = /built\s+(\S+)/.exec(info)?.[1];
     if (built === undefined || built === running) return '';
 
