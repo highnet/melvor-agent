@@ -1,5 +1,12 @@
 import type { KnowledgeDump } from '@melvor-agent/knowledge';
-import { noteSwallowed, safeBoolean, safeList, safeNumber, safeText } from './safe.js';
+import {
+  noteSwallowed,
+  recordFallback,
+  safeBoolean,
+  safeList,
+  safeNumber,
+  safeText,
+} from './safe.js';
 import { gpCostOf } from './shop.js';
 
 /**
@@ -676,6 +683,22 @@ export function dumpRegistries(): KnowledgeDump {
  * the bars are meaningless without the ore. `baseInterval` is the skill's, not
  * the recipe's, and is the honest thing available -- see `miningIntervalFor`
  * for why even that understates the real cost of a depleting resource.
+ *
+ * Three skills do not fit the single-product shape, and forcing them into it is
+ * what left 131 rows with a blank `productId` and a `productSellsFor` of 0 --
+ * reading exactly like an Agility obstacle, which genuinely produces no item.
+ * Each gets a field that says what the thing actually is rather than a product
+ * id that says something false:
+ *
+ * - Alt Magic produces `AltMagicProductionID | AnyItem` -- an item on some
+ *   spells and a currency sentinel on others -- and pays a `productionRatio` of
+ *   it. It also charges a `specialCost` naming a *class* of item, which no
+ *   cost list can hold. `altMagicProduction`, `altMagicSpecialCost`.
+ * - Herblore makes four potions off one ingredient list, gated by mastery
+ *   tier. Four tiers are not one product. `tieredProducts`.
+ * - Firemaking's products are chance-gated, and its input is the log it burns
+ *   rather than an `itemCosts` entry. `chanceProducts`, and the log recorded
+ *   as the cost it is.
  */
 function dumpSkillRecipes(): {
   skillId: string;
@@ -701,6 +724,10 @@ function dumpSkillRecipes(): {
   baseQuantity: number;
   productSellsFor: number;
   productSellsForCurrencyId: string;
+  tieredProducts: TieredProduct[];
+  chanceProducts: ChanceProduct[];
+  altMagicProduction: AltMagicProduction | null;
+  altMagicSpecialCost: AltMagicSpecialCost | null;
 }[] {
   const out: ReturnType<typeof dumpSkillRecipes> = [];
 
@@ -737,6 +764,29 @@ function dumpSkillRecipes(): {
     // matched.
     const costsAreOneTime = (skill as unknown) === (game.agility as unknown);
 
+    // Three skills store their product, and two of them their cost, under names
+    // the generic pass above does not read, so 131 rows dumped an empty
+    // `productId` and a `productSellsFor` of 0 — indistinguishable from a
+    // recipe that genuinely yields nothing, which is what an Agility obstacle
+    // is. Each is matched by object identity against the skill on `game` rather
+    // than by id string: `melvorD:AltMagic` is not a registered id and looking
+    // Alt Magic up under it returned undefined for the life of this repo.
+    const isAltMagic = (skill as unknown) === (game.altMagic as unknown);
+    const isHerblore = (skill as unknown) === (game.herblore as unknown);
+    const isFiremaking = (skill as unknown) === (game.firemaking as unknown);
+
+    // `Herblore.tierMasteryLevels` (herblore.d.ts:78) is static, and read off
+    // the live instance's constructor rather than off a global `Herblore` so it
+    // cannot resolve to a different class than the one the recipes came from.
+    const tierMasteryLevels = isHerblore
+      ? safeList(
+          'registries.herbloreTierMasteryLevels',
+          () =>
+            (skill.constructor as unknown as { tierMasteryLevels?: number[] }).tierMasteryLevels ??
+            [],
+        )
+      : [];
+
     for (const raw of recipes) {
       const recipe = raw as {
         id?: string;
@@ -759,6 +809,20 @@ function dumpSkillRecipes(): {
           sellsFor?: { quantity: number; currency: { id: string } };
         };
         baseQuantity?: number;
+        // The three shapes `product` cannot hold. Optional on this type because
+        // one loop walks every skill's recipes; each is undefined on all but
+        // the one skill that has it, which is what the dumpers below check.
+        potions?: readonly (ProductItem & {
+          tier?: number;
+          charges?: number;
+          action?: { id: string; name: string };
+        })[];
+        log?: { id: string; name: string };
+        primaryProducts?: readonly ProductItem[];
+        secondaryProducts?: readonly ProductItem[];
+        produces?: unknown;
+        productionRatio?: number;
+        specialCost?: { type?: unknown; quantity?: number; currency?: { id: string } };
       };
 
       try {
@@ -793,7 +857,15 @@ function dumpSkillRecipes(): {
           // the skill constant alone ranks logs by XP and picks the slowest.
           // `AgilityObstacle.baseInterval` is agility.d.ts:72.
           recipeInterval: safeNumber('registries.35', () => recipe.baseInterval ?? 0, 0),
-          itemCosts: costsAreOneTime ? [] : dumpItemCosts(recipe.itemCosts),
+          // Firemaking's input is the log itself, on `FiremakingLog.log`, and it
+          // has no `itemCosts` at all — so all 33 logs dumped as free, which
+          // makes burning read as pure profit beside every chain that pays for
+          // its materials. See `dumpBurntLog` for why the quantity is 1.
+          itemCosts: costsAreOneTime
+            ? []
+            : isFiremaking
+              ? dumpBurntLog(recipe.log)
+              : dumpItemCosts(recipe.itemCosts),
           // A one-time build cost, kept apart from consumption so no arithmetic
           // can mistake one for the other. Empty for every skill but Agility.
           buildCosts: costsAreOneTime ? dumpItemCosts(recipe.itemCosts) : [],
@@ -828,6 +900,22 @@ function dumpSkillRecipes(): {
             'registries.40',
             () => recipe.product?.sellsFor?.currency.id ?? '',
           ),
+          // A Herblore recipe makes four potions, not one, and which one a cast
+          // produces is decided by mastery. Empty for every other skill, so a
+          // row with a blank `productId` and an empty list here is a recipe
+          // that really does produce no item.
+          tieredProducts: isHerblore ? dumpTieredProducts(recipe.potions, tierMasteryLevels) : [],
+          // A Firemaking drop is chance-gated, so it is not the guaranteed
+          // product `productId` would claim it is.
+          chanceProducts: isFiremaking
+            ? dumpChanceProducts(recipe, game.firemaking as unknown as ChanceProductSkill)
+            : [],
+          // An Alt Magic spell produces either a real item or a currency
+          // sentinel, and pays a `productionRatio` of it either way.
+          altMagicProduction: isAltMagic
+            ? dumpAltMagicProduction(recipe.produces, recipe.productionRatio)
+            : null,
+          altMagicSpecialCost: isAltMagic ? dumpAltMagicSpecialCost(recipe.specialCost) : null,
         });
       } catch (error) {
         noteSwallowed('registries.dumpSkillRecipes', error);
@@ -930,4 +1018,396 @@ function dumpItemCosts(
     noteSwallowed('registries.dumpItemCosts', error);
     return [];
   }
+}
+
+/**
+ * An item as the dump prices it: what it is, and what it is worth.
+ *
+ * Shared by the three product shapes below because an unpriced product is the
+ * same failure as an unpriced input — it defaults to zero, and zero is the
+ * wrong direction in every chain it appears in.
+ */
+interface PricedItem {
+  itemId: string;
+  name: string;
+  sellsFor: number;
+  sellsForCurrencyId: string;
+}
+
+/** The item shape these dumpers read: an id, a name, and a sale price. */
+type ProductItem = {
+  id: string;
+  name: string;
+  sellsFor?: { quantity: number; currency: { id: string } };
+};
+
+/** Reads the four scalars above off one item, naming its own failures. */
+function priceItem(item: ProductItem): PricedItem {
+  return {
+    itemId: item.id,
+    name: safeText('registries.productItemName', () => item.name),
+    sellsFor: safeNumber('registries.productItemSellsFor', () => item.sellsFor?.quantity ?? 0, 0),
+    sellsForCurrencyId: safeText(
+      'registries.productItemCurrency',
+      () => item.sellsFor?.currency.id ?? '',
+    ),
+  };
+}
+
+/**
+ * One tier of a Herblore recipe's potion.
+ *
+ * A Herblore recipe is not a recipe for *a* potion. `HerbloreRecipe.potions` is
+ * `[PotionItem, PotionItem, PotionItem, PotionItem]` (herblore.d.ts:9) — four
+ * items of ascending strength off one ingredient list, and which one a cast
+ * produces is decided by mastery, not by the recipe. Flattening that to a
+ * single `productId` would have to pick a tier, and any pick is wrong about the
+ * other three; picking none is what left all 72 rows blank.
+ */
+interface TieredProduct extends PricedItem {
+  /** `PotionItem.tier` (item.d.ts:373), a `HerbloreTier` of 0..3. */
+  tier: number;
+  /**
+   * The mastery level that unlocks this tier.
+   *
+   * `Herblore.tierMasteryLevels` (herblore.d.ts:78) indexed by tier. Without it
+   * the four rows read as four things obtainable now when three of them are
+   * gated — the same overstatement as offering a locked recipe as a candidate.
+   */
+  masteryLevelRequired: number;
+  /** `PotionItem.charges` (item.d.ts:370): actions one potion covers. */
+  charges: number;
+  /** `PotionItem.action` (item.d.ts:372) — the skill action it applies to. */
+  actionId: string;
+  actionName: string;
+}
+
+/**
+ * The four potions a Herblore recipe can make, with the gate on each.
+ *
+ * @param potions - `HerbloreRecipe.potions`, or undefined for any other skill.
+ * @param tierMasteryLevels - `Herblore.tierMasteryLevels`; a tier with no entry
+ *   records 0, which reads as ungated rather than as a level invented here.
+ * @returns One row per tier, in tier order.
+ */
+export function dumpTieredProducts(
+  potions:
+    | readonly (ProductItem & {
+        tier?: number;
+        charges?: number;
+        action?: { id: string; name: string };
+      })[]
+    | undefined,
+  tierMasteryLevels: readonly number[],
+): TieredProduct[] {
+  if (potions === undefined || potions === null) return [];
+
+  const out: TieredProduct[] = [];
+  for (const [index, potion] of potions.entries()) {
+    try {
+      // `tier` is read off the potion rather than taken from the array index:
+      // the two agree today, and if they ever stop agreeing the item's own
+      // answer is the one `tierMasteryLevels` is indexed by.
+      const tier = safeNumber('registries.potionTier', () => potion.tier ?? index, index);
+      out.push({
+        ...priceItem(potion),
+        tier,
+        masteryLevelRequired: safeNumber(
+          'registries.potionTierMastery',
+          () => tierMasteryLevels[tier] ?? 0,
+          0,
+        ),
+        charges: safeNumber('registries.potionCharges', () => potion.charges ?? 0, 0),
+        actionId: safeText('registries.potionActionId', () => potion.action?.id ?? ''),
+        actionName: safeText('registries.potionActionName', () => potion.action?.name ?? ''),
+      });
+    } catch (error) {
+      noteSwallowed('registries.dumpTieredProducts', error);
+      // One unreadable tier is dropped; the other three are still true.
+    }
+  }
+  return out;
+}
+
+/**
+ * A product that only sometimes appears.
+ *
+ * Firemaking's yield is not the log — the log is what burns. `FiremakingLog`
+ * carries `primaryProducts` (firemakingTicks.d.ts:37) and `secondaryProducts`
+ * (:39), and `Firemaking.getPrimaryProductInfo` (:149) /
+ * `getSecondaryProductInfo` (:156) say what each pays *and how often*. Recorded
+ * as a plain product the chance term vanishes, and a drop landing one burn in
+ * twenty prices identically to one landing every time — the overstatement
+ * `productChanceFor` already exists to stop for Cooking and Fishing.
+ */
+interface ChanceProduct extends PricedItem {
+  /** Which of the two lists this came from; they roll independently. */
+  role: 'primary' | 'secondary';
+  /**
+   * The game's own chance figure, recorded verbatim.
+   *
+   * `FiremakingProduct.chance` (firemakingTicks.d.ts:62) comes from
+   * `ItemChanceData.chance` (item.d.ts:162), and neither states its units. It is
+   * not normalised here because a conversion made on a guess is indelible: a
+   * consumer that divides by 100 can be corrected later, a dump that already
+   * divided cannot be told apart from one that did not.
+   */
+  chance: number;
+  quantity: number;
+}
+
+/** The skill-side accessors `dumpChanceProducts` needs, and nothing else. */
+interface ChanceProductSkill {
+  getPrimaryProductInfo?: (item: object, action: object) => { chance: number; quantity: number };
+  getSecondaryProductInfo?: (item: object, action: object) => { chance: number; quantity: number };
+  defaultPrimaryProducts?: readonly ProductItem[];
+  defaultSecondaryProducts?: readonly ProductItem[];
+}
+
+/**
+ * Every product a Firemaking log can yield, with the odds on each.
+ *
+ * `getPrimaryProductInfo` takes the item *and* the log, so unlike
+ * `Firemaking.actionInterval` it answers while nothing is selected — which is
+ * the only state this dumper ever runs in.
+ *
+ * @param log - The recipe, for its two product lists and to pass back to the
+ *   accessors. Undefined for any recipe that is not a Firemaking log.
+ * @param skill - The Firemaking skill instance.
+ * @returns Primary products then secondary ones, each tagged with its role.
+ */
+export function dumpChanceProducts(
+  log:
+    | { primaryProducts?: readonly ProductItem[]; secondaryProducts?: readonly ProductItem[] }
+    | undefined,
+  skill: ChanceProductSkill,
+): ChanceProduct[] {
+  if (log === undefined || log === null) return [];
+
+  const out: ChanceProduct[] = [];
+
+  const collect = (
+    role: 'primary' | 'secondary',
+    listed: readonly ProductItem[] | undefined,
+    fallback: readonly ProductItem[] | undefined,
+    read: ((item: object, action: object) => { chance: number; quantity: number }) | undefined,
+  ): void => {
+    // A log naming no products of its own takes the skill's, which the typings
+    // describe as "the default primary products logs should have"
+    // (firemakingTicks.d.ts:117-120). Consulted only when the log's own list is
+    // empty, so the two can never be counted together.
+    const items = listed !== undefined && listed.length > 0 ? listed : (fallback ?? []);
+
+    for (const item of items) {
+      try {
+        const info = read?.(item, log as object);
+        out.push({
+          ...priceItem(item),
+          role,
+          chance: safeNumber(`registries.firemaking.${role}Chance`, () => info?.chance, 0),
+          quantity: safeNumber(`registries.firemaking.${role}Quantity`, () => info?.quantity, 0),
+        });
+      } catch (error) {
+        noteSwallowed('registries.dumpChanceProducts', error);
+        // A product that will not describe itself is dropped rather than
+        // recorded at chance zero, which reads as "this never drops".
+      }
+    }
+  };
+
+  collect(
+    'primary',
+    log.primaryProducts,
+    skill.defaultPrimaryProducts,
+    skill.getPrimaryProductInfo?.bind(skill),
+  );
+  collect(
+    'secondary',
+    log.secondaryProducts,
+    skill.defaultSecondaryProducts,
+    skill.getSecondaryProductInfo?.bind(skill),
+  );
+
+  return out;
+}
+
+/**
+ * `AltMagicProductionID`, spelled out as literals.
+ *
+ * The enum is a plain `declare enum` (altMagic.d.ts:28-37), so the runtime
+ * bundle may carry no value for it and `AltMagicProductionID.GP` can be
+ * `undefined` at the moment this runs. `candidates.ts` already writes the two it
+ * needs as bare `-1` and `-2` for exactly that reason; this is the same
+ * decision applied to all eight, with the numbers taken from the declaration
+ * rather than from memory.
+ */
+const ALT_MAGIC_PRODUCTION_NAMES = new Map<number, string>([
+  [-1, 'GP'],
+  [-2, 'Bar'],
+  [-3, 'RandomGem'],
+  [-4, 'RandomSuperiorGem'],
+  [-5, 'PerfectFood'],
+  [-6, 'RandomShards'],
+  [-7, 'MagicXP'],
+  [-8, 'AbyssalMagicXP'],
+]);
+
+/** `AltMagicConsumptionID`, spelled out for the same reason (altMagic.d.ts:19-27). */
+const ALT_MAGIC_CONSUMPTION_NAMES = new Map<number, string>([
+  [-1, 'AnyItem'],
+  [-2, 'JunkItem'],
+  [-3, 'BarIngredientsWithCoal'],
+  [-4, 'BarIngredientsWithoutCoal'],
+  [-5, 'None'],
+  [-6, 'AnySuperiorGem'],
+  [-7, 'AnyNormalFood'],
+]);
+
+/**
+ * What an Alt Magic spell produces.
+ *
+ * `AltMagicSpell.produces` (altMagic.d.ts:75) is `AltMagicProductionID | AnyItem`:
+ * sometimes a real item, and sometimes a sentinel standing for a whole class of
+ * outcome — GP, whichever bar the Superheat selection names, a random gem. A
+ * dumper looking only for `product` found neither, so all 26 spells recorded a
+ * blank product and read as producing nothing at all.
+ *
+ * `kind` is the sentinel's name, or `Item` when the spell names one, so the two
+ * cases are told apart by a stated value rather than by whether `itemId`
+ * happens to be empty.
+ */
+interface AltMagicProduction extends PricedItem {
+  kind: string;
+  /**
+   * `AltMagicSpell.productionRatio` (altMagic.d.ts:76).
+   *
+   * The multiplier `getAlchemyGP` (:162) takes, and the reason a spell's payout
+   * cannot be read off the produced item alone.
+   */
+  productionRatio: number;
+}
+
+/**
+ * The product side of an Alt Magic spell, or null for any other skill.
+ *
+ * @param produces - `AltMagicSpell.produces`; undefined on a non-spell.
+ * @param productionRatio - `AltMagicSpell.productionRatio`.
+ * @returns The production shape, or null when the recipe is not a spell.
+ */
+export function dumpAltMagicProduction(
+  produces: unknown,
+  productionRatio: number | undefined,
+): AltMagicProduction | null {
+  if (produces === undefined || produces === null) return null;
+
+  const ratio = safeNumber('registries.altMagicProductionRatio', () => productionRatio ?? 1, 1);
+
+  if (typeof produces === 'number') {
+    const kind = ALT_MAGIC_PRODUCTION_NAMES.get(produces);
+    if (kind === undefined) {
+      // A sentinel this file has never heard of is recorded by its number
+      // rather than dropped: a spell missing from the section is the failure
+      // this whole change exists to end, and a new production id is a game
+      // update, which is precisely when someone needs to see it.
+      recordFallback('registries.altMagicProduces', `unknown production id ${produces}`);
+    }
+    return {
+      kind: kind ?? `Unknown(${produces})`,
+      itemId: '',
+      name: '',
+      sellsFor: 0,
+      sellsForCurrencyId: '',
+      productionRatio: ratio,
+    };
+  }
+
+  return { ...priceItem(produces as ProductItem), kind: 'Item', productionRatio: ratio };
+}
+
+/**
+ * A cost expressed as a class of item rather than as an item.
+ *
+ * `AltMagicSpell.specialCost` (altMagic.d.ts:74) is what makes Item Alchemy and
+ * Superheat castable at all: `type` is an `AltMagicConsumptionID` naming a
+ * *category* — any item, any junk item, a Smithing recipe's ingredients — and
+ * `quantity` is how many of it a cast destroys. No item list can hold that, so
+ * `itemCosts` and `fixedItemCosts` both record nothing and the spell reads as
+ * costing only its runes. The executor already branches on this field to decide
+ * what to feed a spell; the dump could not say it existed.
+ */
+interface AltMagicSpecialCost {
+  /** The `AltMagicConsumptionID` name, or `Unknown(n)` for an unmapped one. */
+  consumes: string;
+  quantity: number;
+  /**
+   * `AltMagicSpecialCost.currency` (altMagic.d.ts:46), when present.
+   *
+   * Documented on the data side as restricting consumption to items that sell
+   * for that currency (altMagic.d.ts:40-41), so it narrows the category rather
+   * than pricing it.
+   */
+  currencyId: string;
+}
+
+/**
+ * The special-cost half of an Alt Magic spell, or null when it has none.
+ *
+ * A quantity of zero is a spell that consumes no item — the executor's own test
+ * for whether a selection is needed. It is recorded rather than flattened to
+ * null so that "consumes nothing" stays distinguishable from "this row is not a
+ * spell", which is the distinction the blank rows destroyed.
+ *
+ * @param specialCost - `AltMagicSpell.specialCost`; undefined on a non-spell.
+ * @returns The cost class and quantity, or null when the recipe is not a spell.
+ */
+export function dumpAltMagicSpecialCost(
+  specialCost: { type?: unknown; quantity?: number; currency?: { id: string } } | undefined,
+): AltMagicSpecialCost | null {
+  if (specialCost === undefined || specialCost === null) return null;
+
+  const type = specialCost.type;
+  let consumes = '';
+  if (typeof type === 'number') {
+    const name = ALT_MAGIC_CONSUMPTION_NAMES.get(type);
+    if (name === undefined) {
+      recordFallback('registries.altMagicConsumes', `unknown consumption id ${type}`);
+    }
+    consumes = name ?? `Unknown(${type})`;
+  }
+
+  return {
+    consumes,
+    quantity: safeNumber('registries.altMagicSpecialCostQty', () => specialCost.quantity ?? 0, 0),
+    currencyId: safeText(
+      'registries.altMagicSpecialCostCurrency',
+      () => specialCost.currency?.id ?? '',
+    ),
+  };
+}
+
+/**
+ * The one log a burn consumes.
+ *
+ * `FiremakingLog.log` (firemakingTicks.d.ts:34) is a bare `AnyItem`, not an
+ * item/quantity pair, so a burn consumes exactly one of it — one is the only
+ * reading the field admits, not a number chosen here. Recorded as an ordinary
+ * `itemCosts` entry because that is what it is: left out, every log is a free
+ * input and Firemaking prices as pure profit against chains that pay for their
+ * materials.
+ *
+ * The game's own `getCurrentRecipeCosts()` (firemakingTicks.d.ts:138) would be
+ * authoritative and is useless here — it prices the *selected* recipe, and this
+ * dumper runs with nothing selected. `candidates.ts` reads `log` directly for
+ * the same reason.
+ *
+ * @param log - `FiremakingLog.log`; undefined for any other recipe.
+ * @returns A one-entry cost list, or empty when there is no log.
+ */
+export function dumpBurntLog(
+  log: { id: string; name: string } | undefined,
+): { itemId: string; name: string; quantity: number }[] {
+  if (log === undefined || log === null) return [];
+  return [
+    { itemId: log.id, name: safeText('registries.firemakingLogName', () => log.name), quantity: 1 },
+  ];
 }

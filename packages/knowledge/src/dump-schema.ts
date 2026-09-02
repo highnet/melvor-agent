@@ -422,11 +422,109 @@ export const knowledgeDumpSchema = z.object({
        */
       currencyRewards: z.array(currencyQuantitySchema).default([]),
       itemRewards: z.array(itemQuantitySchema).default([]),
+      /**
+       * The single product, where the recipe has one.
+       *
+       * Three skills do not. Alt Magic, Herblore and Firemaking store what they
+       * make under names this shape cannot hold, so 131 rows carried an empty
+       * `productId` and a `productSellsFor` of 0 — identical to an Agility
+       * obstacle, which really does produce no item. The three fields below say
+       * what each of them actually is; a row with a blank `productId` and all
+       * three of them empty is the honest "produces nothing".
+       */
       productId: z.string(),
       productName: z.string(),
       baseQuantity: z.number(),
       productSellsFor: z.number().nonnegative(),
       productSellsForCurrencyId: z.string(),
+      /**
+       * Herblore's four potions, which are not one product.
+       *
+       * `HerbloreRecipe.potions` is four items of ascending strength off one
+       * ingredient list, and mastery decides which a cast makes. Naming a
+       * single `productId` would have to pick a tier, and every pick is wrong
+       * about the other three — so all four are recorded with the mastery level
+       * that gates each. Empty for every other skill.
+       */
+      tieredProducts: z
+        .array(
+          z.object({
+            itemId: z.string(),
+            name: z.string(),
+            /** 0..3, read off the potion rather than its position. */
+            tier: z.number().nonnegative(),
+            /** `Herblore.tierMasteryLevels[tier]`; 0 means no recorded gate. */
+            masteryLevelRequired: z.number().nonnegative(),
+            /** Actions one potion covers, which decides how many a run needs. */
+            charges: z.number().nonnegative(),
+            actionId: z.string(),
+            actionName: z.string(),
+            sellsFor: z.number().nonnegative(),
+            sellsForCurrencyId: z.string(),
+          }),
+        )
+        .default([]),
+      /**
+       * Firemaking's products, which are not guaranteed.
+       *
+       * A burn rolls for its primary and secondary products, so recording them
+       * as products flat would price a drop landing one burn in twenty exactly
+       * like one landing every time. `chance` is the game's own figure in the
+       * game's own units — the typings state none, so it is left unnormalised
+       * rather than divided on a guess. Empty for every other skill.
+       */
+      chanceProducts: z
+        .array(
+          z.object({
+            itemId: z.string(),
+            name: z.string(),
+            /** The two lists roll independently. */
+            role: z.enum(['primary', 'secondary']),
+            chance: z.number().nonnegative(),
+            quantity: z.number().nonnegative(),
+            sellsFor: z.number().nonnegative(),
+            sellsForCurrencyId: z.string(),
+          }),
+        )
+        .default([]),
+      /**
+       * What an Alt Magic spell makes, item or otherwise.
+       *
+       * `AltMagicSpell.produces` is an item on some spells and a sentinel for a
+       * class of outcome on others — GP, a bar, a random gem — so `kind` names
+       * which, and `itemId` is filled only when `kind` is `Item`. Null for every
+       * other skill. `productionRatio` is the multiplier the payout scales by
+       * and is the reason a spell cannot be priced off its product alone.
+       */
+      altMagicProduction: z
+        .object({
+          kind: z.string(),
+          itemId: z.string(),
+          name: z.string(),
+          sellsFor: z.number().nonnegative(),
+          sellsForCurrencyId: z.string(),
+          productionRatio: z.number(),
+        })
+        .nullable()
+        .default(null),
+      /**
+       * The item class an Alt Magic cast destroys.
+       *
+       * Item Alchemy consumes "any item", Superheat "a bar recipe's
+       * ingredients". Neither is an item list, so `itemCosts` and
+       * `fixedItemCosts` are both empty and the spell reads as costing only its
+       * runes. A `quantity` of 0 is a spell that consumes nothing, which is a
+       * different fact from this being null — null means the row is not a spell.
+       */
+      altMagicSpecialCost: z
+        .object({
+          consumes: z.string(),
+          quantity: z.number().nonnegative(),
+          /** Present only where the cost is restricted by sale currency. */
+          currencyId: z.string(),
+        })
+        .nullable()
+        .default(null),
     }),
   ),
   shopPurchases: z.array(

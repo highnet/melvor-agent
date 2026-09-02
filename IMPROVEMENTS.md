@@ -356,8 +356,27 @@ Township summary reported 0% health while the repair reflex correctly computed
       levels but cannot calibrate a threshold on equipment bonuses.
 - [x] **No drop has a quantity, and no currency drop is recorded** — M. The dump
       currently says the agent's main GP source yields nothing.
-- [ ] **Alt Magic, Herblore and Firemaking store product and cost under names the
-      generic dumper does not read** — M. 131 blank rows.
+- [x] **Alt Magic, Herblore and Firemaking store product and cost under names the
+      generic dumper does not read** — M. 131 blank rows, each of which read
+      exactly like an Agility obstacle — a recipe that genuinely produces
+      nothing. None of the three is a single-product recipe, so none was forced
+      into that shape. Alt Magic's `produces` (altMagic.d.ts:75) is
+      `AltMagicProductionID | AnyItem` — an item on some spells, a currency
+      sentinel on others — recorded as `altMagicProduction` with the sentinel
+      *named* rather than left as a bare number, and its `specialCost` (:74),
+      which names a *class* of item no cost list can hold, as
+      `altMagicSpecialCost`. Herblore's `potions` (herblore.d.ts:9) is four
+      items off one ingredient list, gated by `tierMasteryLevels` (:78): all
+      four are recorded with the level that unlocks each, because naming one
+      would be wrong about the other three. Firemaking's drops are chance-gated
+      through `getPrimaryProductInfo` / `getSecondaryProductInfo`
+      (firemakingTicks.d.ts:149, 156), so they carry the game's own chance and
+      quantity; its input — `FiremakingLog.log` (:34), which is not an
+      `itemCosts` entry — is now charged, so a log is no longer a free input.
+      The two enums are spelled out as literals: both are plain `declare enum`s
+      (altMagic.d.ts:19-27, 28-37) that the runtime bundle may carry no value
+      for, and an id neither map knows is kept as `Unknown(n)` against a
+      counted fallback rather than dropped.
 - [x] **384 recipes report `baseExperience: 0`** — S. Abyssal content, whose XP
       lives in `baseAbyssalExperience`.
 - [x] **Agility build costs are recorded as per-action inputs** — M. A one-time
