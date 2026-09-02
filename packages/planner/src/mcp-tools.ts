@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { levelsPerHour } from '@melvor-agent/shared';
 import { evaluateGoals, goalsAdvancedBy, loadGoals, nextRung, renderGoals } from './goals.js';
 import { appendDailyNote, loadMemory, searchEpisodic } from './memory.js';
-import { controlRate, measureProgress } from './progress.js';
+import { controlRate, measureAgainstClaim, measureProgress } from './progress.js';
 import type { Store } from './store.js';
 
 /**
@@ -78,6 +78,31 @@ export const TOOLS: Record<string, ToolHandler> = {
       `Run state: ${report.runState}${report.blockedReason === null ? '' : ` — BLOCKED: ${report.blockedReason}`}`,
       `Connected: ${age !== null && age < 15_000} (last report ${age}ms ago)`,
       progress === null ? 'Progress: not enough samples yet.' : `Progress: ${progress.detail}`,
+      // The rate this activity is actually delivering, against the rate its
+      // candidate advertised. Every rate error this session was found by an
+      // operator noticing a number looked wrong, after hours had been planned
+      // around it; the service was already measuring the truth and had no way
+      // to line it up against the claim.
+      ...(() => {
+        const skillId = s.activeAction?.id;
+        if (skillId === undefined) return [];
+
+        const claimed =
+          report.candidates.find((c) => (c.params as { skillId?: string }).skillId === skillId)
+            ?.xpPerHour ?? null;
+
+        const measured = measureAgainstClaim(report.quality, skillId, claimed);
+        if (measured === null) return [];
+
+        const ratio =
+          measured.ratio === null
+            ? 'nothing was advertised to compare against'
+            : `${Math.round(measured.ratio * 100)}% of the ${Math.round(claimed ?? 0).toLocaleString()} xp/h advertised`;
+
+        return [
+          `Delivering: ${Math.round(measured.realisedXpPerHour).toLocaleString()} xp/h over ${measured.hours.toFixed(1)}h — ${ratio}`,
+        ];
+      })(),
       // "none" and "nothing" are what a stalled agent shows and also what a
       // healthy one shows for the second or two between plan steps. Naming the
       // queue separates them; without it, three snapshots this morning were

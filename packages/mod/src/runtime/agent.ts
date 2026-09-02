@@ -1785,6 +1785,11 @@ export class Agent {
       totalLevel: snapshot.totalLevel,
       completionPercent: snapshot.completionPercent,
       gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+      // What produced the progress, so a realised rate can be compared against
+      // the rate the candidate advertised. Without it a sample records that
+      // progress happened and not what caused it.
+      activeSkillId: snapshot.activeAction?.id,
+      activeSkillXp: snapshot.skills.find((skill) => skill.id === snapshot.activeAction?.id)?.xp,
     });
     // 48h of minute samples is plenty to compare a planner change against the
     // control condition of one skill left running.

@@ -175,3 +175,57 @@ export function controlRate(
 
   return projectedLevel - currentLevel;
 }
+
+/**
+ * What the current activity is actually delivering, against what it claimed.
+ *
+ * Every rate error this session was found by hand: an operator noticed a number
+ * looked wrong, and hours of work had already been planned around it. Crystal
+ * advertised 120,000 GP/h and delivered about 10,800; Agility advertised 21
+ * levels/h and delivered 6; Thieving advertised nothing at all and was worth
+ * more than most of the board. In each case the service was already measuring
+ * the truth and had no way to line it up against the claim.
+ *
+ * The comparison needs one skill's samples, not the whole window: total level
+ * mixes every skill together, so a fast skill hides a slow one. Samples now
+ * carry the skill that produced them, which makes the join possible.
+ *
+ * Returns null rather than a zero when there is too little to say. A confident
+ * "0% of advertised" from two samples thirty seconds apart would be exactly the
+ * kind of number this exists to catch.
+ */
+export function measureAgainstClaim(
+  samples: readonly QualitySample[],
+  skillId: string,
+  advertisedXpPerHour: number | null,
+): { realisedXpPerHour: number; ratio: number | null; hours: number } | null {
+  const matching = samples.filter(
+    (sample) => sample.activeSkillId === skillId && sample.activeSkillXp !== undefined,
+  );
+
+  const first = matching[0];
+  const last = matching[matching.length - 1];
+  if (first === undefined || last === undefined || first === last) return null;
+
+  const hours = (last.at - first.at) / 3_600_000;
+  if (hours < MIN_CLAIM_HOURS) return null;
+
+  const gained = (last.activeSkillXp ?? 0) - (first.activeSkillXp ?? 0);
+  if (gained < 0) return null;
+
+  const realisedXpPerHour = gained / hours;
+  const ratio =
+    advertisedXpPerHour !== null && advertisedXpPerHour > 0
+      ? realisedXpPerHour / advertisedXpPerHour
+      : null;
+
+  return { realisedXpPerHour, ratio, hours };
+}
+
+/**
+ * Minimum window before a realised rate is worth reporting.
+ *
+ * Short enough to catch an order-of-magnitude error within one objective, long
+ * enough that a single slow action does not read as a broken model.
+ */
+const MIN_CLAIM_HOURS = 0.25;

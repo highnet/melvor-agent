@@ -138,7 +138,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **"Output worth if sold" satisfies GP goals** — S. `goals.ts` treats
       `gpPerHour > 0` as earning money, so mining a gem "advances" a GP goal while
       moving GP by exactly zero. Split the two fields.
-- [ ] **Realised rates are never compared against advertised ones** *(3×)* — M.
+- [x] **Realised rates are never compared against advertised ones** *(3×)* — M.
       The one mechanism that would have caught every other rate bug on this list.
       Needs `skillId`/`recipeId` on `QualitySample`.
 - [ ] **Whether `getDoublingChance` is already inside

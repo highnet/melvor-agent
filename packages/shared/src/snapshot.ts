@@ -214,5 +214,19 @@ export const qualitySampleSchema = z.object({
   totalLevel: z.number().int().nonnegative(),
   completionPercent: z.number().nonnegative(),
   gp: z.number().nonnegative(),
+  /**
+   * What was being done, and how far that skill had got.
+   *
+   * Without these a sample records that progress happened, not what produced
+   * it -- so there was no way, even in principle, to say "Crystal advertised
+   * 120,000 GP/h and delivered 10,800". Every rate error this session had to be
+   * found by hand, one at a time, by an operator noticing a number looked
+   * wrong.
+   *
+   * Optional because samples predate the fields and a sample missing them is
+   * still a valid measure of total progress.
+   */
+  activeSkillId: z.string().optional(),
+  activeSkillXp: z.number().nonnegative().optional(),
 });
 export type QualitySample = z.infer<typeof qualitySampleSchema>;
