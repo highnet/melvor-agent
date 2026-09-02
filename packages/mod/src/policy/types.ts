@@ -38,9 +38,11 @@ export type PolicyAction =
   | { type: 'select_spell'; spellId: string }
   | { type: 'build_township'; buildingId: string; biomeId: string }
   | { type: 'repair_township'; buildingId: string; biomeId: string }
+  | { type: 'repair_all_township' }
   | { type: 'survey_hex' }
   | { type: 'excavate_dig_site'; digSiteId: string }
   | { type: 'select_dig_map'; digSiteId: string; mapIndex: number }
+  | { type: 'create_dig_map'; digSiteId: string }
   | { type: 'select_dig_tool'; digSiteId: string; toolId: string }
   | { type: 'advance_raid'; difficulty: string }
   | { type: 'stop_raid' }

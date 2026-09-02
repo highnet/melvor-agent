@@ -190,6 +190,86 @@ export function repairTownshipBuilding(
 /** Efficiency below which a building is worth spending resources to repair. */
 const REPAIR_THRESHOLD = 90;
 
+/** Total efficiency across every built building, and how many are degraded. */
+interface RepairProjection {
+  degraded: number;
+  totalEfficiency: number;
+}
+
+/**
+ * Sums efficiency across the town.
+ *
+ * A total rather than an average, because an average moves when a building is
+ * added as well as when one is repaired, and this is the evidence a repair
+ * actually happened.
+ */
+function projectRepairs(): RepairProjection {
+  const township = game.township;
+  let degraded = 0;
+  let totalEfficiency = 0;
+
+  for (const biome of township.biomes.allObjects) {
+    if (!township.isBiomeUnlocked(biome)) continue;
+    for (const building of biome.availableBuildings) {
+      if (biome.getBuildingCount(building) <= 0) continue;
+      const efficiency = biome.getBuildingEfficiency(building);
+      totalEfficiency += efficiency;
+      if (efficiency < REPAIR_THRESHOLD) degraded += 1;
+    }
+  }
+
+  return { degraded, totalEfficiency };
+}
+
+/**
+ * Repairs every degraded building the town can pay for, in one call.
+ *
+ * Repairing one building at a time is how this was reachable before, and it
+ * scales badly in exactly the wrong direction: the town grows, so the number of
+ * decisions grows, while each one costs a policy tick and the buildings not yet
+ * reached keep producing at reduced efficiency the whole time. The game ships
+ * the batch operation its own UI uses.
+ *
+ * `getTotalRepairCosts` prices the whole batch and `canAffordRepairAllCosts`
+ * answers whether the town can pay for it — asked in that order, so nothing is
+ * attempted that the town cannot complete.
+ *
+ * One thing the typings do not state: `repairAllBuildings` is documented as
+ * "Callback function for the Repair All button", and there is a separate
+ * `onRepairAllBuildings` beside it, so which of the two raises a confirmation
+ * is unknown from the typings alone. That is precisely why the verdict here is
+ * the efficiency total either side rather than the call returning — a
+ * confirmation nobody answers shows up as `no_state_change` and is reported,
+ * not believed.
+ */
+export function repairAllTownshipBuildings(
+  isSuspended: () => boolean,
+): ActionResult<RepairProjection> {
+  const township = game.township;
+
+  return act(
+    {
+      name: 'township.repairAll',
+      observe: projectRepairs,
+      precondition: () => {
+        if (!township.townData.townCreated) return 'the town has not been created yet';
+
+        const costs = township.getTotalRepairCosts();
+        if (costs.size === 0) return 'nothing in the town is degraded';
+        if (!township.canAffordRepairAllCosts(costs)) {
+          // `not_yet`, not a refusal: the town regenerates every hour, so this
+          // resolves without anyone intervening.
+          return { wait: 'the town cannot yet afford to repair everything; it regenerates hourly' };
+        }
+        return null;
+      },
+      perform: () => township.repairAllBuildings(),
+      changed: (before, after) => after.totalEfficiency > before.totalEfficiency,
+    },
+    isSuspended,
+  );
+}
+
 /**
  * What the town could usefully do right now.
  *
@@ -254,7 +334,7 @@ export function readTownshipCandidates(): Candidate[] {
         candidates.push({
           kind: 'build_township',
           params: { kind: 'build_township', buildingId: building.id, biomeId: biome.id },
-          label: `Build ${building.name} in ${biome.name} (${count} built${effect})`,
+          label: `Build ${building.name} in ${biome.name} (${count} built${effect}${describeBuildTarget(building, biome)})`,
           available: true,
         });
       } catch {
@@ -263,7 +343,63 @@ export function readTownshipCandidates(): Candidate[] {
     }
   }
 
+  // One entry for the whole town, offered only when there is more than one
+  // building to fix. Below that it is the same action as the single repair
+  // above with a vaguer label, and two ways to say the same thing is how a
+  // planner ends up choosing by wording.
+  try {
+    const degraded = projectRepairs().degraded;
+    const costs = township.getTotalRepairCosts();
+    if (degraded > 1 && costs.size > 0 && township.canAffordRepairAllCosts(costs)) {
+      candidates.push({
+        kind: 'repair_all_township',
+        params: { kind: 'repair_all_township' },
+        label: `Repair all ${degraded} degraded buildings at once — a degraded building costs its full upkeep and produces less, and repairing them one at a time leaves the rest producing at a discount meanwhile`,
+        available: true,
+      });
+    }
+  } catch {
+    // A town that cannot price a full repair is not offered one.
+  }
+
   return candidates;
+}
+
+/**
+ * What one more of this building actually buys.
+ *
+ * "Build a hut" is not a decision anyone can weigh; "build 3 more huts and the
+ * town levels up" is. Township level is the gate on biomes, on building tiers
+ * and on the skilling outfits the whole skill is worth playing for, so the
+ * distance to the next one is the number that makes a build worth ranking
+ * against a fishing rate — and it was the one number the label never carried.
+ *
+ * The affordable quantity rides along because it bounds the answer: three more
+ * needed and one affordable is a different plan from three and three.
+ */
+function describeBuildTarget(building: TownshipBuilding, biome: TownshipBiome): string {
+  const township = game.township;
+  const parts: string[] = [];
+
+  try {
+    const remaining = township.getBuildingCountRemainingForLevelUp(building, biome);
+    if (Number.isFinite(remaining) && remaining > 0) {
+      parts.push(`${remaining} more here reaches the next Township level`);
+    }
+  } catch {
+    // A building that cannot answer contributes nothing to the label.
+  }
+
+  try {
+    const affordable = township.getMaxAffordableBuildingQty(building, biome);
+    if (Number.isFinite(affordable) && affordable > 0) {
+      parts.push(`${affordable} affordable now`);
+    }
+  } catch {
+    // Same.
+  }
+
+  return parts.length === 0 ? '' : `, ${parts.join(', ')}`;
 }
 
 /** The town's state, for the planner to reason about. */

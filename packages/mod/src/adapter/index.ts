@@ -155,6 +155,7 @@ export {
   readTownshipSummary,
   readRepairableBuildings,
   repairTownshipBuilding,
+  repairAllTownshipBuildings,
   type TownshipProjection,
   type TownshipSummary,
 } from './township.js';
@@ -215,6 +216,7 @@ export {
   toggleCurse,
 } from './loadout.js';
 export {
+  createDigSiteMap,
   excavateDigSite,
   readDigSiteSetupCandidates,
   readExplorationCandidates,

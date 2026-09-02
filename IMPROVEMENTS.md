@@ -167,14 +167,14 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **The blocked list discards its rates and never links a missing input to the
       candidate that produces it** — M. That single join turns it into a chain
       planner.
-- [ ] **The queued plan is invisible** — M. Only a count is reported, so staleness
+- [x] **The queued plan is invisible** — M. Only a count is reported, so staleness
       cannot be detected and revision is all-or-nothing.
-- [ ] **`nextRung` is dead code** — S. Exported, imported, never called — so
+- [x] **`nextRung` is dead code** — S. Exported, imported, never called — so
       target levels are guesses, causing both the thrash and the timeout it was
       written to prevent.
-- [ ] **Nothing enforces a commitment floor** — M. Mastery rewards staying, and
+- [x] **Nothing enforces a commitment floor** — M. Mastery rewards staying, and
       ranking is instantaneous.
-- [ ] **Goal DAG: an unmeasurable prerequisite blocks its dependents forever**, and
+- [x] **Goal DAG: an unmeasurable prerequisite blocks its dependents forever**, and
       `requires` is skipped entirely for goals with no `done:` — S/M.
 
 ## Autonomy
@@ -223,7 +223,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [ ] **Skilling outfits score zero** — M. `statScore` sums equipment stats, and an
       outfit's value is in modifiers — so Township's entire payoff is unwearable.
 - [ ] **Potions lapse silently** — S. `toggleAutoReusePotion` is never called.
-- [ ] **Township building is one-at-a-time and upgrade-blind** — M.
+- [x] **Township building is one-at-a-time and upgrade-blind** — M.
       `getBuildingCountRemainingForLevelUp` turns it into a targeted objective.
 - [ ] **Slayer: an accepted task has no fight candidate** — M. Take a task, block
       every future task behind it, and have nothing that advances it.
@@ -232,7 +232,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       lever on four combat goals.
 - [ ] **Prayer 20 is structurally unreachable** — M. Burying and activation are
       both candidates nobody picks, and the only prayer reflex turns them *off*.
-- [ ] **Dig-site maps can be selected but never created** — M. When the last map's
+- [x] **Dig-site maps can be selected but never created** — M. When the last map's
       charges run out Archaeology vanishes with no way back, and the agent makes
       paper forever. `createNewMapForDigSite` (cartography.d.ts:389).
 - [ ] **Charged equipment burns out unnoticed** — S. `game.itemCharges` appears

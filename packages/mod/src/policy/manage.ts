@@ -110,10 +110,23 @@ export const manage: PolicyExecutor = (context: PolicyContext): PolicyDecision =
         `repairing ${params.buildingId} in ${params.biomeId}`,
       );
 
+    case 'repair_all_township':
+      // Repeatable, like building and unlike the single repair. The town
+      // degrades continuously and one call fixes only what the town could pay
+      // for at that moment, so a budgeted objective keeps catching up as
+      // resources regenerate rather than declaring the town fixed once.
+      return repeat({ type: 'repair_all_township' }, 'repairing every degraded building');
+
     case 'select_dig_map':
       return act(
         { type: 'select_dig_map', digSiteId: params.digSiteId, mapIndex: params.mapIndex },
         `selecting map ${params.mapIndex} for ${params.digSiteId}`,
+      );
+
+    case 'create_dig_map':
+      return act(
+        { type: 'create_dig_map', digSiteId: params.digSiteId },
+        `making a new map for ${params.digSiteId}`,
       );
 
     case 'travel_to_poi':

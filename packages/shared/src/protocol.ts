@@ -92,16 +92,33 @@ export const agentReportSchema = z.object({
    */
   blockedOpportunities: z.array(blockedOpportunitySchema).default([]),
   /**
-   * Steps still queued behind the current objective.
+   * The steps still queued behind the current objective, in order.
    *
-   * Exists to tell "between steps" apart from "stopped", which read
-   * identically and should not. A snapshot taken in the gap between one
-   * objective finishing and the next starting shows no objective and no active
-   * action — exactly what a stalled agent shows — and that ambiguity produced
-   * three wrong diagnoses in one morning, twice nearly undoing work that was
-   * running correctly.
+   * A count was carried here for a long time, and a count answers exactly one
+   * question: is this a gap between steps or a stop? Those read identically
+   * from outside — no objective, no active action — and that ambiguity
+   * produced three wrong diagnoses in one morning, twice nearly undoing work
+   * that was running correctly.
+   *
+   * But it cannot answer the next question, which is whether the queue is
+   * still *right*. Every step was chosen against the candidates available when
+   * the plan was written, so the further ahead it reaches the more of it was
+   * decided against state that has since moved — and with only a number, a
+   * session could neither see a stale step nor revise one. Its only lever was
+   * to replace the whole plan, which is why plans were rewritten wholesale all
+   * session. The objectives themselves make both answerable.
    */
-  planRemaining: z.number().int().nonnegative().default(0),
+  plan: z.array(objectiveSchema).default([]),
+  /**
+   * When the current objective started, in epoch milliseconds.
+   *
+   * Mastery rewards sustained use of one action and ranking is instantaneous,
+   * so the two pull against each other and nothing was measuring the pull. An
+   * objective's age is the whole evidence for churn: without it, a swap made
+   * four minutes into an hour-long objective looked exactly like one made
+   * after fifty.
+   */
+  objectiveStartedAt: z.number().int().nonnegative().nullable().default(null),
   /**
    * When the running bundle was built.
    *

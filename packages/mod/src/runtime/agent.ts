@@ -31,6 +31,7 @@ import {
   compostFarmPlot,
   convertItemToTownship,
   convertTownshipToItem,
+  createDigSiteMap,
   disengageCombat,
   dumpRegistries,
   eatFood,
@@ -116,6 +117,7 @@ import {
   readUpgradeCandidates,
   readWorshipCandidates,
   reloadGame,
+  repairAllTownshipBuildings,
   repairTownshipBuilding,
   screenByCombatLevel,
   selectAttackSpell,
@@ -1543,12 +1545,16 @@ export class Agent {
         return buildTownshipBuilding(action.buildingId, action.biomeId, isSuspended);
       case 'repair_township':
         return repairTownshipBuilding(action.buildingId, action.biomeId, isSuspended);
+      case 'repair_all_township':
+        return repairAllTownshipBuildings(isSuspended);
       case 'survey_hex':
         return surveyBestHex(isSuspended);
       case 'excavate_dig_site':
         return excavateDigSite(action.digSiteId, isSuspended);
       case 'select_dig_map':
         return selectDigSiteMap(action.digSiteId, action.mapIndex, isSuspended);
+      case 'create_dig_map':
+        return createDigSiteMap(action.digSiteId, isSuspended);
       case 'select_dig_tool':
         return selectDigSiteTool(action.digSiteId, action.toolId, isSuspended);
       case 'advance_raid': {
@@ -1918,7 +1924,10 @@ export class Agent {
       runState: this.state,
       snapshot: this.lastSnapshot,
       objective: this.settings.objective,
-      planRemaining: this.settings.plan.length,
+      // The queue itself, not a count of it. A session that can only see "3
+      // steps" cannot tell whether any of the three still matches the game.
+      plan: this.settings.plan,
+      objectiveStartedAt: this.settings.objective === null ? null : this.objectiveStartedAt,
       candidates: this.state === 'killed' ? [] : this.safeCandidates(),
       blockedOpportunities: this.state === 'killed' ? [] : this.safeBlocked(),
       buildStamp: readBuildStamp(),
@@ -2260,6 +2269,22 @@ export class Agent {
         // losing one costs however long it takes somebody to notice.
         const displaced = this.settings.objective;
 
+        // Re-issuing the objective already running is not an interruption, and
+        // treating it as one did two wrong things at once: it pushed a copy of
+        // the objective onto the plan, and it restarted the clock — so an
+        // objective re-sent every few minutes could never reach its own abort
+        // budget, and the elapsed time a commitment floor is measured against
+        // reset to zero each time. Identity is kind and params, the same test
+        // the planner uses to recognise a candidate.
+        if (displaced !== null && isSameWork(displaced, command.objective)) {
+          this.settings = { ...this.settings, objective: command.objective };
+          this.log.info(
+            'operator',
+            `objective re-stated (unchanged work, clock kept): ${command.objective.rationale}`,
+          );
+          break;
+        }
+
         this.settings = {
           ...this.settings,
           objective: command.objective,
@@ -2345,4 +2370,16 @@ export class Agent {
     this.settings = next;
     this.notify();
   }
+}
+
+/**
+ * Whether two objectives are the same work.
+ *
+ * Kind and params, which are what actually reaches a game call. Rationale and
+ * budget are the caller's framing of the same job — a session that re-states an
+ * objective in a fresh sentence has not changed what the agent is doing, and
+ * treating it as new restarts a clock that exists to bound it.
+ */
+function isSameWork(a: Objective, b: Objective): boolean {
+  return a.kind === b.kind && JSON.stringify(a.params) === JSON.stringify(b.params);
 }

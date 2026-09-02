@@ -384,6 +384,73 @@ export function selectDigSiteMap(
 }
 
 /**
+ * Creates a new map for a dig site.
+ *
+ * The missing half of Archaeology, and the reason the skill quietly disappears.
+ * Maps are consumable: each carries charges, `canExcavate` goes false when the
+ * selected map runs out, and every Archaeology candidate vanishes with it. The
+ * agent could select a map and dig with one, but nothing in the whole candidate
+ * list could make one — so it made paper indefinitely and never turned any of
+ * it into a dig, with no signal that the chain had a missing link rather than
+ * simply being unprofitable.
+ *
+ * Creation lives on Cartography rather than Archaeology, which is why it was
+ * easy to miss: `getMapCreationCosts` (cartography.d.ts:384) prices it and
+ * `createNewMapForDigSite` (cartography.d.ts:389) performs it, and the typings
+ * state the cap of three maps per dig site there while `getMaxMaps`
+ * (archaeology.d.ts:95) is the number to ask.
+ *
+ * @param digSiteId - The dig site to make a map for.
+ */
+export function createDigSiteMap(
+  digSiteId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ maps: number; charges: number }> {
+  const cartography = game.cartography;
+  if (cartography === undefined) {
+    return fail('cartography.createMap', 'precondition', 'Cartography is not installed');
+  }
+
+  const archaeology = game.archaeology;
+  if (archaeology === undefined) {
+    return fail('cartography.createMap', 'precondition', 'Archaeology is not installed');
+  }
+
+  const digSite = archaeology.actions.getObjectByID(digSiteId);
+  if (digSite === undefined) {
+    return fail('cartography.createMap', 'precondition', `no dig site ${digSiteId}`);
+  }
+
+  // Total charges as well as the count: a map arriving is the change, and the
+  // charges are what the map is actually for.
+  const project = (): { maps: number; charges: number } => ({
+    maps: digSite.maps.length,
+    charges: digSite.maps.reduce((total, map) => total + map.charges, 0),
+  });
+
+  return act(
+    {
+      name: 'cartography.createMap',
+      observe: project,
+      precondition: () => {
+        if (!digSite.isDiscovered) return `${digSiteId} has not been discovered yet`;
+        const max = digSite.getMaxMaps();
+        if (digSite.maps.length >= max) {
+          return `${digSiteId} already holds its maximum of ${max} maps`;
+        }
+        if (!cartography.getMapCreationCosts(digSite).checkIfOwned()) {
+          return `missing the materials to make a map for ${digSiteId} — paper is what maps are made from`;
+        }
+        return null;
+      },
+      perform: () => cartography.createNewMapForDigSite(digSite),
+      changed: (before, after) => after.maps > before.maps,
+    },
+    isSuspended,
+  );
+}
+
+/**
  * Turns one of a dig site's tools on.
  *
  * Tools decide *which artefact sizes* a dig can find, so digging with none
@@ -443,6 +510,24 @@ export function readDigSiteSetupCandidates(): Candidate[] {
   for (const digSite of archaeology.actions.allObjects) {
     try {
       if (!digSite.isDiscovered) continue;
+
+      // Offered whenever the site has room for another map and the materials
+      // exist, not only when it has none. A site whose last map is nearly spent
+      // is one dig away from having no candidates at all, and the recovery is
+      // to make paper and come back — a chain that takes long enough that
+      // noticing after the fact is noticing too late.
+      const cartography = game.cartography;
+      if (cartography !== undefined && digSite.maps.length < digSite.getMaxMaps()) {
+        if (cartography.getMapCreationCosts(digSite).checkIfOwned()) {
+          const charges = digSite.maps.reduce((total, map) => total + map.charges, 0);
+          candidates.push({
+            kind: 'create_dig_map',
+            params: { kind: 'create_dig_map', digSiteId: digSite.id },
+            label: `Make a map for ${digSite.name} (${digSite.maps.length}/${digSite.getMaxMaps()} maps, ${charges} charges left) — maps are consumable, and when the last one is spent Archaeology has no candidates at all`,
+            available: true,
+          });
+        }
+      }
 
       if (digSite.selectedMap === undefined) {
         const usable = digSite.maps.findIndex((map) => map.charges > 0);

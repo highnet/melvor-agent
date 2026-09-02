@@ -382,7 +382,12 @@ export class Store {
  *
  * The kind and the params, which are what the agent will actually execute.
  * Everything else in a candidate is presentation.
+ *
+ * Exported because a queued plan step is the same kind of thing: it was built
+ * by copying a candidate's kind and params verbatim, so asking whether a step
+ * is still on the list is exactly this comparison. A second implementation of
+ * "same choice" would be a second answer waiting to disagree.
  */
-function identityOf(candidate: { kind: string; params: unknown }): string {
+export function identityOf(candidate: { kind: string; params: unknown }): string {
   return `${candidate.kind}:${JSON.stringify(candidate.params)}`;
 }
