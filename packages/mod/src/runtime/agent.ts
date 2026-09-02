@@ -58,6 +58,7 @@ import {
   readCheapestExpendableStack,
   readClaimableTasks,
   readCombatGateInputs,
+  readCombatLevelScreenInputs,
   readCombatSetupCandidates,
   readCombatTargets,
   readCompostCandidates,
@@ -103,7 +104,6 @@ import {
   readSnapshot,
   readSpellCandidates,
   readSynergyCandidates,
-  readTargetCombatLevel,
   readTaskCandidates,
   readTaskOpportunities,
   readTaskWantedItemIds,
@@ -117,7 +117,6 @@ import {
   readWorshipCandidates,
   reloadGame,
   repairTownshipBuilding,
-  screenByCombatLevel,
   selectAttackSpell,
   selectDigSiteMap,
   selectDigSiteTool,
@@ -148,7 +147,11 @@ import {
   upgradeConstellation,
   usePotion,
 } from '../adapter/index.js';
-import { assessSurvivability, normaliseFraction } from '../policy/combat-gate.js';
+import {
+  assessSurvivability,
+  normaliseFraction,
+  screenByCombatSkillLevels,
+} from '../policy/combat-gate.js';
 import { progressMarker } from '../policy/criteria.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
 import { STOPGAP_DELAY_MS, chooseStopgap } from '../policy/stopgap.js';
@@ -1693,21 +1696,26 @@ export class Agent {
       // be offered as a candidate and then refused when chosen — the candidate
       // and the executor disagreeing, which is the failure this whole
       // constrained-selection design exists to prevent.
-      const combatLevel = readTargetCombatLevel(targetId);
-      if (combatLevel === null) {
+      const screenInputs = readCombatLevelScreenInputs(targetId);
+      if (screenInputs === null) {
         this.log.warn('policy', `combat gate: cannot assess ${targetId} — ${gathered.detail}`);
         return fail('combat.gate', 'precondition', gathered.detail);
       }
 
-      const screen = screenByCombatLevel(combatLevel);
+      const screen = screenByCombatSkillLevels(screenInputs);
       if (!screen.ok) {
-        this.log.warn('policy', `combat gate REFUSED ${targetId}: ${screen.detail}`);
+        this.log.warn('policy', `combat gate REFUSED ${targetId}: ${screen.detail}`, screen);
         return fail('combat.gate', 'precondition', screen.detail);
       }
 
+      // Logged with its uncertainties, not just its verdict. The screen compares
+      // levels and nothing else, so a pass means "nothing here looks lethal" —
+      // and the previous screen's real defect was presenting a bare verdict as
+      // if it were a proof.
       this.log.info(
         'policy',
-        `combat screen passed ${targetId}: ${screen.detail}. Enemy stats cannot be computed outside combat, so the live check takes over once the fight starts.`,
+        `combat screen passed ${targetId}: ${screen.detail}. Not measured: ${screen.uncertainties.join('; ')}`,
+        screen,
       );
       return null;
     }
@@ -2105,7 +2113,7 @@ export class Agent {
     const blocked: ReturnType<typeof readBlockedOpportunities> = [];
 
     for (const target of readCombatTargets()) {
-      const refusal = this.gateRefusal(target.id, target.combatLevel);
+      const refusal = this.gateRefusal(target.id);
       if (refusal !== null) {
         blocked.push({
           label: `Fight ${target.name} (combat level ${target.combatLevel}) — ${refusal}`,
@@ -2160,20 +2168,21 @@ export class Agent {
    *
    * @returns The refusal reason, or null when the fight is safe.
    */
-  private gateRefusal(targetId: string, combatLevel?: number): string | null {
+  private gateRefusal(targetId: string): string | null {
     const sessionMinutes = this.settings.objective?.abortWhen.minutesExceed ?? 30;
 
     const gathered = readCombatGateInputs(targetId, sessionMinutes);
     if (!gathered.ok) {
       // The probe cannot measure an enemy outside combat — the game's own
-      // computation returns NaN — so fall back to the conservative screen.
-      // Refusing everything instead would mean the agent never fights at all,
-      // and reimplementing the damage formulas to avoid that is exactly what
-      // the brief forbids. What keeps this honest is that the fight is verified
-      // against the live enemy the moment it starts.
-      if (combatLevel === undefined) return gathered.detail;
+      // computation returns NaN — so fall back to the level screen. Refusing
+      // everything instead would mean the agent never fights at all, and
+      // reimplementing the damage formulas to avoid that is exactly what the
+      // brief forbids. This must stay the same call the enforcing path makes,
+      // or a fight is offered as a candidate and then refused when chosen.
+      const screenInputs = readCombatLevelScreenInputs(targetId);
+      if (screenInputs === null) return gathered.detail;
 
-      const screen = screenByCombatLevel(combatLevel);
+      const screen = screenByCombatSkillLevels(screenInputs);
       return screen.ok ? null : screen.detail;
     }
 

@@ -92,7 +92,11 @@ export function executorFor(objective: Objective): PolicyExecutor | null {
 }
 
 export { buyShopUpgrade } from './buy.js';
-export { assessSurvivability, normaliseFraction } from './combat-gate.js';
+export {
+  assessSurvivability,
+  normaliseFraction,
+  screenByCombatSkillLevels,
+} from './combat-gate.js';
 export { fightMonster } from './fight.js';
 export { tendFarm } from './farm.js';
 export { gatherResource } from './gather.js';

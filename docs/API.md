@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-196 exports.
+195 exports.
 
 ## `act`
 
@@ -1179,8 +1179,38 @@ readClaimableTasks: () => { kind: "casual" | "township"; taskId: string; }[]
 
 `function`
 
+Assembles the inputs for the survivability gate.
+
+Reads only; makes no decision. The decision is `assessSurvivability`, which is
+pure and lives in the policy tier so it can be tested exhaustively.
+
+Outside combat this always fails, because {@link probeMonsterStats} always
+fails: the game's own `computeCombatStats` yields NaN for a detached enemy.
+{@link readCombatLevelScreenInputs} is what actually runs before a fight.
+
 ```ts
 readCombatGateInputs: (targetId: string, intendedSessionMinutes: number) => { ok: true; inputs: CombatGateInputs; } | { ok: false; detail: string; }
+```
+
+## `readCombatLevelScreenInputs`
+
+`function`
+
+Assembles the inputs for the level screen.
+
+Reads only. The judgement is `screenByCombatSkillLevels`, which is pure and
+lives in the policy tier so it can be tested without a game.
+
+Every monster of a dungeon is carried through rather than summarised here:
+the screen judges a target by its worst inhabitant and has to be able to name
+which one that was, or its refusals are unarguable.
+
+A monster whose levels throw is recorded by name in `unreadableMonsters`
+rather than skipped. Skipping would judge a dungeon by the monsters that
+happened to read, which is the same failure as judging it by its first.
+
+```ts
+readCombatLevelScreenInputs: (targetId: string) => CombatLevelScreenInputs | null
 ```
 
 ## `readCombatSetupCandidates`
@@ -2014,19 +2044,6 @@ are offered, and only the half that is missing from the slots.
 readSynergyCandidates: () => Candidate[]
 ```
 
-## `readTargetCombatLevel`
-
-`function`
-
-A target's combat level, for the screen.
-
-A dungeon is rated by its hardest monster, the same way the gate judges it:
-a dungeon cannot be left partway, so its worst fight is the one that decides.
-
-```ts
-readTargetCombatLevel: (targetId: string) => number | null
-```
-
 ## `readTaskCandidates`
 
 `function`
@@ -2271,14 +2288,6 @@ What selling claims to change: less of the item, more of the currency.
 
 ```ts
 SaleProjection: any
-```
-
-## `screenByCombatLevel`
-
-`function`
-
-```ts
-screenByCombatLevel: (monsterCombatLevel: number) => { ok: boolean; detail: string; }
 ```
 
 ## `selectAttackSpell`

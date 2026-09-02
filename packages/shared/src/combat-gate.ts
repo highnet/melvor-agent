@@ -79,3 +79,116 @@ export const combatGateVerdictSchema = z.object({
   }),
 });
 export type CombatGateVerdict = z.infer<typeof combatGateVerdictSchema>;
+
+/**
+ * The combat skill levels of one character — a monster or the player.
+ *
+ * The point of this type is that both sides fill it in. Melvor gives a monster
+ * `levels: Omit<CombatLevels, 'Prayer'>` (`monsters.d.ts:103`) and a character
+ * `levels: CombatLevels` (`character.d.ts:101`) — the *same* record type, so
+ * these six numbers mean the same thing on both sides and may be compared
+ * directly.
+ *
+ * That is not true of `Monster.combatLevel` (`monsters.d.ts:102`) against
+ * `Game.playerCombatLevel` (`game.d.ts:221`). Neither getter's formula appears
+ * anywhere in the typings, and the observed ranges do not overlap: `data/dump.json`
+ * holds 377 monsters whose combat levels run from 1 to 3,501,091, with a median
+ * of 465, while a character with 99 in every combat skill is around 126. The
+ * screen those two numbers used to drive refused roughly 84% of the game's
+ * monsters to a maxed character and every dungeon outright.
+ *
+ * Prayer is omitted because monsters do not have it. Corruption is omitted
+ * because `MonsterData.levels` marks it optional (`monsters.d.ts:22`), so a
+ * monster that lacks it would read as zero rather than as absent.
+ */
+export const combatSkillLevelsSchema = z.object({
+  attack: z.number().nonnegative(),
+  strength: z.number().nonnegative(),
+  defence: z.number().nonnegative(),
+  hitpoints: z.number().nonnegative(),
+  ranged: z.number().nonnegative(),
+  magic: z.number().nonnegative(),
+});
+export type CombatSkillLevels = z.infer<typeof combatSkillLevelsSchema>;
+
+/**
+ * What the level screen needs, read from the game.
+ *
+ * Every monster of the target, not a summary: a dungeon is judged by its worst
+ * inhabitant and the screen has to name which one that was, or its refusals are
+ * unactionable.
+ */
+export const combatLevelScreenInputsSchema = z.object({
+  targetId: z.string().min(1),
+  targetName: z.string(),
+  /** True when the target is a dungeon, which is screened more strictly. */
+  isDungeon: z.boolean(),
+
+  player: combatSkillLevelsSchema,
+  /**
+   * The weakest of the player's three equipment defence bonuses.
+   *
+   * Reported, never gating — see `screenByCombatSkillLevels`. `EquipmentStats`
+   * carries `meleeDefenceBonus`, `rangedDefenceBonus` and `magicDefenceBonus`
+   * (`character.d.ts:494-496`); the lowest is the one an enemy of the wrong
+   * attack type finds.
+   */
+  playerDefenceBonus: z.number(),
+
+  monsters: z
+    .array(
+      z.object({
+        name: z.string(),
+        levels: combatSkillLevelsSchema,
+        /**
+         * The highest of this monster's equipment damage bonuses, from
+         * `Monster.equipmentStats` (`monsters.d.ts:104`). Reported, never gating.
+         */
+        strengthBonus: z.number(),
+      }),
+    )
+    .min(1),
+
+  /** Monsters of the target whose levels could not be read at all, by name. */
+  unreadableMonsters: z.array(z.string()),
+});
+export type CombatLevelScreenInputs = z.infer<typeof combatLevelScreenInputsSchema>;
+
+export const levelScreenRefusalSchema = z.enum([
+  /** Levels could not be read on one side or the other. Never read as harmless. */
+  'unmeasurable',
+  /** The monster's offensive levels exceed what the character can stand up to. */
+  'outmatched',
+]);
+export type LevelScreenRefusal = z.infer<typeof levelScreenRefusalSchema>;
+
+export const combatLevelScreenVerdictSchema = z.object({
+  ok: z.boolean(),
+  refusals: z.array(
+    z.object({
+      reason: levelScreenRefusalSchema,
+      detail: z.string(),
+    }),
+  ),
+  /**
+   * What this screen knows it cannot see.
+   *
+   * A permit from a heuristic is not a proof of safety, and the previous screen
+   * presented itself as one. These strings are carried into the journal so a
+   * pass is legible as "nothing here looks lethal" rather than "this is safe".
+   */
+  uncertainties: z.array(z.string()),
+  /** The numbers behind the verdict, so a refusal can be argued with. */
+  workings: z.object({
+    hardestMonsterName: z.string(),
+    monsterOffensiveLevel: z.number(),
+    monsterHitpointsLevel: z.number(),
+    playerDefensiveLevel: z.number(),
+    playerOffensiveLevel: z.number(),
+    allowance: z.number(),
+    ceiling: z.number(),
+  }),
+  /** One line fit for a log or a refusal message. */
+  detail: z.string(),
+});
+export type CombatLevelScreenVerdict = z.infer<typeof combatLevelScreenVerdictSchema>;

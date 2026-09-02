@@ -260,7 +260,9 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 - [ ] **Mining rocks are dumped without HP or respawn** — S. Which is why
       depletion had to be measured by hand.
-- [ ] **Monsters have no stats, only a combat level** — S.
+- [ ] **Monsters have no stats, only a combat level** — S. Neither `levels` nor
+      `equipmentStats` is captured, which is why the pre-fight screen can compare
+      levels but cannot calibrate a threshold on equipment bonuses.
 - [ ] **No drop has a quantity, and no currency drop is recorded** — M. The dump
       currently says the agent's main GP source yields nothing.
 - [ ] **Alt Magic, Herblore and Firemaking store product and cost under names the

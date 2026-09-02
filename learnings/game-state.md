@@ -372,3 +372,29 @@ What to do instead:
   load regenerates; a dump that loads with holes lies.
 - Before quoting a number, ask what it is the numerator and denominator *of*.
   `lootChance` passed that test and `100%` did not.
+
+## Two numbers named alike are not on one scale
+
+The pre-fight combat screen required `Monster.combatLevel <= floor(Game.playerCombatLevel / 2)`.
+Neither getter's formula appears anywhere in `vendor/melvor-typings` — `monsters.d.ts:102` and
+`game.d.ts:221` are bare `get ...(): number` — and the observed ranges do not overlap.
+`data/dump.json` holds 377 monsters from combat level 1 to 3,501,091, median 465; a
+character with 99 in every combat skill is around 126. The rule therefore excluded about
+84% of all monsters from a maxed character, and every dungeon from every possible one:
+"Into the Abyss" (hardest monster 626) needed player combat level 1,252.
+
+It ran for weeks looking like a safety feature. Nothing errored; it simply refused, with a
+plausible sentence attached, and the stated goal "clear a dungeon" was unreachable by
+construction while combat training was banked toward it.
+
+What the typings *do* state is the comparison worth making. `Monster.levels` is
+`Omit<CombatLevels, 'Prayer'>` (`monsters.d.ts:103`) and `Character.levels` is `CombatLevels`
+(`character.d.ts:101`) — one record type, so those six skill levels mean the same thing on
+both sides. Same for equipment: `Monster.equipmentStats` (`monsters.d.ts:104`) is a list of
+`{key, value}` pairs over the same `EquipStatKey` union the player's `EquipmentStats` object
+is indexed by (`character.d.ts:445-457`).
+
+The general test, before a threshold compares two quantities: **can you state the unit of
+each?** If the answer is "they are both called a level", the comparison is a coincidence of
+naming. And check the extremes of a threshold against real data — one line of arithmetic
+over the dump would have shown this one admitting nothing.
