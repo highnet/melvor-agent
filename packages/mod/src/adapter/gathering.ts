@@ -209,6 +209,19 @@ function startWoodcuttingOn(
           }
           game.woodcutting.selectTree(tree);
         }
+
+        // Fill the remaining slots rather than leaving them empty.
+        //
+        // `treeCutLimit` is a real, purchasable capability -- Multi-Tree is a
+        // shop upgrade -- and cutting one tree while holding two slots throws
+        // away the half of it that was paid for. The executor previously only
+        // ever cleared the selection to make room for its target, so the extra
+        // slots stayed empty however many the character had earned.
+        //
+        // Best remaining tree first, so the filler is the next most valuable
+        // thing and not whatever the registry happened to list.
+        fillRemainingTreeSlots(tree);
+
         return game.woodcutting.isActive ? undefined : game.woodcutting.start();
       },
       changed: (_before, after) => isGathering(after, recipeId),
@@ -438,4 +451,37 @@ function stopAnyActiveSkill(
     },
     isSuspended,
   );
+}
+
+/**
+ * Selects further unlocked trees until the cut limit is reached.
+ *
+ * The primary tree is passed so it is never re-toggled: `selectTree` toggles,
+ * so selecting an already-selected tree deselects it, which is the bug this
+ * whole area of the file exists to avoid.
+ *
+ * Sorted by XP so a spare slot goes to the best available tree. Failures are
+ * swallowed per tree: a filler that cannot be selected should not stop the tree
+ * the objective actually asked for.
+ */
+function fillRemainingTreeSlots(primary: { id: string }): void {
+  try {
+    const skill = game.woodcutting;
+    const others = skill.actions.allObjects
+      .filter((candidate) => candidate.id !== primary.id)
+      .filter((candidate) => skill.isTreeUnlocked(candidate))
+      .filter((candidate) => !skill.activeTrees.has(candidate))
+      .sort((a, b) => b.baseExperience - a.baseExperience);
+
+    for (const other of others) {
+      if (skill.activeTrees.size >= skill.treeCutLimit) return;
+      try {
+        skill.selectTree(other);
+      } catch {
+        // One unselectable tree must not stop the rest.
+      }
+    }
+  } catch {
+    // No filling is worse than the primary tree failing to start.
+  }
 }

@@ -132,7 +132,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **Agility's lap rate is built from base constants** — S. The fix for a 3.5×
       overstatement reintroduced mastery blindness for the same skill; it also
       sums every built obstacle rather than the contiguous course.
-- [ ] **Woodcutting cuts one tree when `treeCutLimit` allows several** — M. The
+- [x] **Woodcutting cuts one tree when `treeCutLimit` allows several** — M. The
       executor actively deselects the others, so the improvement is unreachable
       by construction rather than merely unused.
 - [x] **"Output worth if sold" satisfies GP goals** — S. `goals.ts` treats

@@ -499,7 +499,17 @@ function woodcuttingCandidates(): Candidate[] {
         skill.name,
         tree,
         // Already accounts for gear, mastery and modifiers.
-        skill.getTreeInterval(tree),
+        //
+        // Divided by the cut limit because the executor now fills every slot:
+        // two trees cut at once produce two trees' worth of logs in the same
+        // wall-clock time, so the effective interval per unit of output is that
+        // much shorter. Pricing one tree while cutting several understated
+        // Woodcutting by exactly the multiple the character had bought.
+        skill.getTreeInterval(tree) /
+          Math.max(
+            1,
+            safeNumber(() => skill.treeCutLimit, 1),
+          ),
         gpValue(tree.product),
         skill,
       ),
