@@ -470,8 +470,47 @@ function miningCandidates(): Candidate[] {
       // selected — which is exactly the state candidate enumeration runs in.
       // So this understates the real rate (it ignores modifiers) but it is
       // always readable, and a candidate list that throws is worth nothing.
-      candidate(MINING_ID, skill.name, rock, skill.baseInterval, gpValue(rock.product)),
+      candidate(MINING_ID, skill.name, rock, miningIntervalFor(rock), gpValue(rock.product)),
     );
+}
+
+/**
+ * Time per mined action, including the respawn the rock spends giving nothing.
+ *
+ * A rock is not a tap. `MiningRock` carries `maxHP` and `baseRespawnInterval`
+ * (rockTicking.d.ts:63-85): it yields `maxHP` actions, empties, and then pays
+ * out nothing at all until it respawns. Charging only `baseInterval` per action
+ * prices the mining and leaves the waiting free.
+ *
+ * The error was not academic. Crystal advertised 120,000 GP/h on that basis and
+ * banked 81 ore in three quarters of an hour — about 10,800 GP/h, an order of
+ * magnitude out — and a whole afternoon of planning was built on the inflated
+ * figure. It is the same mistake as the Agility course this morning, where the
+ * rate came from one obstacle while a lap runs the whole thing: in both cases
+ * the model priced the part that produces and ignored the part that costs.
+ *
+ * Amortising the respawn across the actions it interrupts is the honest form.
+ * A rock with passive regen or no recorded HP is charged the bare interval,
+ * which is correct for the first and the only safe guess for the second.
+ */
+function miningIntervalFor(rock: {
+  maxHP?: number;
+  baseRespawnInterval?: number;
+  hasPassiveRegen?: boolean;
+}): number {
+  const base = game.mining.baseInterval;
+
+  try {
+    if (rock.hasPassiveRegen === true) return base;
+
+    const actionsPerCycle = rock.maxHP ?? 0;
+    const respawn = rock.baseRespawnInterval ?? 0;
+    if (actionsPerCycle <= 0 || respawn <= 0) return base;
+
+    return base + respawn / actionsPerCycle;
+  } catch {
+    return base;
+  }
 }
 
 /**
