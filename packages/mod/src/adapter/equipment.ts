@@ -1,7 +1,7 @@
 import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, safeValue } from './safe.js';
 
 /**
  * Wearing things.
@@ -247,10 +247,20 @@ export function equipFood(
  * Food is offered separately and unconditionally when none is equipped, because
  * "no food at all" is not a marginal upgrade — it is the thing blocking Thieving
  * and combat outright.
+ *
+ * "Beats what is worn" was a stat sum, and a skilling outfit has no stats, so
+ * an outfit could never be offered against anything already in its slot. That
+ * is Township's whole payoff, earned and never worn. The one extra case now
+ * offered is the one that needs no pricing —
+ * {@link unambiguousModifierUpgrade} — and everything past it still belongs to
+ * the planner.
  */
 export function readEquipCandidates(): Candidate[] {
   const player = game.combat.player;
   const candidates: Candidate[] = [];
+  const trainingSkillId = activeSkillId();
+  const trainingSkill =
+    trainingSkillId === null ? undefined : game.skills.getObjectByID(trainingSkillId);
 
   for (const entry of game.bank.items.values()) {
     const item = entry.item;
@@ -289,7 +299,18 @@ export function readEquipCandidates(): Candidate[] {
     const currentItem =
       current.itemId === null ? undefined : game.items.equipment.getObjectByID(current.itemId);
 
-    if (!switchesStyle && currentItem !== undefined && statScore(item) <= statScore(currentItem)) {
+    // A skilling outfit has no equipment stats at all, so a stat sum ranks it
+    // level with an empty slot and *below* anything already worn — which is why
+    // Township's whole payoff was earned and never put on. It is offered here
+    // only when wearing it needs no judgement: see unambiguousModifierUpgrade.
+    const modifierUpgrade = unambiguousModifierUpgrade(item, currentItem, trainingSkillId);
+
+    if (
+      !switchesStyle &&
+      !modifierUpgrade &&
+      currentItem !== undefined &&
+      statScore(item) <= statScore(currentItem)
+    ) {
       continue;
     }
 
@@ -300,7 +321,9 @@ export function readEquipCandidates(): Candidate[] {
         ? `Equip ${item.name} — switches combat to ${(item as WeaponItem).attackType}, which is a strategy choice rather than an upgrade (replaces ${currentItem?.name ?? 'nothing'})`
         : current.itemId === null
           ? `Equip ${item.name} (${slot.emptyName ?? slot.id} is empty)`
-          : `Equip ${item.name} (replaces ${currentItem?.name ?? current.itemId})`,
+          : modifierUpgrade
+            ? `Equip ${item.name} — its modifiers are scoped to ${trainingSkill?.name ?? trainingSkillId}, the skill being trained, and it gives up no equipment stat against ${currentItem?.name ?? current.itemId}. Any swap that would displace modifier-bearing gear is left to the planner, because nothing here can price a modifier.`
+            : `Equip ${item.name} (replaces ${currentItem?.name ?? current.itemId})`,
       available: true,
     });
   }
@@ -332,6 +355,127 @@ export function readEquipCandidates(): Candidate[] {
 function statScore(item: EquipmentItem): number {
   const stats = item.equipmentStats;
   return stats.reduce((sum, stat) => sum + (typeof stat.value === 'number' ? stat.value : 0), 0);
+}
+
+/** The minimum a modifier-bearing item must show to be worth naming here. */
+export interface ModifierScopeLike {
+  /** Set when the game scoped this modifier to one skill. */
+  skill?: { id: string };
+}
+
+/**
+ * Modifiers on an item that apply to exactly one named skill.
+ *
+ * `ModifierValue` extends `ModifierScope` (modifiers.d.ts:129, :56), whose
+ * optional `skill` (:19) is the game's own record of what a modifier is scoped
+ * to. That is the only part of a modifier this file is willing to interpret: a
+ * modifier the game has already tagged with a skill either applies to the skill
+ * being trained or it does not, and no weighting is involved in asking.
+ *
+ * Deliberately ignores `conditionalModifiers` (item.d.ts:259). A conditional
+ * carries an `isNegative` flag and a condition this code cannot evaluate
+ * (conditionalModifiers.d.ts:375-379), so counting one as a benefit would be
+ * the guess this whole area exists to avoid.
+ */
+export function skillScopedModifiers(
+  modifiers: readonly ModifierScopeLike[] | undefined,
+  skillId: string | null,
+): number {
+  if (modifiers === undefined || skillId === null) return 0;
+  return modifiers.filter((modifier) => modifier.skill?.id === skillId).length;
+}
+
+/**
+ * Whether an item carries any modifier at all, conditional ones included.
+ *
+ * Used to decide what may be *displaced*, which is the direction where being
+ * wrong costs something: taking off an item whose worth this file cannot price
+ * is exactly the trade it refuses to make.
+ */
+export function bearsModifiers(item: {
+  modifiers?: readonly unknown[];
+  conditionalModifiers?: readonly unknown[];
+}): boolean {
+  return (item.modifiers?.length ?? 0) > 0 || (item.conditionalModifiers?.length ?? 0) > 0;
+}
+
+/**
+ * Whether a candidate's equipment stats are at least as good, key by key.
+ *
+ * Not a sum. `statScore` sums, and summing is how a Steel Platebody's melee
+ * defence drowned out its ranged penalty and scored as an upgrade for an archer
+ * who then could not land a shot for twenty minutes. A key-by-key comparison
+ * cannot do that: if a single stat is lower the answer is no, whatever the
+ * total says. Missing keys count as zero, so a stat only the candidate has must
+ * still be non-negative.
+ */
+export function dominatesEquipmentStats(
+  candidate: readonly { key: string; value: number }[],
+  worn: readonly { key: string; value: number }[],
+): boolean {
+  const statValue = (stats: readonly { key: string; value: number }[], key: string): number => {
+    const stat = stats.find((entry) => entry.key === key);
+    return typeof stat?.value === 'number' ? stat.value : 0;
+  };
+
+  const keys = new Set([...candidate, ...worn].map((stat) => stat.key));
+  for (const key of keys) {
+    if (statValue(candidate, key) < statValue(worn, key)) return false;
+  }
+  return true;
+}
+
+/**
+ * The skill the character is training right now, or null.
+ *
+ * `game.activeAction` (game.d.ts:42) is the skill that is running; combat is a
+ * `PassiveAction` and leaves it undefined, which is the right answer here —
+ * with no non-combat skill running there is no scope in which a skilling
+ * modifier is unambiguously the better choice, so everything below falls back
+ * to the stat comparison it already made.
+ */
+function activeSkillId(): string | null {
+  return safeValue('equipment.activeSkillId', () => game.activeAction?.id) ?? null;
+}
+
+/**
+ * Whether wearing `item` over `worn` is an improvement no judgement is needed for.
+ *
+ * The one case where a modifier can be scored without pricing it. Everything
+ * has to hold at once:
+ *
+ * - the item carries modifiers the game itself scoped to the skill being
+ *   trained, so their relevance is the game's claim and not this file's;
+ * - the item it would displace carries no modifiers of any kind, so nothing
+ *   unpriceable is being given up;
+ * - and no single equipment stat gets worse, so the comparison the stat sum
+ *   exists for is won outright rather than on balance.
+ *
+ * Anything short of that — a modifier scoped to some other skill, a worn item
+ * with modifiers of its own, one stat traded for another — is a judgement about
+ * what the run is doing, and stays with the planner. That is not caution for
+ * its own sake: the last time this file put a number on a comparison it could
+ * not make, the agent spent twenty minutes in a fight it could not win.
+ */
+export function unambiguousModifierUpgrade(
+  item: {
+    modifiers?: readonly ModifierScopeLike[];
+    equipmentStats: readonly { key: string; value: number }[];
+  },
+  worn:
+    | {
+        modifiers?: readonly unknown[];
+        conditionalModifiers?: readonly unknown[];
+        equipmentStats: readonly { key: string; value: number }[];
+      }
+    | undefined,
+  trainingSkillId: string | null,
+): boolean {
+  if (skillScopedModifiers(item.modifiers, trainingSkillId) === 0) return false;
+  // An empty slot is the safe case named in the brief: there is nothing to lose.
+  if (worn === undefined) return true;
+  if (bearsModifiers(worn)) return false;
+  return dominatesEquipmentStats(item.equipmentStats, worn.equipmentStats);
 }
 
 /**
@@ -753,11 +897,17 @@ export function readFoodReserve(minimumMeals = 40): {
  * and lets the caller decide how much to trust a stat sum.
  */
 export function readGearUpgrades(): {
-  emptySlot: { itemId: string; slotId: string; name: string }[];
+  emptySlot: { itemId: string; slotId: string; name: string; scopedModifiers: number }[];
   replacement: { itemId: string; slotId: string; name: string; gain: number }[];
 } {
   const player = game.combat.player;
-  const emptySlot: { itemId: string; slotId: string; name: string }[] = [];
+  const trainingSkillId = activeSkillId();
+  const emptySlot: {
+    itemId: string;
+    slotId: string;
+    name: string;
+    scopedModifiers: number;
+  }[] = [];
   const replacement: { itemId: string; slotId: string; name: string; gain: number }[] = [];
 
   for (const entry of game.bank.items.values()) {
@@ -773,7 +923,12 @@ export function readGearUpgrades(): {
     if (penalisesAttackStyle(item.equipmentStats, player.attackType)) continue;
 
     if (current.itemId === null) {
-      emptySlot.push({ itemId: item.id, slotId: slot.id, name: item.name });
+      emptySlot.push({
+        itemId: item.id,
+        slotId: slot.id,
+        name: item.name,
+        scopedModifiers: skillScopedModifiers(item.modifiers, trainingSkillId),
+      });
       continue;
     }
 
@@ -787,6 +942,16 @@ export function readGearUpgrades(): {
     replacement.push({ itemId: item.id, slotId: slot.id, name: item.name, gain });
   }
 
+  // Empty slots had no order at all, so the reflex — which takes the head —
+  // filled a slot in bank order. That matters because there is usually more
+  // than one candidate per slot and only the first one gets worn: once the slot
+  // is full, a skilling outfit with no equipment stats can never displace it,
+  // since a stat sum scores it at zero forever. Gear whose modifiers the game
+  // scoped to the skill actually being trained goes first. Nothing else is
+  // reordered — `sort` is stable, so bank order still decides the rest, and no
+  // modifier is being weighed against a stat here, only against another
+  // candidate for a slot that is empty either way.
+  emptySlot.sort((a, b) => b.scopedModifiers - a.scopedModifiers);
   // Best first, so a reflex taking only the head of the list takes the best.
   replacement.sort((a, b) => b.gain - a.gain);
   return { emptySlot, replacement };
@@ -858,6 +1023,14 @@ export interface ModifierGear {
   slotId: string;
   /** The game's own descriptions of what the item does. */
   effects: string[];
+  /**
+   * True when wearing it needs no judgement — see {@link unambiguousModifierUpgrade}.
+   *
+   * These are already offered as equip candidates and, for an empty slot, taken
+   * by the fill reflex. Reporting them as "nothing will pick this up" would be
+   * false, which is why the notice below filters on this rather than on nothing.
+   */
+  decidable: boolean;
 }
 
 /**
@@ -871,16 +1044,21 @@ export interface ModifierGear {
  * with an empty slot and the equip reflex, which only fills empty slots and
  * clears a margin, has no reason to ever wear one.
  *
- * **This is a reader and not a score, deliberately.** Turning a modifier list
- * into one comparable number is not arithmetic, it is a judgement about
- * relevance: +5% Mining mastery XP is worth a great deal to a character mining
- * and nothing at all to one fishing, and the same item's worth changes with the
- * objective it is worn for. Every weighting this file could invent would be a
- * guess dressed as a measurement — and a wrong stat sum has already cost this
- * project twenty minutes of unwinnable fighting, with a Steel Platebody that
- * scored *higher* than what it replaced. So the modifiers are surfaced verbatim,
- * in the game's own words via `ModifierValue.getDescription` (modifiers.d.ts:117),
- * and the choice stays with the planner, which knows what the run is doing.
+ * **This is still a reader and not a score, for almost every item.** Turning a
+ * modifier list into one comparable number is not arithmetic, it is a judgement
+ * about relevance: +5% Mining mastery XP is worth a great deal to a character
+ * mining and nothing at all to one fishing, and the same item's worth changes
+ * with the objective it is worn for. Every weighting this file could invent
+ * would be a guess dressed as a measurement — and a wrong stat sum has already
+ * cost this project twenty minutes of unwinnable fighting, with a Steel
+ * Platebody that scored *higher* than what it replaced. So the modifiers are
+ * surfaced verbatim, in the game's own words via `ModifierValue.getDescription`
+ * (modifiers.d.ts:117), and the choice stays with the planner.
+ *
+ * The single exception is marked with `decidable`, and it is not a weighting:
+ * {@link unambiguousModifierUpgrade} asks only whether the *game* scoped the
+ * modifiers to the skill being trained and whether anything is given up by
+ * wearing it. When the answer is yes and no, there is no trade to price.
  *
  * Restricted to gear not currently worn, because the point is what is being
  * missed.
@@ -891,6 +1069,7 @@ export function readModifierGear(): ModifierGear[] {
   const gear: ModifierGear[] = [];
 
   try {
+    const trainingSkillId = activeSkillId();
     const equipped = new Set(
       Object.values(game.combat.player.equipment.equippedItems)
         .filter((slot) => slot.item !== slot.emptyItem)
@@ -909,18 +1088,25 @@ export function readModifierGear(): ModifierGear[] {
         const slot = item.validSlots[0];
         if (slot === undefined) continue;
 
+        const current = projectSlot(slot.id);
+        const worn =
+          current.itemId === null ? undefined : game.items.equipment.getObjectByID(current.itemId);
+
         gear.push({
           itemId: item.id,
           name: item.name,
           slotId: slot.id,
           effects: modifiers.map((modifier) => modifier.getDescription().description),
+          decidable: unambiguousModifierUpgrade(item, worn, trainingSkillId),
         });
-      } catch {
+      } catch (error) {
         // An item whose modifiers cannot describe themselves is left out rather
         // than reported with a blank effect.
+        noteSwallowed('equipment.readModifierGear.item', error);
       }
     }
-  } catch {
+  } catch (error) {
+    noteSwallowed('equipment.readModifierGear', error);
     return [];
   }
 
@@ -935,9 +1121,15 @@ const MODIFIER_EFFECTS_REPORTED = 3;
  * Reports owned gear that every scorer in this mod values at zero.
  *
  * Named as a blocked opportunity because that is exactly what it is: the item is
- * already owned, the slot may well be empty, and the only thing between the two
- * is that nothing here can price a modifier. Saying so plainly is more honest
- * than a scoring function that would have to invent the price.
+ * already owned, the slot is filled with something whose own modifiers cannot be
+ * priced either, and the only thing between the two is that nothing here can
+ * weigh one against the other. Saying so plainly is more honest than a scoring
+ * function that would have to invent the price.
+ *
+ * Items marked `decidable` are excluded. They are offered as equip candidates
+ * and, when the slot is empty, taken by the fill reflex — so reporting them as
+ * something nobody will act on would be a stale claim, and a notice that is
+ * wrong about its own system is worse than no notice.
  *
  * @returns Blocked-opportunity entries, or none when nothing is being missed.
  */
@@ -947,6 +1139,7 @@ export function readModifierGearNotice(): {
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   return readModifierGear()
+    .filter((item) => !item.decidable)
     .slice(0, MODIFIER_GEAR_REPORTED)
     .map((item) => {
       const effects = item.effects.slice(0, MODIFIER_EFFECTS_REPORTED).join('; ');

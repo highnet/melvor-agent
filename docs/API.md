@@ -1523,6 +1523,13 @@ Food is offered separately and unconditionally when none is equipped, because
 "no food at all" is not a marginal upgrade — it is the thing blocking Thieving
 and combat outright.
 
+"Beats what is worn" was a stat sum, and a skilling outfit has no stats, so
+an outfit could never be offered against anything already in its slot. That
+is Township's whole payoff, earned and never worn. The one extra case now
+offered is the one that needs no pricing —
+{@link unambiguousModifierUpgrade} — and everything past it still belongs to
+the planner.
+
 ```ts
 readEquipCandidates: () => Candidate[]
 ```
@@ -1732,7 +1739,7 @@ unable to land a shot — so it carries the margin by which it claims to win
 and lets the caller decide how much to trust a stat sum.
 
 ```ts
-readGearUpgrades: () => { emptySlot: { itemId: string; slotId: string; name: string; }[]; replacement: { itemId: string; slotId: string; name: string; gain: number; }[]; }
+readGearUpgrades: () => { emptySlot: { itemId: string; slotId: string; name: string; scopedModifiers: number; }[]; replacement: { itemId: string; slotId: string; name: string; gain: number; }[]; }
 ```
 
 ## `readHeldCompost`
@@ -1855,6 +1862,14 @@ readLostItems: () => { name: string; quantity: number; }[]
 
 Skills whose mastery pool has XP worth spending.
 
+The label carries how full the pool is and where the next checkpoint sits,
+because "3,400 pool XP" on its own reads as pure surplus and is not: the pool
+is also the thing granting the skill's checkpoint bonuses and scaling its pet
+chance, and both are given back the moment it drains past a threshold. A
+planner choosing between two spends needs to see which one is close to a
+checkpoint. {@link spendMasteryPool} still refuses a spend that would drop
+one — this is the number that lets the choice be made before the refusal.
+
 ```ts
 readMasteryCandidates: () => Candidate[]
 ```
@@ -1906,16 +1921,21 @@ they score exactly zero, so every gear reader in this file ranks them level
 with an empty slot and the equip reflex, which only fills empty slots and
 clears a margin, has no reason to ever wear one.
 
-**This is a reader and not a score, deliberately.** Turning a modifier list
-into one comparable number is not arithmetic, it is a judgement about
-relevance: +5% Mining mastery XP is worth a great deal to a character mining
-and nothing at all to one fishing, and the same item's worth changes with the
-objective it is worn for. Every weighting this file could invent would be a
-guess dressed as a measurement — and a wrong stat sum has already cost this
-project twenty minutes of unwinnable fighting, with a Steel Platebody that
-scored *higher* than what it replaced. So the modifiers are surfaced verbatim,
-in the game's own words via `ModifierValue.getDescription` (modifiers.d.ts:117),
-and the choice stays with the planner, which knows what the run is doing.
+**This is still a reader and not a score, for almost every item.** Turning a
+modifier list into one comparable number is not arithmetic, it is a judgement
+about relevance: +5% Mining mastery XP is worth a great deal to a character
+mining and nothing at all to one fishing, and the same item's worth changes
+with the objective it is worn for. Every weighting this file could invent
+would be a guess dressed as a measurement — and a wrong stat sum has already
+cost this project twenty minutes of unwinnable fighting, with a Steel
+Platebody that scored *higher* than what it replaced. So the modifiers are
+surfaced verbatim, in the game's own words via `ModifierValue.getDescription`
+(modifiers.d.ts:117), and the choice stays with the planner.
+
+The single exception is marked with `decidable`, and it is not a weighting:
+{@link unambiguousModifierUpgrade} asks only whether the *game* scoped the
+modifiers to the skill being trained and whether anything is given up by
+wearing it. When the answer is yes and no, there is no trade to price.
 
 Restricted to gear not currently worn, because the point is what is being
 missed.
@@ -1931,9 +1951,15 @@ readModifierGear: () => ModifierGear[]
 Reports owned gear that every scorer in this mod values at zero.
 
 Named as a blocked opportunity because that is exactly what it is: the item is
-already owned, the slot may well be empty, and the only thing between the two
-is that nothing here can price a modifier. Saying so plainly is more honest
-than a scoring function that would have to invent the price.
+already owned, the slot is filled with something whose own modifiers cannot be
+priced either, and the only thing between the two is that nothing here can
+weigh one against the other. Saying so plainly is more honest than a scoring
+function that would have to invent the price.
+
+Items marked `decidable` are excluded. They are offered as equip candidates
+and, when the slot is empty, taken by the fill reflex — so reporting them as
+something nobody will act on would be a stale claim, and a notice that is
+wrong about its own system is worse than no notice.
 
 ```ts
 readModifierGearNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
@@ -2834,6 +2860,34 @@ Free progression: the pool fills on its own as the skill is trained, and
 converting it costs nothing but the pool itself. A human does this whenever
 they glance at the screen; an agent that cannot leaves it accumulating
 forever.
+
+**It is not unconditionally free, and that is what this guard is for.**
+Mastery pool checkpoints are granted automatically as the pool fills past
+their percent and revoked automatically as it empties back below — and
+spending is the only thing that empties it. So a spend can hand back a level
+and silently take away a standing bonus on every action in the skill, which
+is a straight loss whenever the checkpoint was worth more than the level.
+The game itself treats this as a decision worth stopping for: settings.d.ts:80
+ships `showMasteryCheckpointconfirmations`, *"If confirmation messages should
+be shown when losing a mastery pool checkpoint when spending mastery xp"*.
+This adapter calls the underlying method with no dialog, so the check has to
+live here or nowhere.
+
+A second, independent reason to leave the pool full: a pet whose
+`scaleChanceWithMasteryPool` is set (pets.d.ts:12-13) is rolled through
+`rollForSkillPet` (pets.d.ts:63) with a chance that scales with pool
+progress, so draining the pool also lowers the skill-pet drop rate for as
+long as it stays drained. Nothing here prices that; it is one more reason the
+refusal errs towards keeping the pool full.
+
+The refusal is deliberately the minimum: it blocks a spend that would drop a
+checkpoint and permits everything else. Banking up to the next checkpoint and
+spending only the surplus would be the better policy, and it is not
+implemented because the pool XP a level-up charges is not stated in the
+typings — see {@link poolXpForLevels}. Since that cost is an estimate, the
+realised cost is compared against it after the fact and a mismatch is
+recorded, so a wrong model shows up as a counter rather than as a bonus that
+quietly went missing.
 
 ```ts
 spendMasteryPool: (skillId: string, actionId: string, levels: number, isSuspended: () => boolean) => ActionResult<MasteryProjection>

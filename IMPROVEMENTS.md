@@ -225,24 +225,48 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Coverage — systems the agent does not use
 
-- [ ] **`spendMasteryPool` can silently destroy checkpoint bonuses** — M. The game
+- [x] **`spendMasteryPool` can silently destroy checkpoint bonuses** — M. The game
       ships a confirmation dialog for exactly this loss (settings.d.ts:80). It
-      also lowers skill-pet chance.
+      also lowers skill-pet chance. The spend now refuses when the projected
+      post-spend pool XP would revoke a checkpoint, asked of the game's own
+      `getActiveMasteryPoolBonusCount(realm, xp)` (skill.d.ts:730) rather than of
+      thresholds recomputed here, and it fails *closed*: a count that cannot be
+      read refuses rather than proceeding. The candidate label carries the pool
+      percent and the next checkpoint, so the choice can be made before the
+      refusal. **Still open:** the better policy — bank up to the next checkpoint
+      and spend only the surplus — is not implemented, because the pool XP a
+      level-up charges is not stated in the typings.
+      `levelUpMasteryWithPoolXP` (skill.d.ts:689) takes a level count and says
+      nothing about its price, so the cost is estimated from `exp.levelToXP`
+      (utils.d.ts:234) against `getMasteryXP`. That estimate is compared against
+      the realised cost after every successful spend and a mismatch is recorded
+      through `safe.ts`, so a wrong model surfaces as a counter instead of as a
+      bonus that quietly went missing. Settle it by measurement before building
+      a surplus policy on top of it.
 - [x] **Nothing the agent must save for is ever a candidate** — S. Every shop
       reader filters on affordability, so Auto Eat does not exist as a target
       until the million GP is already banked.
 - [x] **Upgrade chains: the reflex buys the cheapest tier, not the best affordable**
       — S. `getLowestUpgradeInChain`, `upgradeChains`.
-- [ ] **Skilling outfits score zero** — M. `statScore` sums equipment stats, and an
+- [x] **Skilling outfits score zero** — M. `statScore` sums equipment stats, and an
       outfit's value is in modifiers — so Township's entire payoff is unwearable.
-      *Partly done:* `readModifierGear` now surfaces owned modifier-bearing gear
-      with the game's own effect descriptions, so it is at least visible. Scoring
-      it was deliberately not attempted: a modifier's worth depends on what the
-      run is doing (+5% Mining mastery XP is everything to a miner and nothing to
-      a fisher), so any weight would be a guess presented as a measurement — the
-      exact failure that made a Steel Platebody outscore what it replaced.
-      Wearing it stays a planner decision until there is a way to price it
-      against the current objective.
+      `readModifierGear` surfaces owned modifier-bearing gear with the game's own
+      effect descriptions, and the one comparison that needs no pricing is now
+      acted on: an item whose `modifiers` the *game* scoped to the skill being
+      trained (`ModifierValue extends ModifierScope`, modifiers.d.ts:129, :19)
+      against an empty slot, or against a worn item with no modifiers of any kind
+      that it dominates key by key. Empty slots are also ordered so the fill
+      reflex takes the relevant outfit rather than whatever came first in bank
+      order — which used to decide the slot permanently, since a zero stat sum
+      can never displace anything afterwards.
+      **Still open, deliberately:** no modifier is given a weight, and any swap
+      that would displace modifier-bearing gear is left to the planner and says
+      so in its label. A modifier's worth depends on what the run is doing (+5%
+      Mining mastery XP is everything to a miner and nothing to a fisher), so a
+      weight would be a guess presented as a measurement — the exact failure that
+      made a Steel Platebody outscore what it replaced. The domination check is
+      key-by-key rather than a sum for the same reason: a sum is what let that
+      platebody's melee defence drown out its ranged penalty.
 - [x] **Potions lapse silently** — S. `toggleAutoReusePotion` is now called by a
       reflex, but only for a potion *already active* with a replacement banked —
       the planner chose the potion, this only stops the choice expiring. Polarity
