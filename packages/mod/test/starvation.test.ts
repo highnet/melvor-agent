@@ -36,9 +36,17 @@ describe('cooking before the reserve runs out', () => {
     expect(cookWhenFoodLow(state(200), () => ok())).toBeNull();
   });
 
-  it('does nothing when Auto Eat feeds from the bank directly', () => {
+  it('does nothing when Auto Eat is owned AND there is food to eat', () => {
+    // This assertion used to pass `meals: 0` and expect null, on the reasoning
+    // that Auto Eat feeds from the bank so cooking is somebody else's problem.
+    // The premise is right and the conclusion does not follow: Auto Eat feeds
+    // from the bank, and an empty bank feeds nothing. `hasAutoEat` is only
+    // `autoEatThreshold > 0` -- ownership, not capability -- so with zero meals
+    // that early return switched off cooking, eating, the starvation stop and
+    // the warning all at once, which is the configuration that killed this
+    // character with food in the bank it could not reach.
     expect(
-      cookWhenFoodLow({ meals: 0, hasAutoEat: true, idleCategoryIds: ['x'] }, () => ok()),
+      cookWhenFoodLow({ meals: 200, hasAutoEat: true, idleCategoryIds: ['x'] }, () => ok()),
     ).toBeNull();
   });
 

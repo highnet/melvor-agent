@@ -1721,12 +1721,6 @@ readSeedShortfalls: () => { label: string; xpPerHour: number; missing: { itemId:
 
 `function`
 
-Enumerates sellable surplus in the bank.
-
-Mirrors the refusals in {@link sellItem } exactly — locked items and
-zero-value items are absent rather than offered and then rejected. A
-candidate the adapter would refuse is a planner trap, not a choice.
-
 ```ts
 readSellCandidates: () => Candidate[]
 ```

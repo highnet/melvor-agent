@@ -734,7 +734,18 @@ export function cookWhenFoodLow(
   },
   cook: (categoryId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  if (state.hasAutoEat) return null;
+  // Owning Auto Eat is not the same as having food.
+  //
+  // `hasAutoEat` reads `autoEatThreshold > 0` -- ownership, not capability. On
+  // that alone every food guard in this file switched itself off, so a
+  // character that had bought the upgrade and run its larder to zero had no
+  // eating, no cooking, no starvation stop and no warning: precisely the
+  // configuration that killed this one, minus the single guard that noticed.
+  //
+  // That is not a hypothetical for this run. Auto Eat is the goal it is
+  // currently saving a million GP toward, so buying it would have re-armed the
+  // death it has already died twice.
+  if (state.hasAutoEat && state.meals > 0) return null;
   if (state.meals >= COOK_WHEN_MEALS_BELOW) return null;
 
   const category = state.idleCategoryIds[0];
@@ -769,7 +780,9 @@ export function stopWhenStarving(
   },
   stop: (skillId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
-  if (state.hasAutoEat) return null;
+  // Ownership is not capability; see cookWhenFoodLow. An Auto Eat with nothing
+  // to eat heals for nothing, and this is the guard that stops the activity.
+  if (state.hasAutoEat && state.meals > 0) return null;
   if (state.damagingSkillId === null) return null;
   if (state.maxHitpoints <= 0) return null;
 

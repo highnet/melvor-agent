@@ -6,7 +6,7 @@ import type { Candidate } from '@melvor-agent/shared';
 import { readActiveRecipeIds } from './active.js';
 import { readMasteryTokenIds } from './bank.js';
 import { readSpellRuneIds } from './combat.js';
-import { readFoodReserve } from './equipment.js';
+import { readFoodReserve, readMealCount } from './equipment.js';
 import {
   readAllSeedIds,
   readBarelyEnoughIngredientIds,
@@ -894,6 +894,15 @@ function fishingCandidates(): Candidate[] {
  *
  * @returns One candidate per sellable stack, most valuable first.
  */
+/**
+ * Meals below which food stops being surplus and becomes the reserve.
+ *
+ * Matches COOK_WHEN_MEALS_BELOW in the reflex tier on purpose: one number
+ * decides both when to cook more and when to stop selling it, so the two
+ * cannot disagree about what "enough food" means.
+ */
+const FOOD_SELL_FLOOR = 40;
+
 export function readSellCandidates(): Candidate[] {
   // Never offer to sell what an open Township task is asking for. Selling one
   // of those throws away a whole task cycle, and task cycles are the fastest
@@ -918,6 +927,22 @@ export function readSellCandidates(): Candidate[] {
   // token held does nothing; a token sold is mastery XP set on fire.
   const masteryTokens = readMasteryTokenIds();
 
+  // And never food while the larder is thin.
+  //
+  // Every other scarce thing in this run got a guard -- seeds, spell runes,
+  // mastery tokens, task items -- and the one resource whose absence has
+  // actually killed this character, twice, had none. Worse, it is the resource
+  // the automatic path selects: `sellToEscapeFullBank` liquidates the *cheapest*
+  // stack it can find without asking a planner, and a pile of Raw Shrimp is
+  // exactly what cheapest looks like. That is a single call from "the bank is
+  // full" to "there is nothing to eat".
+  //
+  // Not an outright ban: surplus food is real value and a full larder should be
+  // sellable. The line is the same reserve the cooking reflex defends, so the
+  // two agree instead of one quietly undoing the other.
+  const mealsHeld = readMealCount();
+  const foodIsScarce = mealsHeld < FOOD_SELL_FLOOR;
+
   return (
     [...game.bank.items.values()]
       .filter((entry) => !wantedByTasks.has(entry.item.id))
@@ -926,6 +951,7 @@ export function readSellCandidates(): Candidate[] {
       .filter((entry) => !spellRunes.has(entry.item.id))
       .filter((entry) => !masteryTokens.has(entry.item.id))
       .filter((entry) => !game.bank.lockedItems.has(entry.item))
+      .filter((entry) => !(foodIsScarce && entry.item instanceof FoodItem))
       .filter((entry) => gpValue(entry.item) > 0)
       .map((entry) => ({
         kind: 'sell_items' as const,

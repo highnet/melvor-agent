@@ -849,8 +849,14 @@ export class Agent {
 
     this.state = 'idle';
     this.blockedReason = null;
+    // `install()` starts the clocks itself; calling startClocks() again here
+    // left two policy timers and two quality timers running, because the
+    // disposer only ever clears the latest pair. Every objective was then
+    // evaluated and dispatched twice per interval -- including irreversible
+    // actions like buying, selling and engaging -- and quality samples were
+    // duplicated, skewing the one metric the run is judged by. A second revive
+    // tripled it.
     this.install();
-    this.startClocks();
     this.log.info('operator', 'kill switch released; idle and ready to arm');
     this.notify();
   }
@@ -1848,7 +1854,7 @@ export class Agent {
         );
         break;
       }
-      case 'set_objective':
+      case 'set_objective': {
         // Already parsed by the schema; the kind check is the capability gate.
         if (!isSupportedKind(command.objective.kind)) {
           this.log.error(
@@ -1857,13 +1863,39 @@ export class Agent {
           );
           return;
         }
-        this.settings = { ...this.settings, objective: command.objective };
+        // The displaced objective goes back on the front of the plan.
+        //
+        // It used to be dropped on the floor: setting a one-off objective
+        // overwrote `objective` and left `plan` untouched, so the step being
+        // interrupted was simply lost. In practice that meant every manual
+        // sell -- the one action nothing automates, run every forty minutes to
+        // convert gathered ore into GP -- silently cost a mining step, and the
+        // plan quietly shortened each time an operator did the necessary thing.
+        //
+        // An interruption is not a cancellation. Selling a stack does not mean
+        // the mining that produced it was a mistake, and the agent has no way
+        // to tell the difference, so it should assume the cheaper error:
+        // resuming a step that is no longer wanted costs one replan, while
+        // losing one costs however long it takes somebody to notice.
+        const displaced = this.settings.objective;
+
+        this.settings = {
+          ...this.settings,
+          objective: command.objective,
+          plan: displaced === null ? this.settings.plan : [displaced, ...this.settings.plan],
+        };
         this.objectiveStartedAt = Date.now();
         this.objectivelessSince = null;
         this.deathsSinceStart = 0;
         this.consecutiveActionFailures = 0;
-        this.log.info('operator', `objective set: ${command.objective.rationale}`);
+        this.log.info(
+          'operator',
+          displaced === null
+            ? `objective set: ${command.objective.rationale}`
+            : `objective set: ${command.objective.rationale} (interrupting, will resume: ${displaced.rationale})`,
+        );
         break;
+      }
       case 'dump_knowledge':
         await this.dumpKnowledge();
         break;
