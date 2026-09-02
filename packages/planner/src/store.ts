@@ -38,6 +38,7 @@ export class Store {
   async init(): Promise<void> {
     await mkdir(join(this.dataDir, 'saves'), { recursive: true });
     await mkdir(join(this.dataDir, 'logs'), { recursive: true });
+    await this.loadJournal();
   }
 
   /**
@@ -69,6 +70,14 @@ export class Store {
     // merge is keyed on `at` so re-sent samples are recorded once.
     if (report.quality.length > 0) {
       await this.appendQuality(report.quality);
+    }
+
+    // Persisted as well as held, because the service reloads on every source
+    // change under `tsx watch` and an in-memory journal would empty each time
+    // -- the same hazard already documented for lastShownCandidates.
+    for (const entry of report.journalEntries) {
+      this.addJournalEntry(entry);
+      await this.appendJournal(entry);
     }
 
     const commands = this.pendingCommands;
@@ -179,6 +188,32 @@ export class Store {
     const day = new Date().toISOString().slice(0, 10);
     const lines = records.map((record) => JSON.stringify(record)).join('\n');
     await appendFile(join(this.dataDir, 'logs', `${day}.jsonl`), `${lines}\n`, 'utf8');
+  }
+
+  /** Appends one journal entry as a JSON line. */
+  private async appendJournal(entry: JournalEntry): Promise<void> {
+    await appendFile(
+      join(this.dataDir, 'journal.jsonl'),
+      `${JSON.stringify(entry)}${String.fromCharCode(10)}`,
+      'utf8',
+    );
+  }
+
+  /** Loads the persisted journal so a service restart does not erase it. */
+  async loadJournal(): Promise<void> {
+    try {
+      const raw = await readFile(join(this.dataDir, 'journal.jsonl'), 'utf8');
+      for (const line of raw.split(String.fromCharCode(10))) {
+        if (line.trim() === '') continue;
+        try {
+          this.journal.push(JSON.parse(line) as JournalEntry);
+        } catch {
+          // A truncated final line is normal for an append-only file.
+        }
+      }
+    } catch {
+      // No journal yet is the ordinary first-run case.
+    }
   }
 
   /** Appends quality samples, skipping any timestamp already recorded. */

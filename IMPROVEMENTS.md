@@ -185,7 +185,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **`get_recent_activity` reads the last report, not the durable log** *(2×)* —
       S. Records *are* written to `data/logs/*.jsonl` and never read back, which
       is why every post-mortem in this session hit "Log is empty".
-- [ ] **The journal is never written** *(4×)* — M. `addJournalEntry` has exactly
+- [x] **The journal is never written** *(4×)* — M. `addJournalEntry` has exactly
       one caller, a test. `get_journal` can only ever say "Nothing attempted yet",
       so the planner cannot see what it already abandoned.
 - [x] **Quality samples do not survive a reload** — M. The one metric restarts at

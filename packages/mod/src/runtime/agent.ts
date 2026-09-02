@@ -3,7 +3,9 @@ import type {
   ActionResult,
   Candidate,
   Command,
+  JournalEntry,
   Objective,
+  Outcome,
   QualitySample,
   RunState,
   StateSnapshot,
@@ -335,6 +337,12 @@ export class Agent {
 
   /** The state suspension interrupted, so resuming restores rather than promotes. */
   private stateBeforeSuspend: RunState | null = null;
+
+  /** Objectives finished since the last report, shipped and then cleared. */
+  private pendingJournal: JournalEntry[] = [];
+
+  /** Metrics captured when the current objective began, for measured deltas. */
+  private objectiveStartMetrics: { totalLevel: number; gp: number; deaths: number } | null = null;
 
   /** Consecutive snapshot validation failures; reset by any success. */
   private snapshotFailures = 0;
@@ -938,6 +946,7 @@ export class Agent {
     this.state = 'running';
     this.settings = { ...this.settings, enabled: true };
     this.objectiveStartedAt = Date.now();
+    this.objectiveStartMetrics = this.captureMetrics();
     this.deathsSinceStart = 0;
     this.log.info('runtime', 'armed');
     this.notify();
@@ -1124,6 +1133,7 @@ export class Agent {
 
     this.settings = { ...this.settings, objective: usable };
     this.objectiveStartedAt = Date.now();
+    this.objectiveStartMetrics = this.captureMetrics();
     // A real plan arrived, so the stopgap clock starts again from scratch next
     // time rather than firing immediately after this objective ends.
     this.objectivelessSince = null;
@@ -1282,6 +1292,7 @@ export class Agent {
 
     this.settings = { ...this.settings, objective: null };
     this.objectiveStartedAt = Date.now();
+    this.objectiveStartMetrics = this.captureMetrics();
     this.requestReplan('death');
     this.notify();
   }
@@ -1345,6 +1356,7 @@ export class Agent {
         break;
       case 'complete':
         this.log.info('policy', `objective complete: ${decision.detail}`);
+        this.recordJournal(objective, 'completed', snapshot, decision.detail);
         this.settings = { ...this.settings, objective: null };
         this.requestReplan('objective_completed');
         break;
@@ -1376,6 +1388,7 @@ export class Agent {
           }
         }
 
+        this.recordJournal(objective, decision.outcome, snapshot, decision.detail);
         this.settings = { ...this.settings, objective: null };
         this.requestReplan('objective_aborted');
         break;
@@ -1841,9 +1854,66 @@ export class Agent {
     }
   }
 
+  /** Metrics an objective's cost is measured against. Null when unreadable. */
+  private captureMetrics(): { totalLevel: number; gp: number; deaths: number } | null {
+    const snapshot = this.lastSnapshot;
+    if (snapshot === null) return null;
+
+    return {
+      totalLevel: snapshot.totalLevel,
+      gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+      deaths: this.deathsSinceStart,
+    };
+  }
+
+  /**
+   * Records how an objective ended, with deltas measured rather than assumed.
+   *
+   * The journal has had a schema, a store method and a digest the planner reads
+   * since the beginning, and nothing ever wrote to it: `addJournalEntry` had
+   * one caller, a test. So `get_journal` could only answer "Nothing attempted
+   * yet", and the property the digest exists to provide -- do not re-propose
+   * what was already abandoned -- simply was not there. The mod knew every
+   * outcome and threw it away as a log line.
+   *
+   * Deltas come from metrics captured when the objective began, so the cost of
+   * an attempt is observed. An objective that ran for an hour and moved nothing
+   * is the single most useful thing a planner can be told, and it is invisible
+   * from the outcome alone: "aborted on time budget" reads the same whether it
+   * earned 200,000 GP or nothing at all.
+   */
+  private recordJournal(
+    objective: Objective,
+    outcome: Outcome,
+    snapshot: StateSnapshot,
+    note: string,
+  ): void {
+    const started = this.objectiveStartMetrics;
+    this.objectiveStartMetrics = null;
+    if (started === null) return;
+
+    const gp = snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
+
+    this.pendingJournal.push({
+      objective,
+      startedAt: this.objectiveStartedAt,
+      endedAt: Date.now(),
+      outcome,
+      deltas: {
+        totalLevel: snapshot.totalLevel - started.totalLevel,
+        gp: gp - started.gp,
+        deaths: Math.max(0, this.deathsSinceStart - started.deaths),
+      },
+      note,
+    });
+  }
+
   /** Ships state to the service and applies any commands it returns. */
   private async pushReport(): Promise<void> {
     const logs = this.log.drain();
+    const journalEntries = this.pendingJournal;
+    this.pendingJournal = [];
+
     const reply = await this.transport.report({
       runState: this.state,
       snapshot: this.lastSnapshot,
@@ -1854,6 +1924,7 @@ export class Agent {
       buildStamp: readBuildStamp(),
       logs,
       quality: this.quality.slice(-120),
+      journalEntries,
       blockedReason: this.blockedReason,
     });
 
@@ -1861,6 +1932,9 @@ export class Agent {
       // Degrade, never halt: keep the logs for the next attempt and carry on
       // with the last valid objective.
       this.log.requeue(logs);
+      // Entries survive a failed send for the same reason logs do: an outcome
+      // that is never recorded is one the planner will propose again.
+      this.pendingJournal = [...journalEntries, ...this.pendingJournal];
       return;
     }
 
@@ -2151,6 +2225,7 @@ export class Agent {
         const [first, ...rest] = usable;
         this.settings = { ...this.settings, objective: first ?? null, plan: rest };
         this.objectiveStartedAt = Date.now();
+        this.objectiveStartMetrics = this.captureMetrics();
         this.objectivelessSince = null;
         this.deathsSinceStart = 0;
         this.consecutiveActionFailures = 0;
@@ -2191,6 +2266,7 @@ export class Agent {
           plan: displaced === null ? this.settings.plan : [displaced, ...this.settings.plan],
         };
         this.objectiveStartedAt = Date.now();
+        this.objectiveStartMetrics = this.captureMetrics();
         this.objectivelessSince = null;
         this.deathsSinceStart = 0;
         this.consecutiveActionFailures = 0;

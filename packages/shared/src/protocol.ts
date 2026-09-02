@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { journalDigestSchema, logRecordSchema } from './journal.js';
+import { journalDigestSchema, journalEntrySchema, logRecordSchema } from './journal.js';
 import { candidateSchema, objectiveSchema } from './objective.js';
 import { gameIdSchema, qualitySampleSchema, stateSnapshotSchema } from './snapshot.js';
 
@@ -114,6 +114,17 @@ export const agentReportSchema = z.object({
    */
   buildStamp: z.string().nullable().optional(),
   logs: z.array(logRecordSchema),
+  /**
+   * Objectives that finished since the last report.
+   *
+   * The journal has a schema, a store method and a digest the planner reads,
+   * and nothing ever wrote to it -- `addJournalEntry` had one caller, a test.
+   * So `get_journal` could only ever answer "Nothing attempted yet", and the
+   * property it exists to provide (do not re-propose what was abandoned) did
+   * not exist. The mod knows every outcome and was throwing it away as a log
+   * string; this is the field that carries it.
+   */
+  journalEntries: z.array(journalEntrySchema).default([]),
   quality: z.array(qualitySampleSchema),
   /** Non-null while the agent is refusing to arm; rendered verbatim by the TUI. */
   blockedReason: z.string().nullable(),
