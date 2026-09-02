@@ -101,3 +101,34 @@ The general rule, which cost a plan to learn twice in one day:
 - **Excitement about a finding is when to be most careful.** The Golbin drop
   was a genuine discovery from real data, and it went straight into a
   twelve-hour plan without a single kill being confirmed first.
+
+## A guard that can starve its own precondition
+
+The bank filled. Every gathering action is refused when its output has nowhere
+to go, so income fell to exactly zero. The fix — a bank slot — cost 33,068
+against a reflex cap of half the balance, 29,684. Short by 3,384, with no way
+to ever earn the difference.
+
+Two hours of an agent working perfectly and achieving nothing: 150 refusals to
+start, 150 abandoned objectives, 75 stopgaps adopted and refused in turn. Every
+individual decision was correct.
+
+The shape is worth naming because it is not "a bug in the guard". The guard was
+reasonable in isolation: *do not spend more than half your money on storage*. It
+became a trap because the resource it protected — GP — could only be replenished
+by the thing it was blocking. A cap on spending assumes earning continues.
+
+The test to apply to any threshold:
+
+1. What does this guard protect?
+2. What replenishes that thing?
+3. **Can the guard block what replenishes it?**
+
+If yes, the guard needs an escape at the limit, not a smaller number. Two
+escapes were added here: at zero free slots the purchase spends whatever it
+takes, and if even that fails, one cheap stack is sold. Both are worse than the
+normal path and both are better than stopping.
+
+The same question applies to the food reserve, the Thieving damage gate and the
+survivability gate. None of them currently gate their own replenishment — but
+none of them were checked for it either, until this cost a morning.
