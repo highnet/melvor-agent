@@ -419,6 +419,19 @@ export const candidateSchema = z.object({
   /** Measured or computed from game data — never from the wiki. */
   xpPerHour: z.number().nonnegative().optional(),
   gpPerHour: z.number().nonnegative().optional(),
+  /**
+   * Whether `gpPerHour` is money received, rather than what output would fetch.
+   *
+   * The two mean different things and the field name cannot hold both. Thieving
+   * and Item Alchemy pay coins directly; gathering and smithing produce *items*
+   * whose value only becomes GP if something sells them, and nothing sells them
+   * automatically until a stack is large enough to trip the liquidation reflex.
+   *
+   * Without the distinction a GP goal was reported as advanced by mining a gem
+   * -- an hour of which moves the balance by exactly zero. The label had said so
+   * in words the whole time; the data had not.
+   */
+  gpIsEarned: z.boolean().optional(),
   /** Requirements that are currently met. Candidates with unmet ones are not emitted. */
   requiresLevel: z.number().int().nonnegative().optional(),
   available: z.literal(true),

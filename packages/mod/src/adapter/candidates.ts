@@ -232,6 +232,9 @@ function genericSkillCandidates(): Candidate[] {
             }${masteryNote(skill, recipe)}`,
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
         gpPerHour: netPerHour > 0 ? netPerHour : undefined,
+        // Alt Magic's alchemy pays currency; every other recipe here produces
+        // an item whose value needs a sale to become GP.
+        gpIsEarned: skillId === ALT_MAGIC_ID,
         requiresLevel: requirement.level,
         available: true,
       });
@@ -1037,6 +1040,8 @@ function thievingCandidates(): Candidate[] {
           label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)${describeNpcDrops(npc, wantedByNeed)}`,
           xpPerHour: actionsPerHour * npc.baseExperience * successRate,
           gpPerHour: actionsPerHour * gpPerAction * successRate,
+          // Coins into the balance, not items that would fetch coins.
+          gpIsEarned: true,
           requiresLevel: npc.level,
           available: true as const,
         };

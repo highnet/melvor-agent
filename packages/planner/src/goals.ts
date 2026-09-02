@@ -381,7 +381,11 @@ export function evaluateGoals(goals: readonly Goal[], snapshot: StateSnapshot): 
 export function goalsAdvancedBy(candidate: Candidate, statuses: readonly GoalStatus[]): string[] {
   const active = statuses.filter((s) => s.state === 'active');
   const skillId = (candidate.params as { skillId?: string }).skillId;
-  const earnsGp = (candidate.gpPerHour ?? 0) > 0;
+  // Money received, not output that would fetch money if sold. An hour of
+  // mining gems moves the GP balance by exactly zero unless something sells
+  // them, so tagging it as advancing a GP goal is a false report -- and it is
+  // the report a planner uses to decide it is already working on the goal.
+  const earnsGp = candidate.gpIsEarned === true && (candidate.gpPerHour ?? 0) > 0;
 
   return active
     .filter((status) => {

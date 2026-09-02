@@ -135,7 +135,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [ ] **Woodcutting cuts one tree when `treeCutLimit` allows several** — M. The
       executor actively deselects the others, so the improvement is unreachable
       by construction rather than merely unused.
-- [ ] **"Output worth if sold" satisfies GP goals** — S. `goals.ts` treats
+- [x] **"Output worth if sold" satisfies GP goals** — S. `goals.ts` treats
       `gpPerHour > 0` as earning money, so mining a gem "advances" a GP goal while
       moving GP by exactly zero. Split the two fields.
 - [ ] **Realised rates are never compared against advertised ones** *(3×)* — M.
@@ -203,10 +203,10 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [ ] **`spendMasteryPool` can silently destroy checkpoint bonuses** — M. The game
       ships a confirmation dialog for exactly this loss (settings.d.ts:80). It
       also lowers skill-pet chance.
-- [ ] **Nothing the agent must save for is ever a candidate** — S. Every shop
+- [x] **Nothing the agent must save for is ever a candidate** — S. Every shop
       reader filters on affordability, so Auto Eat does not exist as a target
       until the million GP is already banked.
-- [ ] **Upgrade chains: the reflex buys the cheapest tier, not the best affordable**
+- [x] **Upgrade chains: the reflex buys the cheapest tier, not the best affordable**
       — S. `getLowestUpgradeInChain`, `upgradeChains`.
 - [ ] **Skilling outfits score zero** — M. `statScore` sums equipment stats, and an
       outfit's value is in modifiers — so Township's entire payoff is unwearable.
