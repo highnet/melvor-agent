@@ -514,8 +514,27 @@ export function claimFinishedTasks(
  *
  * A poor character still buys nothing dear, which remains correct: the same
  * upgrade becomes automatic exactly when it stops being a real sacrifice.
+ *
+ * Raised from a quarter to a half, because a quarter turned out to have the
+ * wrong shape rather than the wrong value. Requiring cost <= gp/4 is requiring
+ * four times the price in hand, so the *better* the upgrade the further it
+ * recedes: the Mithril Pickaxe at 50,000 GP -- unlocked, unbought, on a
+ * character mining specifically to earn GP -- demanded 200,000 held, and the
+ * Adamant behind it would have demanded 800,000. The rule was quietly hardest
+ * on exactly the purchases most worth making.
+ *
+ * A half still refuses to sink most of a balance into one thing, which is the
+ * failure the cap was really guarding against, and it keeps the Rune Pickaxe
+ * (1,000,000 GP) from competing with Auto Eat at the same price.
+ *
+ * A proportional cap and nothing else, deliberately. An absolute reserve was
+ * drafted here to protect the GP a bank slot or a restock needs, and it would
+ * have re-broken the very thing this reflex was written for: a floor of 25,000
+ * refuses a 50 GP axe to a character holding 1,000, which is exactly the
+ * oversight the operator had to point at in the first place. The fraction
+ * already scales the protection to the balance.
  */
-const UPGRADE_GP_FRACTION = 0.25;
+const UPGRADE_GP_FRACTION = 0.5;
 
 /**
  * Buys permanent upgrades the character can comfortably afford.
