@@ -178,6 +178,8 @@ export {
   increaseTownHealth,
   readPassiveCookingCandidates,
   readTownHealthCandidates,
+  collectCookedStockpile,
+  readCookedStockpile,
   startPassiveCooking,
   type PassiveCookProjection,
 } from './passive.js';

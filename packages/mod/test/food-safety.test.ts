@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { cookWhenFoodLow, stopWhenStarving } from '../src/runtime/combat-reflex.js';
+import {
+  collectStockpiledFood,
+  cookWhenFoodLow,
+  stopWhenStarving,
+} from '../src/runtime/combat-reflex.js';
 
 const ok = () => ({ ok: true }) as never;
 
@@ -69,5 +73,43 @@ describe('Auto Eat does not disable the food guards when there is no food', () =
         () => ok(),
       ),
     ).toBeNull();
+  });
+});
+
+/**
+ * Passive cooking leaves its output in a stockpile that nothing collected.
+ *
+ * `readMealCount` counts the bank and the equipped slot, and the cooking reflex
+ * fires on that count -- so the agent cooked, the count did not move, and it
+ * cooked again, indefinitely, while the meals it had already made sat
+ * uncollected. The starvation death in mechanical form: a character surrounded
+ * by food it had cooked and could not reach.
+ */
+describe('collecting passive-cooking output', () => {
+  it('collects the fullest stockpile first', () => {
+    // One collection per pass, so it goes where the most food is waiting.
+    const collected: string[] = [];
+    collectStockpiledFood(
+      {
+        stockpiled: [
+          { categoryId: 'melvorD:Fire', quantity: 3 },
+          { categoryId: 'melvorD:Furnace', quantity: 41 },
+        ],
+      },
+      (categoryId) => {
+        collected.push(categoryId);
+        return ok();
+      },
+    );
+
+    expect(collected).toEqual(['melvorD:Furnace']);
+  });
+
+  it('does nothing when every stockpile is empty', () => {
+    // The normal case, and it must stay silent rather than reporting a no-op
+    // on every tick.
+    const outcome = collectStockpiledFood({ stockpiled: [] }, () => ok());
+
+    expect(outcome).toBeNull();
   });
 });

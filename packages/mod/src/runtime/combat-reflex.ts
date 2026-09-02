@@ -908,3 +908,33 @@ export function repairDegradedBuildings(
     result: repair(worst.buildingId, worst.biomeId),
   };
 }
+
+/**
+ * Collects passive-cooking output that would otherwise never reach the bank.
+ *
+ * A reflex because it is free, additive and impossible to get wrong -- the same
+ * shape as claiming a Mastery Token or a finished Township task. It is also the
+ * missing half of a loop that could not otherwise close: passive cooking puts
+ * food in a stockpile, `readMealCount` counts only the bank and the equipped
+ * slot, and the cooking reflex fires on that count. So the agent cooked, the
+ * count did not move, and it cooked again -- indefinitely, while the meals it
+ * had already made sat uncollected.
+ *
+ * Ordered before the food reflexes for exactly that reason: collecting first
+ * means the meal count they read is the true one, so they stop reacting to a
+ * shortage that has already been cooked away.
+ */
+export function collectStockpiledFood(
+  state: {
+    /** Categories holding uncollected passive-cooking output. */
+    stockpiled: readonly { categoryId: string; quantity: number }[];
+  },
+  collect: (categoryId: string) => ActionResult<unknown>,
+): ReflexOutcome | null {
+  // Fullest first: one collection per pass, spent where the most food is
+  // waiting.
+  const fullest = [...state.stockpiled].sort((a, b) => b.quantity - a.quantity)[0];
+  if (fullest === undefined) return null;
+
+  return { name: 'reflex.collectStockpile', result: collect(fullest.categoryId) };
+}

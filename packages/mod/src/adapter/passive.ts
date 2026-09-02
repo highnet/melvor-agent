@@ -213,3 +213,87 @@ export function readTownHealthCandidates(): Candidate[] {
 
   return candidates;
 }
+
+/**
+ * Cooking categories holding uncollected passive output.
+ *
+ * Passive cooking does not bank what it makes. It accumulates in
+ * `stockpileItems` (cooking.d.ts:78) and has to be collected, and nothing in
+ * this codebase ever collected it -- so the food reflex started passive cooking,
+ * the food appeared in a stockpile, `readMealCount` (which counts the bank and
+ * the equipped slot) never saw it, and the reflex started cooking again. The
+ * meal count could not move no matter how long it ran.
+ *
+ * That is the starvation death in mechanical form: a character surrounded by
+ * food it had already cooked and could not reach.
+ */
+export function readCookedStockpile(): {
+  categoryId: string;
+  itemName: string;
+  quantity: number;
+}[] {
+  const out: { categoryId: string; itemName: string; quantity: number }[] = [];
+
+  try {
+    for (const [category, stocked] of game.cooking.stockpileItems) {
+      try {
+        if (stocked.quantity <= 0) continue;
+        out.push({
+          categoryId: category.id,
+          itemName: stocked.item.name,
+          quantity: stocked.quantity,
+        });
+      } catch {
+        // A category that will not describe its stockpile is left alone.
+      }
+    }
+  } catch {
+    return [];
+  }
+
+  return out;
+}
+
+/**
+ * Collects one category's passive-cooking output into the bank.
+ *
+ * `onCollectStockpileClick` is the UI callback, and this codebase's standing
+ * rule is that OnClick is the UI path rather than the operation. It is used
+ * here because the typings expose no process-level counterpart -- `cooking.d.ts`
+ * has `addItemToStockpile`, `getStockpileSnapshot` and this, and nothing else
+ * that empties it. The same was true of `claimMasteryTokenOnClick`. The rule
+ * exists to stop the UI path being reached for out of convenience, not to
+ * forbid it where it is the only door.
+ *
+ * Evidence is the stockpile emptying, so a click that silently does nothing is
+ * reported as `no_state_change` rather than as success.
+ */
+export function collectCookedStockpile(
+  categoryId: string,
+  isSuspended: () => boolean,
+): ActionResult<{ quantity: number }> {
+  const cooking = game.cooking;
+  const category = cooking.categories.getObjectByID(categoryId);
+  if (category === undefined) {
+    return fail('cooking.collect', 'precondition', `no cooking category ${categoryId}`);
+  }
+
+  const stocked = () => {
+    try {
+      return cooking.stockpileItems.get(category)?.quantity ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  return act(
+    {
+      name: 'cooking.collect',
+      observe: () => ({ quantity: stocked() }),
+      precondition: () => (stocked() > 0 ? null : `${categoryId} has nothing stockpiled`),
+      perform: () => cooking.onCollectStockpileClick(category),
+      changed: (before, after) => after.quantity < before.quantity,
+    },
+    isSuspended,
+  );
+}

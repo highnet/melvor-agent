@@ -81,7 +81,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **No game-loop heartbeat** *(2×)* — S/M. The stuck detector runs *on* the
       clock that fails. Count ticks before the throttle and compare from the
       independent policy timer.
-- [ ] **Passive cooking fills a stockpile nobody collects** — S. Output does not
+- [x] **Passive cooking fills a stockpile nobody collects** — S. Output does not
       go to the bank, `readMealCount` never sees it, so the cooking reflex fires
       forever and the meal count never moves. This is the mechanical form of the
       starvation death. `Cooking.stockpileItems` (cooking.d.ts:78).

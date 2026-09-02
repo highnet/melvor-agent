@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-190 exports.
+192 exports.
 
 ## `act`
 
@@ -357,6 +357,27 @@ unmet, which is cheating the game rather than playing it.
 
 ```ts
 claimTownshipTask: (taskId: string, isSuspended: () => boolean) => ActionResult<{ taskId: string; claimed: boolean; }>
+```
+
+## `collectCookedStockpile`
+
+`function`
+
+Collects one category's passive-cooking output into the bank.
+
+`onCollectStockpileClick` is the UI callback, and this codebase's standing
+rule is that OnClick is the UI path rather than the operation. It is used
+here because the typings expose no process-level counterpart -- `cooking.d.ts`
+has `addItemToStockpile`, `getStockpileSnapshot` and this, and nothing else
+that empties it. The same was true of `claimMasteryTokenOnClick`. The rule
+exists to stop the UI path being reached for out of convenience, not to
+forbid it where it is the only door.
+
+Evidence is the stockpile emptying, so a click that silently does nothing is
+reported as `no_state_change` rather than as success.
+
+```ts
+collectCookedStockpile: (categoryId: string, isSuspended: () => boolean) => ActionResult<{ quantity: number; }>
 ```
 
 ## `collectLoot`
@@ -1220,6 +1241,26 @@ consumed either way.
 
 ```ts
 readCompostCandidates: () => Candidate[]
+```
+
+## `readCookedStockpile`
+
+`function`
+
+Cooking categories holding uncollected passive output.
+
+Passive cooking does not bank what it makes. It accumulates in
+`stockpileItems` (cooking.d.ts:78) and has to be collected, and nothing in
+this codebase ever collected it -- so the food reflex started passive cooking,
+the food appeared in a stockpile, `readMealCount` (which counts the bank and
+the equipped slot) never saw it, and the reflex started cooking again. The
+meal count could not move no matter how long it ran.
+
+That is the starvation death in mechanical form: a character surrounded by
+food it had already cooked and could not reach.
+
+```ts
+readCookedStockpile: () => { categoryId: string; itemName: string; quantity: number; }[]
 ```
 
 ## `readCurrency`

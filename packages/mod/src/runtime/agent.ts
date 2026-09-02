@@ -24,6 +24,7 @@ import {
   claimCasualTask,
   claimMasteryToken,
   claimTownshipTask,
+  collectCookedStockpile,
   collectLoot,
   compostFarmPlot,
   convertItemToTownship,
@@ -58,6 +59,7 @@ import {
   readCombatSetupCandidates,
   readCombatTargets,
   readCompostCandidates,
+  readCookedStockpile,
   readDeathCount,
   readDigSiteSetupCandidates,
   readEquipCandidates,
@@ -152,6 +154,7 @@ import {
   claimFinishedTasks,
   claimMasteryTokens,
   collectPendingLoot,
+  collectStockpiledFood,
   compostBeforePlanting,
   cookWhenFoodLow,
   eatWhenLow,
@@ -644,6 +647,12 @@ export class Agent {
           ),
         },
         (categoryId) => startPassiveCooking(categoryId, isSuspended),
+      ),
+      // Before every food reflex below, deliberately. Passive cooking leaves
+      // its output in a stockpile that readMealCount cannot see, so collecting
+      // first is what makes the meal count those reflexes read a true one.
+      collectStockpiledFood({ stockpiled: readCookedStockpile() }, (categoryId) =>
+        collectCookedStockpile(categoryId, isSuspended),
       ),
       // And the last line: stop paying health for XP when the health cannot be
       // bought back. This character starved to death without it.
