@@ -202,7 +202,13 @@ import { DeathWatch } from './death-watch.js';
 import { JournalBuffer } from './journal.js';
 import type { Logger } from './logger.js';
 import { LoopStallWatch } from './loop-stall.js';
-import { type ObjectiveMetrics, objectiveDeltas, objectiveMetrics, snapshotGp } from './metrics.js';
+import {
+  type ObjectiveMetrics,
+  fundingStanding,
+  objectiveDeltas,
+  objectiveMetrics,
+  snapshotGp,
+} from './metrics.js';
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { QualityWindow } from './quality-window.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
@@ -887,8 +893,13 @@ export class Agent {
         {
           freeSlots: snapshot.bank.slotsMax - snapshot.bank.slotsUsed,
           best: readMostValuableExpendableStack(),
+          // The objective's own funding target, not a figure invented here. It
+          // is what lets the agent finish a GP goal unattended, and it is
+          // absent unless the operator wrote one -- so with no goal the reflex
+          // behaves exactly as it did before. See fundingStanding.
+          funding: fundingStanding(snapshot, this.settings.objective),
         },
-        (itemId) => sellItem(itemId, readBankQuantity(itemId), isSuspended),
+        (itemId, quantity) => sellItem(itemId, quantity, isSuspended),
       ),
       // Last resort, after the slot purchase above has had its chance: a full
       // bank with no affordable slot is a permanent stop, and one cheap stack
@@ -901,7 +912,6 @@ export class Agent {
             return slot !== null && slot.gpCost <= slot.held;
           })(),
           expendable: readCheapestExpendableStack(),
-          quantityOf: (itemId) => readBankQuantity(itemId),
         },
         (itemId, quantity) => sellItem(itemId, quantity, isSuspended),
       ),

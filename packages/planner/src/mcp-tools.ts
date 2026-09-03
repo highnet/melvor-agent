@@ -266,7 +266,7 @@ export const TOOLS: Record<string, ToolHandler> = {
     return lines.join('\n');
   },
 
-  async set_objective(args, { store }) {
+  async set_objective(args, { store, memoryRoot }) {
     const requested = Number(args.candidateIndex);
     const candidates = store.report?.candidates ?? [];
 
@@ -323,6 +323,13 @@ export const TOOLS: Record<string, ToolHandler> = {
         ? { level: targetLevel, note: null }
         : rungFor(chosen, targetLevel, abortMinutes, snapshot);
 
+    // Attached to every objective, whatever it does. Selling is not the job of
+    // this objective and must not become it -- the target is a standing
+    // authorisation the reflex tier acts on while the objective runs, which is
+    // the difference between the agent funding a goal in the background and an
+    // operator spending a plan step on a sale.
+    const fundingTarget = await fundingTargetFor(memoryRoot, snapshot);
+
     // Params are copied from the candidate verbatim. The caller picks *which*,
     // never *what*, so a mistyped or invented recipe id is impossible.
     store.enqueue({
@@ -331,6 +338,7 @@ export const TOOLS: Record<string, ToolHandler> = {
         id: `session-${Date.now()}`,
         kind: chosen.kind,
         params: chosen.params,
+        ...(fundingTarget === undefined ? {} : { fundingTarget }),
         successWhen: successFor(chosen, rung.level, stockTarget),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
@@ -347,13 +355,18 @@ export const TOOLS: Record<string, ToolHandler> = {
     ].join(NEWLINE);
   },
 
-  async set_plan(args, { store }) {
+  async set_plan(args, { store, memoryRoot }) {
     const candidates = store.report?.candidates ?? [];
     const steps = Array.isArray(args.steps) ? args.steps : [];
 
     if (steps.length === 0) {
       return 'Pass steps: [{candidateIndex, targetLevel, abortMinutes, rationale}, ...] — a plan of 2 to 8 objectives.';
     }
+
+    // Read once for the whole plan rather than per step: it is the operator's
+    // standing goal, not a property of any one step, and re-reading it per step
+    // would let a six-step plan carry six different authorisations.
+    const fundingTarget = await fundingTargetFor(memoryRoot, store.report?.snapshot ?? null);
 
     const objectives = [];
     /** Steps whose candidate merely changed position; reported, not refused. */
@@ -412,6 +425,7 @@ export const TOOLS: Record<string, ToolHandler> = {
         id: `plan-${Date.now()}-${position}`,
         kind: chosen.kind,
         params: chosen.params,
+        ...(fundingTarget === undefined ? {} : { fundingTarget }),
         successWhen: successFor(chosen, stepRung.level, stepStock),
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
@@ -743,6 +757,52 @@ function levelAlreadyReached(
   if (skill.level < targetLevel) return null;
 
   return `${skill.name} is already level ${skill.level}, so a target of ${targetLevel} is met before the objective starts and it would finish without acting`;
+}
+
+/**
+ * The currency goal an objective should be allowed to sell surplus toward.
+ *
+ * Read from `GOALS.md` rather than asked of the caller, deliberately. A sale is
+ * the one irreversible thing the agent does, so what authorises it must be a
+ * number the operator wrote down — not a threshold this repo invented, and not
+ * something a planning session has to remember to pass. Sessions forget: the
+ * whole reason this exists is that GP sat frozen for hours while an operator
+ * re-issued a `Sell` objective by hand four times, each one eating a plan step.
+ *
+ * The **nearest** unmet goal, by target, so the authorisation is the smallest
+ * one that is currently true. With Auto Eat at 1,000,000 and nothing nearer,
+ * that is 1,000,000; with a 50,000 rung still open it is 50,000, and the agent
+ * stops there rather than selling on toward a destination it has not reached
+ * the first step of.
+ *
+ * Only `active` goals. A `done` goal authorises nothing because it is finished,
+ * and a `blocked` one authorises nothing because the operator's own ordering
+ * says it is not the work in front of the agent yet.
+ *
+ * @returns The goal to fund, or undefined — which leaves the objective with no
+ *          funding target at all, and the mod then never sells for money.
+ */
+async function fundingTargetFor(
+  memoryRoot: string,
+  snapshot: StateSnapshot | null,
+): Promise<{ goalId: string; currencyId: string; amount: number } | undefined> {
+  // No snapshot means no evaluation: `evaluateGoals` measures against one, and
+  // a goal that cannot be measured cannot be shown to be unmet.
+  if (snapshot === null) return undefined;
+
+  const statuses = evaluateGoals(await loadGoals(memoryRoot), snapshot);
+
+  let nearest: { goalId: string; currencyId: string; amount: number } | undefined;
+  for (const status of statuses) {
+    if (status.state !== 'active') continue;
+    const done = status.goal.done;
+    if (done?.type !== 'currency_at_least') continue;
+    if (nearest !== undefined && done.amount >= nearest.amount) continue;
+
+    nearest = { goalId: status.goal.id, currencyId: done.currencyId, amount: done.amount };
+  }
+
+  return nearest;
 }
 
 function successFor(

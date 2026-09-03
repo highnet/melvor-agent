@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-215 exports.
+216 exports.
 
 ## `act`
 
@@ -673,6 +673,30 @@ to get it subtly wrong.
 excavateDigSite: (digSiteId: string, isSuspended: () => boolean) => ActionResult<{ digSiteId: string | null; active: boolean; }>
 ```
 
+## `ExpendableStack`
+
+`interface`
+
+A stack the guards permit, and how much of it may actually go.
+
+`quantity` is the sellable portion — what is held minus anything an open
+Township task is asking for — and not the bank count. The distinction is the
+whole reason this shape exists. `saleExclusionReason` withholds a stack only
+while it *fails* to cover a task's ask, so once 582 Gold Bars are held against
+a task wanting 100 the stack becomes sellable, and every caller that then
+asked the bank how many there were sold all 582. The candidate path never had
+that bug: it carries `keepQuantity` and the `sell_items` executor subtracts
+it, which is why an operator selling by hand kept 100 of every 582 each time
+while the reflex beside it would not have.
+
+So the reserve is computed once, here, alongside the guard that established
+it — the same argument that keeps `saleExclusionReason` private to this
+module. A caller cannot honour it by accident and cannot skip it by accident.
+
+```ts
+ExpendableStack: any
+```
+
 ## `exportSave`
 
 `function`
@@ -1292,8 +1316,17 @@ attack spell or a reachable Alt Magic spell needs, mastery tokens, the last of
 a recipe ingredient and locked items are all excluded. The *cheapest* surviving stack is chosen, because the point
 is to free one slot at the smallest cost rather than to raise money.
 
+Only stacks that can be emptied are considered, which is narrower than it was
+and is the one change that makes this defensible. A stack an open task has a
+claim on can only be sold down to the reserve, and a bank slot with anything
+left in it is still a used slot — so a partial sale here does not escape the
+deadlock it exists to escape. The previous code freed the slot by selling the
+reserve along with the surplus, which trades a task cycle for a slot and calls
+it a last resort. If nothing can be emptied, the honest answer is that this
+hatch has nothing to offer.
+
 ```ts
-readCheapestExpendableStack: () => { itemId: string; name: string; value: number; } | null
+readCheapestExpendableStack: () => ExpendableStack | null
 ```
 
 ## `readCheapPermanentUpgrades`
@@ -2005,8 +2038,13 @@ is thin, and ammunition are all already excluded by construction. The
 reflex inherits every one of those guards rather than restating them, so a
 guard added for the planner's benefit protects the reflex too.
 
+Ranked on the *sellable* portion rather than on the bank count, which is the
+only ranking that answers the question the caller is asking. A stack whose
+surplus above a task reserve is worth 200 GP is not the most valuable thing
+the agent may sell just because the reserve underneath it is worth 80,000.
+
 ```ts
-readMostValuableExpendableStack: () => { itemId: string; name: string; value: number; } | null
+readMostValuableExpendableStack: () => ExpendableStack | null
 ```
 
 ## `readNextContainer`

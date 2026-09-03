@@ -1,4 +1,5 @@
 import type { ActionResult } from '@melvor-agent/shared';
+import type { ExpendableStack } from '../adapter/disposal.js';
 
 /**
  * Mid-fight reactions.
@@ -980,14 +981,19 @@ const CRITICAL_HP_FRACTION = 0.25;
  * cost is the smallest available. Selling one and only one per pass, because a
  * single freed slot is enough to restart the loop and anything more is a
  * judgement nobody asked this reflex to make.
+ *
+ * The quantity comes from the reader rather than from a second look at the
+ * bank. Asking the bank was how the Township reserve leaked out of this path:
+ * the guard releases a stack once it covers a task's ask, and a caller that then
+ * sold every unit sold the reserve with it. The reader now offers only stacks it
+ * can empty, so the slot is genuinely freed and no task loses its claim.
  */
 export function sellToEscapeFullBank(
   state: {
     freeSlots: number;
     /** True when a slot could be bought; then this must not fire. */
     canBuySlot: boolean;
-    expendable: { itemId: string; name: string; value: number } | null;
-    quantityOf: (itemId: string) => number;
+    expendable: ExpendableStack | null;
   },
   sell: (itemId: string, quantity: number) => ActionResult<unknown>,
 ): ReflexOutcome | null {
@@ -997,11 +1003,9 @@ export function sellToEscapeFullBank(
 
   const stack = state.expendable;
   if (stack === null) return null;
+  if (stack.quantity <= 0) return null;
 
-  const quantity = state.quantityOf(stack.itemId);
-  if (quantity <= 0) return null;
-
-  return { name: 'reflex.sellToEscape', result: sell(stack.itemId, quantity) };
+  return { name: 'reflex.sellToEscape', result: sell(stack.itemId, stack.quantity) };
 }
 
 /**
@@ -1103,13 +1107,19 @@ export function liquidateSurplus(
   state: {
     freeSlots: number;
     /** The most valuable stack that survives every sell guard, if any. */
-    best: { itemId: string; name: string; value: number } | null;
+    best: ExpendableStack | null;
+    /**
+     * The operator-stated currency goal the run is working toward, if any,
+     * and where the balance stands against it. Null means no goal has said
+     * money is wanted, and then nothing here sells for the sake of money.
+     */
+    funding: { held: number; target: number } | null;
   },
-  sell: (itemId: string) => ActionResult<unknown>,
+  sell: (itemId: string, quantity: number) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   if (state.best === null) return null;
 
-  // Two triggers, because bank pressure is not the only reason to sell.
+  // Three triggers, because bank pressure is not the only reason to sell.
   //
   // Pressure alone left roughly 216,000 GP of bars sitting in a bank with five
   // free slots while the run was short of GP for the one purchase it was saving
@@ -1123,11 +1133,50 @@ export function liquidateSurplus(
   // reasoning as the upgrade cap, that idle value is not a saving.
   const underPressure = state.freeSlots <= LIQUIDATE_FREE_SLOTS;
   const worthConverting = state.best.value >= LIQUIDATE_LARGE_VALUE;
-  if (!underPressure && !worthConverting) return null;
+
+  // The third, and the one that closes the gap the other two left open.
+  //
+  // Both of the above are thresholds this file invented, and between them they
+  // still could not finish a stated GP goal. Measured live: 582 Gold Bars at 142
+  // is 82,644 -- under the 100,000 bar -- in a bank with nine free slots, well
+  // clear of the pressure line. So GP stood at exactly 555,142 for hours against
+  // an operator goal of 1,000,000, and moved only when a human sold by hand.
+  //
+  // `funding` is not a threshold. It is the number the operator wrote in
+  // GOALS.md, and it is what makes an automatic sale defensible rather than
+  // merely convenient: the agent is not deciding that stock should become money,
+  // it is executing a decision that was already made and written down.
+  //
+  // Note what it does *not* license. It is absent unless a goal says money is
+  // wanted, so the default posture stays "this agent does not sell". And it goes
+  // false the instant the balance reaches the target, which is why this cannot
+  // become a bank liquidation: at 1,000,000 GP the authorisation is spent and
+  // the reflex falls back to the two thresholds above.
+  const shortfall = state.funding === null ? 0 : state.funding.target - state.funding.held;
+  const fundingGoalUnmet = shortfall > 0;
+
+  if (!underPressure && !worthConverting && !fundingGoalUnmet) return null;
 
   if (state.best.value < LIQUIDATE_MIN_VALUE) return null;
 
-  return { name: 'reflex.liquidateSurplus', result: sell(state.best.itemId) };
+  // Sell what the goal needs and not the bank.
+  //
+  // Overshooting is not free -- every unit past the target is an irreversible
+  // trade made for no stated reason -- so when a funding goal is the licence,
+  // the licence also sets the size. Rounded up, because selling one unit short
+  // of the target would leave the goal unmet and the sale would have to happen
+  // again anyway.
+  //
+  // Bank pressure overrides the cap: there the point is the slot, and a stack
+  // sold down to a fraction still occupies it.
+  const capped =
+    fundingGoalUnmet && !underPressure && state.best.unitValue > 0
+      ? Math.min(state.best.quantity, Math.ceil(shortfall / state.best.unitValue))
+      : state.best.quantity;
+
+  if (capped <= 0) return null;
+
+  return { name: 'reflex.liquidateSurplus', result: sell(state.best.itemId, capped) };
 }
 
 /**

@@ -15,12 +15,21 @@ const ok = () => ({ ok: true }) as never;
  * of that outage: it assumed buying was always eventually possible.
  */
 describe('escaping a full bank that cannot be bought out of', () => {
-  const keys = { itemId: 'melvorD:Rusty_Key', name: 'Rusty Key', value: 120 };
+  // `held` equals `quantity` because the reader only offers stacks it can
+  // empty: a slot with anything left in it is still a used slot, so a stack
+  // held back in part for a Township task cannot escape this deadlock at all.
+  const keys = {
+    itemId: 'melvorD:Rusty_Key',
+    name: 'Rusty Key',
+    held: 10,
+    quantity: 10,
+    unitValue: 12,
+    value: 120,
+  };
   const state = (overrides: Partial<Parameters<typeof sellToEscapeFullBank>[0]> = {}) => ({
     freeSlots: 0,
     canBuySlot: false,
     expendable: keys,
-    quantityOf: () => 10,
     ...overrides,
   });
 

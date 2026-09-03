@@ -417,10 +417,51 @@ export const abortConditionsSchema = z.object({
 });
 export type AbortConditions = z.infer<typeof abortConditionsSchema>;
 
+/**
+ * An operator-stated currency goal the agent is allowed to sell towards.
+ *
+ * Deliberately *not* a {@link SuccessCriterion}. A criterion says when the
+ * objective is finished, and every criterion has to hold for that — so adding
+ * "and have a million GP" to a smelting objective would mean the objective
+ * never completes. This says something different and narrower: while the run is
+ * short of this number, converting surplus stock into it is authorised.
+ *
+ * It exists because nothing in the agent ever sold, and a GP goal therefore
+ * could not be finished unattended. Measured live: GP frozen at exactly 555,142
+ * for hours while the bank filled with Gold Bars, moving only when an operator
+ * hand-issued a `Sell` objective four separate times — each of which also
+ * consumed a plan step, so the plan had to be re-issued afterwards. Carrying the
+ * target on the objective instead lets the reflex tier do it, which leaves the
+ * running objective and its plan intact.
+ *
+ * The authorisation is bounded in three ways, all of which matter because a
+ * sale cannot be undone at par:
+ *
+ * - It is **absent by default.** No target, no automatic sale toward one.
+ * - The number is the operator's, from `GOALS.md`, not one this code invented.
+ * - It **expires on success.** Once the currency reaches `amount` the
+ *   authorisation is over, so the policy cannot walk on into liquidating a bank.
+ *
+ * `goalId` is carried so a sale can be explained by naming the goal that
+ * licensed it rather than by pointing at a threshold.
+ */
+export const fundingTargetSchema = z.object({
+  goalId: z.string().min(1),
+  currencyId: gameIdSchema,
+  amount: z.number().positive(),
+});
+export type FundingTarget = z.infer<typeof fundingTargetSchema>;
+
 export const objectiveSchema = z.object({
   id: z.string().min(1),
   kind: objectiveKindSchema,
   params: objectiveParamsSchema,
+  /**
+   * A currency goal this objective is running in service of, when one is
+   * stated. See {@link fundingTargetSchema}: an authorisation to sell surplus,
+   * never a condition on finishing.
+   */
+  fundingTarget: fundingTargetSchema.optional(),
   /**
    * When the objective is done. May be empty for a one-shot action — buying,
    * equipping, toggling — where the executor decides completion and any

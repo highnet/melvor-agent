@@ -122,6 +122,7 @@ export {
 } from './blocked.js';
 export { readGatherCandidates, readShopObjectiveCandidates } from './candidates.js';
 export {
+  type ExpendableStack,
   readCheapestExpendableStack,
   readMostValuableExpendableStack,
   readSellCandidates,
