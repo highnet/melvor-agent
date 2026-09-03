@@ -40,6 +40,27 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **The policy's idle reason never reaches the report, so waiting looks like
+      disobedience** — S. The operator asked "we are mining but it says fight
+      chickens wtf", and they were right to: for five minutes the objective read
+      `Fight Chicken` while the panel read `Doing: Mining`, with nothing
+      explaining the gap. The behaviour was correct -- HP was 97/150, below the
+      80% engage floor, so `fightMonster` returned
+      `{kind:'idle', reason:'waiting_to_recover', detail:'HP 65% is below the
+      80% needed to start a fight; waiting'}` and the previous mining objective
+      kept running while HP regenerated, which is free value. Then
+      `mining.stop ok — Mining holds the action slot; stopping it to fight` and
+      it engaged.
+      Every word needed was computed. `mcp-tools.ts:221` renders
+      `Doing: ${activeAction.name}` and there is no field on the report carrying
+      a policy decision's `detail` at all, so an idle reason cannot be shown
+      even in principle. This is the same shape as today's other reporting
+      defects -- `sustainableMinutes` reaching only a label string, the stuck
+      ledgers being greppable but not visible, and `perform(actions, reason)`
+      accepting a reason and using it nowhere, which is what made three
+      diagnoses of the engage/disengage thrash miss.
+      A policy that idles deliberately should say so where the operator looks.
+
 - [x] **The agent wears valuables into fights that give it nothing, and death
       takes one** — M. `Player.applyDeathPenalty()` (player.d.ts:410) is
       documented verbatim as *"Removes an item from the player's equipment on
