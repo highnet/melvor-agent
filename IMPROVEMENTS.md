@@ -153,6 +153,15 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **Realised rates are never compared against advertised ones** *(3×)* — M.
       The one mechanism that would have caught every other rate bug on this list.
       Needs `skillId`/`recipeId` on `QualitySample`.
+- [ ] **A spell's consumed item is chosen once and never revisited** — S. `startAltMagic`
+      short-circuits its precondition on "already casting", so `chooseSelection`
+      runs only at start. Observed today: the rune guard shipped and reloaded,
+      and the agent kept eating Nature Runes anyway because the selection saved
+      before the fix survived in `selectedConversionItem`. Only a stop/start
+      cleared it. The same staleness bites when the chosen stack runs out or
+      becomes guarded mid-objective, which Arrow Shafts will do in about three
+      hours at 1,800 casts/h.
+
 - [ ] **Whether `getDoublingChance` is already inside
       `modifyPrimaryProductQuantity`** — S. Not stated in the typings. Settle it
       by measurement, never by reasoning.
