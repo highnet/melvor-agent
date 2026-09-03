@@ -946,3 +946,102 @@ loud.** Those want different fixes, and the second one is a blocked-opportunity 
 state. Inferring reachability inside `goals.ts` would put a guessed route where the file does
 snapshot arithmetic -- which is precisely what an invented `requires: magic-ranged-20` already
 cost the Abyssal goal.
+## `attackSpeed` is a cost sitting in the middle of the bonuses
+
+`EquipmentItem.equipmentStats` (item.d.ts:253) is a flat `{key, value}[]`, and `attackSpeed` is
+one of its keys (`EquipStatKey`, character.d.ts:445-446) alongside every attack, strength and
+defence bonus. It is the only one where a larger number is *worse* -- milliseconds between
+swings -- and it is two to three orders of magnitude bigger than any of them: 2,400 for a Steel
+Scimitar, 3,000 for a Staff of Air, against single- and double-digit bonuses.
+
+So a function that sums the array does not merely lean on attack speed, it *is* attack speed.
+`statScore` over two weapons was the ratio of their attack intervals and essentially nothing
+else, ranked backwards, which makes the slowest weapon in the bank the best one in the bank
+forever. The same inversion had a second home one function along: `dominatesEquipmentStats`
+compares key by key with a smaller value meaning worse, so it said a 3,000ms weapon dominates a
+2,400ms one.
+
+Excluded from the sum rather than negated. Negating lets it dominate in the other direction and
+ranks gear by speed alone, which is the same defect mirrored. The key-by-key test is the place
+where a stat can be compared in its own direction, and that is where the direction now lives.
+
+The general shape, and it is the second time this file has paid for it: **a blind sum over a
+heterogeneous stat array assumes every term points the same way and is measured on the same
+scale.** The Steel Platebody whose melee defence drowned out its ranged penalty was the first,
+and that one at least had all its terms pointing the right way.
+
+## A verified `ok` that is undone can be two tiers of your own agent
+
+A Steel Scimitar and a Staff of Air traded the weapon slot for forty minutes, forty equips a
+minute, every one a verified `ok` with a truthful before/after diff -- and one tick later the
+other weapon was back with the bank counts unmoved. It was written up as "the game reverts it for
+a reason nothing reports, and the typings do not say what", and a watchdog was built on that
+belief.
+
+Nothing in the game reverted anything. What settled it was reading the log for **periods and
+provenance** rather than for content:
+
+- the `equipment.equip ok — "melvorF:Staff_of_Air" -> "melvorD:Steel_Scimitar"` lines recur at
+  2,986-3,002ms. That is `POLICY_INTERVAL_MS` (3,000), not `REFLEX_THROTTLE_MS` (1,000), so the
+  call cannot be the reflex's;
+- only the objective executor writes a `source: "adapter"` line for an action; the reflex tier
+  writes `reflex.X fired` and nothing else. `reflex.liquidateSurplus fired` with no `bank.sell`
+  line beside it is the control;
+- every one of those adapter lines reads `before: Staff_of_Air`, so the staff was back in the
+  slot before each policy tick;
+- the journal holds the objective doing the asking: `equip_item`, Steel Scimitar into the weapon
+  slot, `successWhen: []`, aborted on its three-minute budget;
+- and the swapping stops within half a second of that objective being replaced, rather than when
+  anything about the gear, the spell selection or the running skill changed.
+
+So the objective tier put the scimitar on every 3s and the gear reflex put the displaced staff
+back on the next 1s tick. Both were doing exactly what they were told. The bank counts never
+moved because each weapon was removed and returned inside the same second -- which is also why
+the one measurement that had been trusted, a bank diff, was the one that misled.
+
+Three things worth keeping.
+
+**The attribution in the record was backwards.** `reflex.upgradeGear fired` names no item, so the
+item was inferred from the adapter line half a second earlier, which belonged to the other tier.
+A log line that reports *that* something fired and not *what* it did is an invitation to do
+exactly that.
+
+**Ask what else wants this resource before asking what the game does with it.** The typings were
+searched for an auto-unequip, an equipment-set swap, a spell forcing a magic weapon back. All of
+it was wasted: this agent has two tiers that both equip, on different clocks, and neither knows
+about the other. That check is cheap and belongs first.
+
+**A guard built on a wrong cause can still be the right guard.** `StuckEquipWatch` bounded the
+loop correctly while explaining it wrongly. It is kept -- two tiers disagreeing about one slot is
+a shape rather than an incident, and `Player.checkEquipmentRequirements` (player.d.ts:139) can
+take a slot back on its own -- but its comments and its operator message now say what is known
+and stop naming a culprit.
+
+## A running Alt Magic cast keeps consuming whatever it was aimed at when it started
+
+`AltMagic.selectedConversionItem` (altMagic.d.ts:126) and `selectedSmithingRecipe` (:124) are the
+game's own record of what the current spell destroys, and they survive everything the mod does
+short of a stop/start -- a rebuild, a reload, a guard shipped specifically to forbid the item
+they name. `startAltMagic` short-circuited on "already casting", so `chooseSelection` decided
+once at the start and never again, and a rune guard that shipped and loaded correctly changed
+nothing: the agent went on burning Nature Runes until the cast was stopped by hand, after which
+the measured draw fell from two Nature Runes a cast to one Nature Rune and one Arrow Shaft.
+
+Three ways the selection goes stale, and they want the same answer:
+
+- **the stack empties.** 4,322 Arrow Shafts at ~1,800 casts an hour is under three hours, and the
+  cast would then be aimed at an item the bank no longer holds;
+- **a guard starts covering it.** The item is still there; the rule about it changed;
+- **it is absent.** What a reload leaves behind -- the spell survives, the selection does not.
+
+All three are "the live selection is no longer in the offered list", which `chooseSelection`
+already builds. The re-check is on **staleness, not preference**: re-selecting because something
+cheaper appeared would churn the fuel on every tie broken differently, and every re-select
+carries the unknown risk of disturbing a running cast, since `selectItemOnClick` (:143) is a UI
+callback the typings say nothing about. Whether it can be applied to a running cast at all is now
+checked rather than assumed -- the projection carries the selection, so `act` fails a refresh
+that did not land instead of reporting `ok`.
+
+Worth stating plainly because it is the reusable half: **"is this cheap enough to do every tick"
+was the wrong question.** The precondition already walked the whole offered list on every call
+and threw the answer away. The fix was not to add a check, it was to stop discarding one.

@@ -361,3 +361,130 @@ describe('a spell with nothing to consume', () => {
     expect(result.detail).toContain('nothing Just Learning accepts is in the bank');
   });
 });
+
+/**
+ * Re-examining the fuel of a cast that is already running.
+ *
+ * The bug: `startAltMagic`'s precondition short-circuited on "already casting"
+ * unconditionally, so `chooseSelection` decided the consumed item once, at the
+ * moment the cast started, and never again. That is a decision with a shelf
+ * life. Observed live: a rune guard shipped, was built and reloaded, and the
+ * agent went on consuming Nature Runes regardless, because the item chosen
+ * before the fix survived in the game's own `selectedConversionItem`. Only a
+ * manual stop/start cleared it, after which the measured draw per cast fell
+ * from two Nature Runes to one Nature Rune and one Arrow Shaft.
+ *
+ * The other half arrives on a timer rather than on a code change: 4,322 Arrow
+ * Shafts at roughly 1,800 casts an hour empty in about two and a half hours,
+ * and by the same short-circuit the cast would have gone on being aimed at a
+ * stack that no longer existed.
+ *
+ * The distinction each test below turns on is between *stale* and *not the best
+ * any more*. A running cast is left alone while its fuel is still something the
+ * guards will part with; it is re-aimed only when that fuel is gone, forbidden,
+ * or absent.
+ */
+describe('a cast that is already running', () => {
+  /** Puts the skill in the state the game is in mid-objective. */
+  function castingJustLearning(fuel: FakeItem | undefined): void {
+    altMagic.isActive = true;
+    altMagic.selectedSpell = JUST_LEARNING;
+    altMagic.selectedConversionItem = fuel;
+  }
+
+  it('is left alone while its fuel is still admissible', () => {
+    // The behaviour that must survive the fix. Re-selecting because the ranking
+    // shifted -- a tie broken the other way, a cheaper stack arriving -- would
+    // churn the selection every tick and disturb the cast for no gain.
+    castingJustLearning(COPPER);
+    const result = startGathering(MAGIC, JUST_LEARNING.id, never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.detail).toContain('already casting');
+    expect(altMagic.selectedConversionItem).toBe(COPPER);
+  });
+
+  it('re-aims when the chosen stack has run out', () => {
+    // The Arrow Shaft deadline, in miniature: the stack the cast was aimed at
+    // leaves the bank, so it leaves the offered list.
+    castingJustLearning(COPPER);
+    banked.delete(COPPER.id);
+
+    const result = startGathering(MAGIC, JUST_LEARNING.id, never);
+
+    expect(result.ok).toBe(true);
+    // Silver at 20, the cheapest of what is left -- not Gold at 30.
+    expect(altMagic.selectedConversionItem).toBe(SILVER);
+    // And the cast is still running: a refresh must not stop and restart it.
+    expect(altMagic.isActive).toBe(true);
+  });
+
+  it('re-aims when a guard newly covers the chosen stack', () => {
+    // The Nature Rune case. The stack is still there; it is the guard that
+    // changed underneath a cast that had already made its choice.
+    castingJustLearning(COPPER);
+    locked.add(COPPER);
+
+    const result = startGathering(MAGIC, JUST_LEARNING.id, never);
+
+    expect(result.ok).toBe(true);
+    expect(altMagic.selectedConversionItem).toBe(SILVER);
+    expect(altMagic.isActive).toBe(true);
+  });
+
+  it('re-aims when the game has no selection at all', () => {
+    // What a reload leaves behind: the spell survives, the selection does not.
+    // Casting on with nothing selected is the state the short-circuit made
+    // permanent, because "already casting" was true and nothing else was asked.
+    castingJustLearning(undefined);
+
+    const result = startGathering(MAGIC, JUST_LEARNING.id, never);
+
+    expect(result.ok).toBe(true);
+    expect(altMagic.selectedConversionItem).toBe(COPPER);
+  });
+
+  it('reports a refresh that did not land, rather than claiming success', () => {
+    // `selectItemOnClick` is a UI callback whose side effects the typings do not
+    // state, so whether it can be applied to a running cast is checked and not
+    // assumed. A fake that ignores it stands in for a game that refuses it.
+    castingJustLearning(COPPER);
+    banked.delete(COPPER.id);
+    altMagic.selectItemOnClick = (): void => {};
+
+    const result = startGathering(MAGIC, JUST_LEARNING.id, never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.reason).toBe('no_state_change');
+  });
+
+  it('leaves a running Superheat alone while its recipe is still affordable', () => {
+    altMagic.isActive = true;
+    altMagic.selectedSpell = SUPERHEAT_I;
+    altMagic.selectedSmithingRecipe = STEEL;
+
+    const result = startGathering(MAGIC, SUPERHEAT_I.id, never);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.detail).toContain('already casting');
+    expect(altMagic.selectedSmithingRecipe).toBe(STEEL);
+  });
+
+  it('re-aims a running Superheat whose ingredients have run out', () => {
+    // Superheat's selection is a recipe rather than a bank item, and it goes
+    // stale the same way: the ore behind the bar is consumed by the casting.
+    altMagic.isActive = true;
+    altMagic.selectedSpell = SUPERHEAT_I;
+    altMagic.selectedSmithingRecipe = STEEL;
+    affordableBars.delete(STEEL.id);
+
+    const result = startGathering(MAGIC, SUPERHEAT_I.id, never);
+
+    expect(result.ok).toBe(true);
+    expect(altMagic.selectedSmithingRecipe).toBe(BRONZE);
+    expect(altMagic.isActive).toBe(true);
+  });
+});

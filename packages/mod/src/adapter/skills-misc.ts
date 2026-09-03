@@ -3,7 +3,7 @@ import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { readConsumableItems } from './disposal.js';
 import type { GatheringProjection } from './gathering.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, safeValue } from './safe.js';
 
 /**
  * Skills that share no base class with anything else and need their own routine.
@@ -310,8 +310,26 @@ function startAltMagic(
     return fail('altMagic.cast', 'precondition', `no alt magic spell registered as ${recipeId}`);
   }
 
-  const project = (): GatheringProjection =>
-    projectFrom(skill, skill.selectedSpell === undefined ? [] : [skill.selectedSpell.id]);
+  // The spell *and* what it is set to destroy. Alt Magic's recipe is genuinely
+  // both: the live measurement that started this showed the consumed item is
+  // half the cost of a cast, and a projection naming only the spell reports a
+  // fuel swap as "nothing changed". Carrying it is what lets `act` prove a
+  // re-selection landed instead of taking the caller's word for it.
+  const project = (): GatheringProjection => {
+    const selection = liveSelectionId(spell);
+    return projectFrom(skill, [
+      ...(skill.selectedSpell === undefined ? [] : [skill.selectedSpell.id]),
+      ...(selection === null ? [] : [selection]),
+    ]);
+  };
+
+  // Set by the precondition when the only reason this call is allowed through
+  // is that the running cast's fuel has gone stale; `changed` then has to prove
+  // the replacement landed, because the spell half of the projection was
+  // already true before the call and would otherwise report a no-op as success.
+  let refreshing = false;
+  /** What was selected when `refreshing` was set, so `changed` can see it go. */
+  let staleSelectionId: string | null = null;
 
   return act(
     {
@@ -335,11 +353,39 @@ function startAltMagic(
         // whenever the bank is full of items the spell accepts and the cast is
         // being refused because it would destroy them at a loss -- a refusal
         // the operator cannot interpret is a refusal that gets overridden.
+        refreshing = false;
         if (needsSelection(spell)) {
           const outcome = chooseSelection(spell);
           if (!outcome.ok) return `spell ${recipeId} cannot be cast: ${outcome.reason}`;
+          refreshing = !outcome.keepsCurrent;
+          staleSelectionId = refreshing ? liveSelectionId(spell) : null;
         }
-        if (skill.isActive && skill.selectedSpell === spell) return `already casting ${recipeId}`;
+        // A cast that is already running is normally left alone -- but only
+        // while what it is consuming is still something it is allowed to
+        // consume. This short-circuit used to be unconditional, which made the
+        // consumed item a decision taken once at start and never revisited, and
+        // that is a decision with a shelf life: the stack empties, or a guard
+        // added afterwards starts covering it. Both were observed. A rune guard
+        // shipped, was built and reloaded, and the agent went on burning Nature
+        // Runes because the item chosen before the fix survived in
+        // `selectedConversionItem` (altMagic.d.ts:126) -- only a manual
+        // stop/start cleared it, after which the measured draw fell from two
+        // Nature Runes a cast to one Nature and one Arrow Shaft. The emptying
+        // half was three hours away at the time of writing: 4,322 Arrow Shafts
+        // at ~1,800 casts an hour, after which the cast would have been aimed
+        // at a selection that no longer existed and, by this same
+        // short-circuit, would never have been re-aimed.
+        //
+        // Cheap enough to run every tick because it adds no work: the
+        // precondition above already walks the offered list on every call and
+        // throws the answer away. `keepsCurrent` is that walk's by-product. Note
+        // what it deliberately does not do -- re-select because something
+        // *better* appeared. That would churn the fuel on every tie broken
+        // differently and disturb a running cast for no gain; see
+        // {@link SelectionOutcome}.
+        if (skill.isActive && skill.selectedSpell === spell && !refreshing) {
+          return `already casting ${recipeId}`;
+        }
         return actionSlotHeldBy('melvorD:Magic');
       },
       perform: () => {
@@ -357,10 +403,37 @@ function startAltMagic(
         if (!skill.isActive) skill.castButtonOnClick();
         return undefined;
       },
-      changed: () => skill.isActive && skill.selectedSpell === spell,
+      // The cast is running the right spell, and -- when this call existed only
+      // to replace stale fuel -- it is no longer aimed at the stale fuel. The
+      // second clause is what stops a refresh that silently did nothing from
+      // reporting `ok`: `selectItemOnClick` (altMagic.d.ts:143) is a UI
+      // callback whose side effects the typings do not state, so whether it can
+      // be applied to a running cast at all is checked rather than assumed.
+      changed: () =>
+        skill.isActive &&
+        skill.selectedSpell === spell &&
+        (!refreshing || liveSelectionId(spell) !== staleSelectionId),
     },
     isSuspended,
   );
+}
+
+/**
+ * The id of what the game currently has this spell set to consume, if anything.
+ *
+ * Two fields, because Alt Magic has two kinds of selection and only one of them
+ * applies to a given spell: `selectedSmithingRecipe` (altMagic.d.ts:124) for
+ * Superheat, whose selection is a recipe, and `selectedConversionItem` (:126)
+ * for every spell that destroys a bank item. Reading the wrong one would answer
+ * `undefined` for a spell that is perfectly well aimed, and re-select on every
+ * tick forever.
+ */
+function liveSelectionId(spell: AltMagicSpell): string | null {
+  const magic = game.altMagic;
+  const selected = safeValue('skills-misc.liveSelectionId', () =>
+    spell.produces === PRODUCES_BAR ? magic.selectedSmithingRecipe : magic.selectedConversionItem,
+  );
+  return selected?.id ?? null;
 }
 
 // --- Harvesting (Into the Abyss) -------------------------------------------
@@ -508,7 +581,27 @@ type SpellSelection = { kind: 'bar'; recipe: SmithingRecipe } | { kind: 'item'; 
  * is banked" against a bank full of ore has been sent looking in the wrong
  * place by this repo before.
  */
-type SelectionOutcome = { ok: true; selection: SpellSelection } | { ok: false; reason: string };
+type SelectionChoice = { ok: true; selection: SpellSelection } | { ok: false; reason: string };
+
+/**
+ * A choice, plus whether the game's *live* selection is still admissible.
+ *
+ * `keepsCurrent` is the answer to a different question from `selection`, and
+ * the difference is the whole point: `selection` is what would be chosen now,
+ * `keepsCurrent` is whether what the game is already consuming is still allowed
+ * to be consumed. Acting on the first would re-pick the fuel every time the
+ * ranking shifted -- a tie broken the other way, a cheaper stack arriving --
+ * and every re-pick carries the risk of disturbing a running cast. Acting on
+ * the second only intervenes when the current fuel is *gone or newly forbidden*,
+ * which is the condition that actually goes wrong. See {@link startAltMagic}.
+ *
+ * Free to compute. `chooseSelection` already walks the offered list to rank it,
+ * so asking whether the live selection is in that list costs one comparison per
+ * item and no extra bank walk.
+ */
+type SelectionOutcome =
+  | { ok: true; selection: SpellSelection; keepsCurrent: boolean }
+  | { ok: false; reason: string };
 
 /**
  * What a spell should consume, chosen from the game's own list of eligible items.
@@ -551,6 +644,16 @@ function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
     // Superheat: the produced thing is a bar, so the selection is the recipe.
     if (spell.produces === PRODUCES_BAR) {
       let best: { recipe: SmithingRecipe; net: number } | null = null;
+      // Whether the recipe the game is *already* superheating still passes every
+      // test below. Set inside the loop rather than re-derived afterwards, so
+      // the answer cannot drift from the filters that produced it.
+      // `selectedSmithingRecipe` (altMagic.d.ts:124) is undefined when nothing
+      // is selected, which reads as "not current" and re-selects.
+      let keepsCurrent = false;
+      const current = safeValue(
+        'skills-misc.selectedSmithingRecipe',
+        () => magic.selectedSmithingRecipe,
+      );
 
       for (const recipe of game.smithing.actions.allObjects) {
         try {
@@ -559,6 +662,8 @@ function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
 
           const useCoal = spell.specialCost.type === CONSUMES_BAR_INGREDIENTS_WITH_COAL;
           if (!magic.getSuperheatBarCosts(recipe, useCoal, 1).checkIfOwned()) continue;
+
+          if (current !== undefined && recipe.id === current.id) keepsCurrent = true;
 
           const net = saleValueOf(recipe.product);
           if (best === null || net > best.net) best = { recipe, net };
@@ -570,7 +675,7 @@ function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
 
       return best === null
         ? { ok: false, reason: 'no smithable bar has its ingredients in the bank' }
-        : { ok: true, selection: { kind: 'bar', recipe: best.recipe } };
+        : { ok: true, selection: { kind: 'bar', recipe: best.recipe }, keepsCurrent };
     }
 
     // Everything else consumes a bank item the game will name for us.
@@ -615,9 +720,37 @@ function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
     // a Gold Ore worth 30 -- so there the dearest item is precisely the wrong
     // one, and the mistake is unrecoverable in the way selling the same item
     // would at least not have been.
-    return spell.produces === PRODUCES_GP
-      ? chooseAlchemyItem(magic, spell, offered)
-      : chooseCheapestItem(offered);
+    const choice =
+      spell.produces === PRODUCES_GP
+        ? chooseAlchemyItem(magic, spell, offered)
+        : chooseCheapestItem(offered);
+    if (!choice.ok) return choice;
+
+    // Whether what the game is *already* consuming is still allowed to be.
+    //
+    // Membership of `offered` is the whole test for a fixed-product spell: it
+    // is what the bank still holds, minus everything the sell guards withhold,
+    // minus the spell's own product. An emptied stack leaves the bank and a
+    // newly guarded one leaves the list, and both are exactly the cases that
+    // must force a re-selection.
+    //
+    // Alchemy needs one more clause, because `chooseAlchemyItem` refuses on a
+    // margin the offered list knows nothing about: an item that still exists
+    // and is still unguarded can stop clearing its own sale price when a
+    // modifier lapses, and going on burning it would book a loss as income.
+    // Compared by id -- `readConsumableItems` returns the bank's own objects
+    // and `selectedConversionItem` (altMagic.d.ts:126) need not be the same one.
+    const live = safeValue(
+      'skills-misc.selectedConversionItem',
+      () => magic.selectedConversionItem,
+    );
+    const keepsCurrent =
+      live !== undefined &&
+      offered.some((item) => item.id === live.id) &&
+      (spell.produces !== PRODUCES_GP ||
+        magic.getAlchemyGP(live, spell.productionRatio) > saleValueOf(live));
+
+    return { ...choice, keepsCurrent };
   } catch (error) {
     noteSwallowed('skills-misc.chooseSelection', error);
     return { ok: false, reason: 'the item selection could not be read' };
@@ -638,7 +771,7 @@ function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
  * would make Just Learning uncastable on most banks, and picking the cheapest
  * already bounds the loss to the least valuable thing the guards will part with.
  */
-function chooseCheapestItem(offered: readonly AnyItem[]): SelectionOutcome {
+function chooseCheapestItem(offered: readonly AnyItem[]): SelectionChoice {
   let best: { item: AnyItem; value: number } | null = null;
   for (const item of offered) {
     const value = saleValueOf(item);
@@ -674,7 +807,7 @@ function chooseAlchemyItem(
   magic: AltMagic,
   spell: AltMagicSpell,
   offered: readonly AnyItem[],
-): SelectionOutcome {
+): SelectionChoice {
   let best: { item: AnyItem; margin: number } | null = null;
   // The most-paying rejected item, kept only to make the refusal legible: an
   // operator needs the two numbers that failed the comparison, not "no".
