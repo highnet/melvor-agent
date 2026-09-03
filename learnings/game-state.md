@@ -657,3 +657,69 @@ its id is excluded from the offer list.
 
 `specialCost` (`altMagic.d.ts:74`) is deliberately *not* reserved by any of this - it is the
 selection itself, and reserving it would refuse every cast.
+
+## `isMasteryActionUnlocked` *is* the level check, and the tally was crediting it
+
+`candidates.noCandidates` reported, live, at Firemaking 32 / Summoning 11 / Herblore 1 /
+Harvesting 1:
+
+```
+melvorD:Firemaking   all 33 dropped: 29 mastery-locked, 0 level-locked, 1 realm-locked, 3 unaffordable
+melvorD:Summoning    all 53 dropped: 49 mastery-locked, 0 level-locked, 0 realm-locked, 4 unaffordable
+melvorD:Herblore     all 72 dropped: 71 mastery-locked, 0 level-locked, 0 realm-locked, 1 unaffordable
+melvorItA:Harvesting all  7 dropped:  5 mastery-locked, 0 level-locked, 2 realm-locked, 0 unaffordable
+```
+
+`0 level-locked` was structural, not a coincidence. The loop asked the mastery gate first and
+reached the level requirement only when `readMasteryGate` returned null -- which happens only for
+a skill that has no mastery system at all. Every skill that *does* have one therefore banked all
+four reasons under one heading.
+
+**It was label-only.** Reconciled against the dump, recipe by recipe:
+
+| Skill | mastery-refused | what they actually are |
+|---|---|---|
+| Firemaking 32 | 29 | 17 logs from Teak (35) to Carrion (120), plus 12 Abyssal-realm logs |
+| Herblore 1 | 71 | the 70 potions above level 1, plus `melvorItA:Harvesters_Potion` |
+| Summoning 11 | 49 | 25 familiars above level 11, plus 24 Abyssal-realm ones |
+| Harvesting 1 | 5 | Twisted (abyssal 11) through Voidfire (55), all in a locked realm |
+
+Nothing that should have been offered was dropped. Firemaking's three level-unlocked logs
+(Normal, Oak, Willow) really were unaffordable: the bank held 125 Yew Logs -- a level-60 burn --
+and no other log at all, so "3 unaffordable" is not suspiciously few, it is exactly the number of
+burnable tiers the character has reached. The realm-locked 1 was `melvorItA:Riftwood_Logs`, whose
+`level` and `abyssalLevel` are both 0 and whose realm is `melvorItA:Eternal`.
+
+Two things came out of it.
+
+**Attribute to the fact you can check; leave the gate deciding.** `isMasteryActionUnlocked`
+(`skill.d.ts:806`) is declared abstract and the typings never say what it returns, so promoting
+our own `recipe.level` comparison to a gate would risk dropping a recipe the game had unlocked by
+a route we cannot see -- a missing candidate traded for a tidier tally, which is the wrong
+direction. The gate still decides. When it refuses, the counters ask realm first, then the level
+requirement on the track `recipeRequirement` selects, and **mastery is the residual**: what the
+gate refused that neither of those explains. Post-fix Firemaking reads
+`0 mastery-locked, 17 level-locked, 13 realm-locked, 3 unaffordable`.
+
+**A wrong heading is not cosmetic when the heading is the print condition.**
+`reportSilentSkill` prints only when `mastery` or `realm` is non-zero, on the stated grounds that
+`readLockedActions` and `readUnstockedSkills` already carry level and stock. So a level block
+filed as mastery both names the wrong cause *and* keeps alive a line the module had decided not
+to print.
+
+### The same `level: 0` trap, twice more, in the blocked list
+
+Into the Abyss recipes carry their requirement on `abyssalLevel` and leave `level` at 0 (dump:
+every Harvesting vein is `level: 0`; `melvorItA:Twisted_Vein` is `abyssalLevel: 11`). Two readers
+in `blocked.ts` compared the standard pair only:
+
+- `readUnstockedSkills` filtered `recipe.level <= skill.level`, so all seven veins passed and the
+  planner was told "Harvesting has no candidates because nothing it can make is in stock --
+  Abyssal Vein is unlocked at level 0 and needs materials bought or gathered". A shopping list,
+  for veins that consume nothing, in a realm reporting `unlocked: false` with "Complete Into the
+  Abyss x1" outstanding.
+- `readLockedActions` could name a recipe in a locked realm as a level to grind toward.
+
+Both now skip realm-locked recipes and read the requirement through `recipeRequirement` /
+`currentLevelFor`. The general shape: **a requirement read off the wrong track defaults to 0, and
+0 reads as an invitation** -- the third time this file has paid for that.
