@@ -12,6 +12,46 @@ import type { PolicyContext, PolicyDecision, PolicyExecutor } from './types.js';
  */
 const HP_FLOOR_FRACTION = 0.5;
 
+/**
+ * How far below the auto eater's own trigger to let HP fall before bailing.
+ *
+ * Auto Eat fires at `autoEatThreshold` percent of max HP. A floor *above* that
+ * trigger means the policy leaves the fight before the eater is ever allowed to
+ * do its job, and the two guards then fight each other instead of the monster.
+ *
+ * Measured live: the flat 50% floor against an eater triggering at 30% left the
+ * character oscillating in the band between them -- `combat.engage ok` /
+ * `combat.disengage ok` alternating on the 3s policy clock for minutes, HP
+ * hovering near 43%, too low for the policy to keep fighting and too high for
+ * Auto Eat to heal. It never ate and it never fought.
+ *
+ * The margin is what makes crossing it *evidence*: with an eater owned and food
+ * to spend, HP below its trigger means the eater is not keeping up, which is a
+ * real reason to leave. Above the trigger it means nothing has happened yet.
+ */
+const AUTO_EAT_FLOOR_MARGIN = 0.05;
+
+/**
+ * The fraction of max HP below which to disengage.
+ *
+ * Two regimes, because the sustain argument is genuinely different. Without an
+ * auto eater HP only recovers between fights, and half a bar is a sane place to
+ * stop. With one, the eater *is* the sustain mechanism and the floor belongs
+ * below its trigger -- see AUTO_EAT_FLOOR_MARGIN.
+ *
+ * `autoEatThreshold` is a **percentage** despite the schema comment calling it
+ * a fraction: the live snapshot reads 30 against a 150 HP bar, and the eater
+ * fires at 45.
+ */
+function hpFloorFor(combat: { autoEatThreshold: number }, foodRemaining: number): number {
+  const triggerFraction = combat.autoEatThreshold / 100;
+
+  // No eater, or nothing for it to eat: the flat floor is the only backstop.
+  if (triggerFraction <= 0 || foodRemaining < FOOD_FLOOR) return HP_FLOOR_FRACTION;
+
+  return Math.max(0, triggerFraction - AUTO_EAT_FLOOR_MARGIN);
+}
+
 /** Below this many food items, disengage: the sustain argument no longer holds. */
 const FOOD_FLOOR = 5;
 
@@ -64,12 +104,14 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
   const hpFraction = combat.maxHitpoints > 0 ? combat.hitpoints / combat.maxHitpoints : 0;
   const foodRemaining = combat.food.reduce((sum, slot) => sum + slot.qty, 0);
 
+  const hpFloor = hpFloorFor(combat, foodRemaining);
+
   if (combat.inCombat) {
-    if (hpFraction < HP_FLOOR_FRACTION) {
+    if (hpFraction < hpFloor) {
       return {
         kind: 'act',
         actions: [{ type: 'disengage' }],
-        reason: `HP ${(hpFraction * 100).toFixed(0)}% below floor ${HP_FLOOR_FRACTION * 100}%; disengaging`,
+        reason: `HP ${(hpFraction * 100).toFixed(0)}% below floor ${(hpFloor * 100).toFixed(0)}%; disengaging`,
       };
     }
     if (foodRemaining < FOOD_FLOOR) {
