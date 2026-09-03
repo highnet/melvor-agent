@@ -56,32 +56,47 @@ function hpFloorFor(combat: { autoEatThreshold: number }, foodRemaining: number)
 const FOOD_FLOOR = 5;
 
 /**
- * The fraction of max HP a fight may be *started* at.
+ * Whether a floor is crossed right now, named so the reason can be logged.
  *
- * There was no such floor, and the gap killed the character twice in eight
- * minutes. From the log, deaths 56 and 57, each three lines in the same second:
+ * One function for both floors because both answer the same question — "is
+ * fighting still the right thing to be doing" — and the caller must ask it in
+ * two places: before leaving a fight and before starting one. Two copies of
+ * that test is exactly how they came to disagree, with the entry side simply
+ * not having one.
  *
- *     23:11:32 error   character died (1 since last check); clearing the objective
- *     23:11:32 planner plan advanced (1 left): Fight Sweaty Monster
- *     23:11:32 adapter combat.engage ok — inCombat false -> true
+ * @returns A sentence naming the crossing, or null when nothing is crossed.
+ */
+/**
+ * The fraction of max HP a fight may be *started* at, over and above the floors.
  *
- * Death cleared the objective, the plan advanced to the next fight, and the
- * executor engaged again *in the same second*, on a corpse's worth of health.
- * The disengage floor below cannot help: it only runs `if (combat.inCombat)`,
- * and this is the tick before that becomes true.
+ * The floors above are a survival test: is fighting still the right thing to be
+ * doing. This is a different and stricter question -- is starting a *new* fight
+ * the right thing -- and the operator's instruction after deaths 56 and 57 was
+ * explicit: "we should never be greedy with combat, or thieving".
  *
- * Deliberately higher than the disengage floor, and that asymmetry is the whole
- * point. Leaving a fight is an emergency judged on what is left; entering one is
- * a choice, and the honest bar for choosing is "healthy", not "not yet dying".
- * Hysteresis also stops a character hovering at the disengage floor from
- * re-entering the moment it ticks a point above it, which is the shape of every
- * other loop found today.
+ * Leaving a fight is an emergency judged on what is left. Entering one is a
+ * choice, and the honest bar for choosing is "healthy", not "not yet dying".
+ * Without the gap, a character sitting exactly on the leave floor re-enters the
+ * moment it ticks one point above it -- a slower version of the same
+ * alternation, and the shape of every loop found today.
  *
- * Auto Eat does not make this unnecessary. It fires *during* a fight at its own
- * threshold; it does nothing about starting one already below that threshold,
- * which is exactly the state a death leaves behind.
+ * Auto Eat does not make it unnecessary: it fires *during* a fight at its own
+ * threshold and does nothing about starting one already below that threshold,
+ * which is exactly the state a death leaves behind. Deaths 56 and 57 were three
+ * log lines apart in one second -- died, plan advanced, engaged again at 38 of
+ * 150.
  */
 const ENGAGE_HP_FRACTION = 0.8;
+
+function crossedFloor(hpFraction: number, hpFloor: number, foodRemaining: number): string | null {
+  if (hpFraction < hpFloor) {
+    return `HP ${(hpFraction * 100).toFixed(0)}% below floor ${(hpFloor * 100).toFixed(0)}%`;
+  }
+  if (foodRemaining < FOOD_FLOOR) {
+    return `food down to ${foodRemaining}; the sustain argument no longer holds`;
+  }
+  return null;
+}
 
 /**
  * Executes a `fight_monster` objective.
@@ -133,22 +148,54 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
   const foodRemaining = combat.food.reduce((sum, slot) => sum + slot.qty, 0);
 
   const hpFloor = hpFloorFor(combat, foodRemaining);
+  const crossed = crossedFloor(hpFraction, hpFloor, foodRemaining);
+
+  // Evaluated before the `inCombat` split, and that ordering is the fix.
+  //
+  // Both floors used to live *inside* the in-combat branch, so a crossing could
+  // only ever end the current fight — nothing consulted them on the way in. The
+  // next tick therefore found combat stopped, skipped the floors entirely and
+  // engaged again, and the tick after that crossed the same floor and stopped
+  // again. A floor that governs leaving but not starting cannot terminate
+  // anything; it can only alternate.
+  //
+  // That is the whole shape of the live loop: `combat.engage ok` /
+  // `combat.disengage ok` on the 3s policy clock for seventeen minutes across
+  // two game reloads, no kills, no XP, no GP. The give-away in the log is that
+  // the *first* engage of an episode holds for 42s and 24s and every subsequent
+  // one holds for exactly 3.0s -- one policy tick. Something became true during
+  // the first fight and stayed true, and the executor asked about it only at
+  // the one moment it could not act on the answer.
+  //
+  // Refusing to engage is not idling in the bad sense. Out of combat both
+  // conditions are the ones that mend themselves: hitpoints regenerate, and
+  // `refillFood` and `cookWhenFoodLow` restock the slot the fight emptied.
+  // Standing still is what gives them the chance the thrash denied them, and if
+  // the condition does not clear the budget and the no-movement detector
+  // replan it -- which is a diagnosis, where the loop was silence.
+  if (crossed !== null) {
+    if (combat.inCombat) {
+      return { kind: 'act', actions: [{ type: 'disengage' }], reason: `${crossed}; disengaging` };
+    }
+    return {
+      kind: 'idle',
+      reason: 'waiting_to_recover',
+      detail: `${crossed}; not starting another fight until that clears`,
+    };
+  }
+
+  // Healthy enough to keep going is not healthy enough to begin; see
+  // ENGAGE_HP_FRACTION. Only on the way in, so a fight already under way is
+  // judged by the floors alone and this cannot pull the character out of one.
+  if (!combat.inCombat && hpFraction < ENGAGE_HP_FRACTION) {
+    return {
+      kind: 'idle',
+      reason: 'waiting_to_recover',
+      detail: `HP ${(hpFraction * 100).toFixed(0)}% is below the ${ENGAGE_HP_FRACTION * 100}% needed to start a fight; waiting`,
+    };
+  }
 
   if (combat.inCombat) {
-    if (hpFraction < hpFloor) {
-      return {
-        kind: 'act',
-        actions: [{ type: 'disengage' }],
-        reason: `HP ${(hpFraction * 100).toFixed(0)}% below floor ${(hpFloor * 100).toFixed(0)}%; disengaging`,
-      };
-    }
-    if (foodRemaining < FOOD_FLOOR) {
-      return {
-        kind: 'act',
-        actions: [{ type: 'disengage' }],
-        reason: `food down to ${foodRemaining}; the sustain argument no longer holds`,
-      };
-    }
     return {
       kind: 'idle',
       reason: 'already_running',
@@ -173,20 +220,6 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
       kind: 'act',
       actions: [{ type: 'run_dungeon', dungeonId: params.dungeonId }],
       reason: `entering dungeon ${params.dungeonId}`,
-    };
-  }
-
-  // Health is checked here rather than beside the disengage floor above,
-  // because that branch is guarded by `if (combat.inCombat)` and this is the
-  // tick before it. Idle rather than act: HP regenerates on its own out of
-  // combat and the reflex tier eats, so waiting is what fixes this, and an
-  // objective that reported failure here would be abandoned and replanned into
-  // another fight at the same health.
-  if (hpFraction < ENGAGE_HP_FRACTION) {
-    return {
-      kind: 'idle',
-      reason: 'waiting_for_game',
-      detail: `HP ${(hpFraction * 100).toFixed(0)}% is below the ${ENGAGE_HP_FRACTION * 100}% needed to start a fight; waiting`,
     };
   }
 

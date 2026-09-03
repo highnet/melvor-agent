@@ -1416,3 +1416,127 @@ one that matters: `inCombat`, so the Thiever's Cape keeps its 25 Stealth and
 +10% Thieving GP every second the character is not fighting. A rule that
 stripped whenever an item failed a *combat* test would quietly have cost the
 Thieving income the run lives on.
+
+## A floor that governs leaving governs nothing
+
+The fifth retry-forever loop, and the first one whose ontology was right.
+Combat alternated `combat.engage ok` / `combat.disengage ok` on the 3s policy
+clock for seventeen minutes across two game reloads, no kills, no XP, no GP.
+
+Both of `fightMonster`'s safety floors — HP and food — lived *inside* the
+`inCombat` branch. So a crossing could end the fight that was running and
+nothing more: the next tick found combat stopped, never evaluated the floors at
+all, and engaged; the tick after crossed the same floor and stopped again. A
+condition consulted only at the moment it can be acted on one way cannot
+terminate anything. It can only alternate, forever, at two ticks per cycle.
+
+The measurement that named it was in the log all along, and it is worth the
+habit: **tabulate the durations, not the events.** The first engage of an
+episode holds 42.0s and 24.0s; every subsequent one holds exactly 3.0s. One long
+hold and then a flat line at one tick is the signature of a state that became
+true during the first pass and stayed true — and it points at the *entry*
+condition, because that is the only asymmetry between the first pass and the
+rest.
+
+Three diagnoses missed it, and one instrument gap explains all three.
+
+- **The reason was never logged.** `perform(actions, reason)` accepted the
+  policy's reason and used it nowhere, so `combat.disengage ok — inCombat true
+  -> false` was the entire record of the decision. "No floor reason appears
+  beside it, therefore it was not the floor" was the reasonable inference and it
+  was false: no reason appeared for *any* action. A log that records what was
+  done and never why cannot tell five branches of one function apart.
+- **A reflex and a policy action do look different, and that is the one
+  provenance fact the log does carry.** A reflex logs `reflex.<name> fired` and
+  no adapter line; only `perform` writes `<action> ok`. That alone rules out
+  every reflex and the abort handler — which calls `disengageCombat` directly
+  and logs nothing on success — and leaves three call sites. Worth checking
+  before guessing.
+- **Fixing a real bug is not evidence of having found the bug**, again. The flat
+  50% floor above a 30% auto-eat trigger was genuine, was the whole story for
+  the 22:14 and 22:38 episodes, and the loop resumed on the next build.
+
+The general rule: **an exit condition and an entry condition are the same
+question asked at two moments, and they belong in one function.** Where they are
+two — or where one is simply missing — they will disagree, and disagreement
+between a start rule and a stop rule does not surface as a wrong answer. It
+surfaces as an infinite loop in which every individual decision is correct.
+
+### Why it was one cause and not two
+
+The loop survived a fix to the floor's *value* and that looked like evidence of
+a second cause. It is not. Lowering the floor from a flat 50% to the auto
+eater's trigger less 5% was correct and changed nothing structural, and the
+character had by then already been driven to the new floor by the loop the old
+one started.
+
+The mechanism that pins it is that **the thrash prevents its own recovery.**
+Auto Eat fires inside `Character.damage`, so it only ever fires when the
+character is hit. Three seconds of combat is about one spawn timer, so the
+thrash cycles without the enemy landing much — HP neither falls nor is healed,
+and out of combat it regenerates far too slowly to matter. HP was 38 of 150 when
+the character was pulled out: 25.3%, sitting on the 25% floor to a decimal
+place. A hit landing inside one three-second window pushes it under and the
+policy leaves; a rare auto-eat pushes it over and the fight holds for a minute
+or two before grinding back down. That is exactly the mixture of 3.0s cycles and
+occasional long holds in the log, and it is the same loop under both floor
+values.
+
+So the character was pinned at the floor *by* the guard meant to protect it, and
+neither of the two conditions the guard names could change while the guard was
+firing. A stop rule with no matching start rule does not merely fail to
+terminate; it can hold the state that triggers it perfectly still.
+
+The bill for that: death 56, and the Jeweled Necklace destroyed. Each cycle
+re-entered a fight the character had not recovered from, and re-armed the death
+penalty on gear the strip had been written to protect — see the next section for
+how the restore put it back on.
+
+The corollary for the fix: refusing to *start* is a wait, not a refusal. Out of
+combat both floors mend themselves — hitpoints regenerate, `refillFood` and
+`cookWhenFoodLow` restock the slot — so standing still gives them the chance the
+thrash denied them, and the budget and no-movement detectors escalate if they do
+not take it. That is the third question from *a guard that can starve its own
+precondition*, answered before it was asked.
+
+## The reflex tier reads a snapshot the policy tier owns
+
+Same investigation, second defect, and it is measurable in the log to the
+second: `reflex.restoreValuables` fired one second after every `combat.engage`,
+and `reflex.stripValuables` one second after every `combat.disengage`. The pair
+was inverted.
+
+Reflexes run on a 1s throttle (`REFLEX_THROTTLE_MS`) against `lastSnapshot`,
+which only refreshes on the 3s policy clock. So any reflex whose condition is
+`inCombat` can act on a reading up to three seconds stale, and the restore
+reading a pre-engage `inCombat: false` puts the valuables back on *during* the
+fight the strip exists to protect them from — at the one moment
+`applyDeathPenalty` can charge for it.
+
+The strip side of that lag was anticipated and written down, one section above.
+The restore side has the same lag and the opposite consequence, because it
+undoes the protection rather than delaying it. `readPlayerHitpoints` already
+exists for exactly this reason on exactly this tier, and its own doc comment
+says so. The lesson that comment did not generalise: **every input a reflex
+takes from the snapshot inherits the policy tier's clock, and the reflex tier
+exists precisely because that clock is too slow.**
+
+Worth being explicit that this was *not* the cause of the engage/disengage loop,
+and that the log proves it rather than argues it: `disengageCombat` refuses when
+`game.combat.isActive` is false, and it succeeded two seconds after each
+restore. Equipping during a fight does not end the fight. The loop also predates
+these two reflexes by twelve minutes.
+
+## Equipped food is one set, not one per equipment set
+
+Checked while chasing the food floor, because "the strip switched equipment sets
+and the new set had no food" would have explained everything. It does not:
+`EquipmentSet` holds `equipment`, `spellSelection` and `prayerSelection`
+(equipment.d.ts:136-144) and no food, while `Player.food` is a single
+`EquippedFood` on the player (player.d.ts:76). `changeEquipmentSet`
+(player.d.ts:224) cannot change what the character eats.
+
+Worth recording because the opposite is intuitive — the food UI sits with the
+equipment UI — and because *a count in the bank is a claim, not an observation*
+already established that the number that matters is the equipped one. It is the
+equipped one, and there is exactly one of it.

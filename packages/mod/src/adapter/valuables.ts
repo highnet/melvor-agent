@@ -479,7 +479,30 @@ export function restoreStashedValuables(isSuspended: () => boolean): ActionResul
     {
       name: 'valuables.restore',
       observe: projectStash,
-      precondition: () => (stash.size === 0 ? 'nothing is stashed' : null),
+      // Refused while a fight is running, and this is the load-bearing line of
+      // the whole pair.
+      //
+      // The condition lived only in the reflex, which reads `inCombat` from a
+      // snapshot the policy tier refreshes every 3s while the reflex tier runs
+      // every 1s. So a restore evaluated against a snapshot captured *before*
+      // the engage saw no fight and put everything back on one second into it.
+      // That is not a theoretical window: it killed the Jeweled Necklace. Death
+      // 56 landed with the necklace worn, because the restore had re-equipped
+      // it mid-fight, and `applyDeathPenalty` (player.d.ts:410) rolled onto the
+      // slot the strip had already emptied.
+      //
+      // Here rather than only in the caller because a caller's condition is an
+      // opinion and a precondition is a property: the reflex, the reload path
+      // in `save.ts` and anything added later all pass through this function,
+      // and none of them can now put a valuable back on a character who is in a
+      // fight. `game.combat.isActive` spans `selectMonster` to `stop`, so a
+      // restore cannot land between an engage and its disengage.
+      precondition: () => {
+        if (stash.size === 0) return 'nothing is stashed';
+        if (game.combat.isActive)
+          return 'in combat; the stash stays in the bank until the fight ends';
+        return null;
+      },
       perform: () => {
         const done: string[] = [];
         for (const [slotId, entry] of [...stash.entries()]) {

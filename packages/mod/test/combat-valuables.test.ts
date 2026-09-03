@@ -533,6 +533,34 @@ describe('putting it back', () => {
     ).toBeNull();
   });
 
+  it('refuses at the adapter, not only at the reflex', () => {
+    // The test above is the reflex's opinion. This is the property, and it is
+    // the one that was missing when the Jeweled Necklace was destroyed.
+    //
+    // The reflex read `inCombat` from a snapshot the policy tier refreshes
+    // every 3s while the reflex tier runs every 1s, so a restore evaluated
+    // against a snapshot captured before the engage saw no fight and put
+    // everything back on one second into it. Death 56 then landed with the
+    // necklace worn and `applyDeathPenalty` rolled onto the slot the strip had
+    // already emptied. A condition that lives only in one caller protects only
+    // that caller; the reload path and anything added later went straight past
+    // it.
+    stashValuablesForCombat(never);
+    const combat = (globals.game as { combat: { isActive: boolean } }).combat;
+    combat.isActive = true;
+
+    const result = restoreStashedValuables(never);
+
+    expect(result.ok).toBe(false);
+    expect(player.wearing('melvorD:Amulet')).toBeNull();
+    // Still recorded, so the restore happens the moment the fight really ends.
+    expect(hasStashedValuables()).toBe(true);
+
+    combat.isActive = false;
+    expect(restoreStashedValuables(never).ok).toBe(true);
+    expect(player.wearing('melvorD:Amulet')).toBe(NECKLACE.id);
+  });
+
   it('does nothing when nothing was stripped', () => {
     expect(
       restoreValuablesAfterCombat({ inCombat: false, hasStashedValuables: false }, () => {

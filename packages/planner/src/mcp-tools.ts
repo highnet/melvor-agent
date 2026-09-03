@@ -1090,11 +1090,39 @@ function successFor(
     return [{ type: 'skill_level_at_least' as const, skillId, level: targetLevel }];
   }
 
+  // A fight has no `skillId`, and until now that dropped it through to the `[]`
+  // below — the branch written for one-shot sales and purchases. `targetLevel:
+  // 22` was accepted and discarded without a word, the objective was queued
+  // with `successWhen: []`, and the confirmation described it as "one-shot".
+  //
+  // A fight is the opposite of one-shot. It is the *only* way this character
+  // can reach `hp-40`, `defence-20` or `prayer-20`, and it trains for as long
+  // as it runs.
+  //
+  // Hitpoints rather than the attack style's own skill, deliberately. Every
+  // fight trains Hitpoints whatever the style; which of Attack, Strength,
+  // Defence, Ranged or Magic it also trains depends on the equipped weapon and
+  // the selected attack style, and the candidate carries neither. Naming one
+  // would be guessing at a fact the planner cannot see, and this repo has paid
+  // for guessed ids before. Hitpoints is the criterion that is true by
+  // construction.
+  if (isCombatKind(candidate.kind)) {
+    return [{ type: 'skill_level_at_least' as const, skillId: HITPOINTS_ID, level: targetLevel }];
+  }
+
   // A sale or purchase has no level to reach, and the obvious stand-in — "have
   // at least 1 GP" — is already true, so the objective completed before it ever
   // acted. No criterion at all is the honest answer: the executor knows when a
   // one-shot transition is done, and nothing else does.
   return [];
+}
+
+/** Hitpoints, the one skill every fight trains regardless of attack style. */
+const HITPOINTS_ID = 'melvorD:Hitpoints';
+
+/** Objective kinds that run a fight, and therefore train Hitpoints. */
+function isCombatKind(kind: string): boolean {
+  return kind === 'fight_monster' || kind === 'run_dungeon';
 }
 
 /**

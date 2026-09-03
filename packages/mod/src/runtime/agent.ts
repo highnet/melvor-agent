@@ -91,6 +91,7 @@ import {
   readGatherCandidates,
   readGearUpgrades,
   readHeldCompost,
+  readInCombat,
   readLapsingPotions,
   readLevelCapCandidates,
   readLoadoutCandidates,
@@ -381,6 +382,20 @@ const COMBAT_ENUMERATION_TTL_MS = 60_000;
  * every three seconds turns the journal into a wall of one sentence.
  */
 const NO_OBJECTIVES_LOG_INTERVAL_MS = 60_000;
+
+/**
+ * Intents that abandon work already running, rather than starting some.
+ *
+ * These are the ones whose *reason* is worth a line: "the game stopped doing
+ * the thing it was doing" is never self-explanatory, and the reason is the only
+ * thing that distinguishes a safety floor from a slot handover from an
+ * operator's replan. See the use in {@link Agent.perform}.
+ */
+const STOPS_WORK_IN_PROGRESS: ReadonlySet<PolicyAction['type']> = new Set([
+  'disengage',
+  'stop_gathering',
+  'stop_raid',
+]);
 
 export class Agent {
   private state: RunState = 'idle';
@@ -918,7 +933,11 @@ export class Agent {
       // that ends by dying is the fight whose restore matters most.
       restoreValuablesAfterCombat(
         {
-          inCombat: snapshot.combat.inCombat,
+          // Read live, not from the snapshot. On the throttled snapshot this
+          // fired one second into every fight and put the valuables straight
+          // back on -- undoing the protection the strip exists for, at the one
+          // moment `applyDeathPenalty` can charge for it. See readInCombat.
+          inCombat: readInCombat(),
           hasStashedValuables: hasStashedValuables(),
         },
         () => restoreStashedValuables(isSuspended),
@@ -1046,7 +1065,10 @@ export class Agent {
       // all 55 deaths while `applyDeathPenalty` rolled for it every time.
       stripValuablesForFight(
         {
-          inCombat: snapshot.combat.inCombat,
+          // Live, for the reason its partner above documents: on the snapshot
+          // this fired one second *after* each disengage, stripping a
+          // character who had stopped fighting.
+          inCombat: readInCombat(),
           strippable: readStrippableValuables().length,
         },
         () => stashValuablesForCombat(isSuspended),
@@ -1847,9 +1869,25 @@ export class Agent {
       // is the difference between a verified action and a productive one.
       const delta = summariseResult(result);
       if (delta !== null) lastChange = delta.detail;
+      // The policy's reason, carried onto the line for the actions that *stop*
+      // something.
+      //
+      // `reason` was accepted by this function and never used. So the log said
+      // `combat.disengage ok — inCombat true -> false` and nothing else, and
+      // the fight thrash was diagnosed wrongly three times partly on the
+      // strength of "a floor disengage would have logged its reason" — which it
+      // would not, because this line dropped it. The reason is the only record
+      // of *which* of several branches fired, and for a stop it is the whole
+      // content of the decision.
+      //
+      // Only the stopping actions, and only on success: they are rare (eight
+      // `mining.stop` in a full day against 174 engages), each one is a
+      // deliberate abandonment of work in progress, and every other action's
+      // reason is already recoverable from its own arguments.
+      const why = STOPS_WORK_IN_PROGRESS.has(action.type) ? ` — ${reason}` : '';
       this.log.info(
         'adapter',
-        `${result.action} ok${delta === null ? '' : ` — ${delta.detail}`}`,
+        `${result.action} ok${delta === null ? '' : ` — ${delta.detail}`}${why}`,
         result,
       );
     }

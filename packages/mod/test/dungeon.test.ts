@@ -4,6 +4,27 @@ import { objective, snapshot } from './fixtures.js';
 
 const DUNGEON = 'melvorD:Chicken_Coop';
 
+/**
+ * A character the floors have no objection to.
+ *
+ * The shared fixture equips no food at all, which since the floors began
+ * gating *entry* as well as exit is a state in which starting a fight is
+ * refused — correctly, and for the same reason the survivability gate refuses
+ * one: an empty slot is no sustain argument. These two cases are about routing
+ * (a dungeon rather than an engage, and clearing the action slot), so they need
+ * a character who is allowed to fight at all.
+ */
+function fightable(overrides: Record<string, unknown> = {}) {
+  const base = snapshot();
+  return snapshot({
+    ...overrides,
+    combat: {
+      ...base.combat,
+      food: [{ itemId: 'melvorD:Shrimp', itemName: 'Shrimp', qty: 50, healsFor: 30 }],
+    },
+  });
+}
+
 function dungeonObjective() {
   return objective({
     kind: 'run_dungeon',
@@ -24,7 +45,7 @@ function context(snap = snapshot()) {
 
 describe('dungeon objectives', () => {
   it('emits a run_dungeon action rather than an engage', () => {
-    const decision = fightMonster(context());
+    const decision = fightMonster(context(fightable()));
     expect(decision).toMatchObject({
       kind: 'act',
       actions: [{ type: 'run_dungeon', dungeonId: DUNGEON }],
@@ -64,7 +85,7 @@ describe('switching into combat', () => {
     // Melvor runs one action at a time, so a skill still running is not a
     // reason to wait — it is the thing to clear. Waiting meant a fight
     // objective set while the character was fishing did nothing, silently.
-    const fishing = snapshot({
+    const fishing = fightable({
       activeAction: {
         id: 'melvorD:Fishing',
         name: 'Fishing',
