@@ -54,7 +54,7 @@ Township summary reported 0% health while the repair reflex correctly computed
       while the larder is under the 40-meal floor -- Raw Poison Fish is one of
       the best GP rates on the board and is ordinary stock once there is food.
 
-- [ ] **A plan step whose target is already met completes instantly and drains
+- [x] **A plan step whose target is already met completes instantly and drains
       the plan** — S. Observed twice: a three-step plan asked for Cooking 44 and
       Fishing 40 when Cooking was already 44 and Fishing 42, so both steps were
       satisfied the moment they were queued, completed without doing anything,
@@ -62,10 +62,27 @@ Township summary reported 0% health while the repair reflex correctly computed
       are skipping through the steps without doing them". `rungFor`
       (`packages/planner/src/mcp-tools.ts`) clamps a target *down* when it
       exceeds the budget but has no notion of one already reached; it projected
-      "~0min" and said only that this was "a short rung". A target at or below
-      the current level is not a short rung, it is a no-op, and `set_plan`
-      should refuse it or raise it rather than queue it. The ~0min projection is
-      the available signal.
+      "~0min" and said only that this was "a short rung". Both tools now refuse
+      a step whose criteria as queued already hold -- refuse and not raise,
+      because the caller read a stale level and every number they might be
+      raised to is equally stale, so the refusal names the current reading
+      instead. Checked per *criterion*, not per level: a stock target for
+      something already banked drains a plan the same way. A step behind another
+      step is judged only on criteria that cannot regress, which keeps "mine 200
+      Gold Ore, then smelt" queueable; the rest is left to step start, where the
+      mod now logs a completion inside ten seconds as one that did nothing.
+
+- [x] **The stopgap adopted work whose inputs lasted one action** — S. Found
+      while investigating the above. `Runecrafting: Smoke Rune` was adopted for a
+      thirty-minute budget, crafted for three seconds and was refused for
+      missing materials twice, a minute after the same with Alt Magic's Item
+      Alchemy. Not a `canAfford` gap -- the log shows `Runecrafting.craft ok`
+      with Smoke Rune selected before the refusal, so combination rune costs are
+      read correctly and one action really was affordable, which is all
+      `canAfford` claims. `sustainableMinutes` already had the answer and only
+      ever reached the label, so both candidates said "inputs run out almost
+      immediately" to a chooser that reads numbers. Now carried on the candidate
+      as `sustainMinutes` and filtered on.
 
 - [x] **Food is not auto-liquidated** *(2×)* — S. `sellToEscapeFullBank` sells the
       cheapest stack, and cheap food is the cheapest thing in a bank. One call

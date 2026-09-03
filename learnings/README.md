@@ -283,3 +283,35 @@ the recipe costs before it.
 
 When a search keeps turning up real but unrelated defects, suspect the
 instrument before the subject.
+
+## A number computed for a sentence is invisible to the code
+
+Two failures in one afternoon, and the same shape underneath both.
+
+A plan asked for Cooking 44 and Fishing 40 at Cooking 44 and Fishing 42. Both
+steps were satisfied when they were queued, both completed on their first tick,
+and three steps drained in nine seconds — "we are skipping through the steps
+without doing them". The tool had already computed the answer: it projected
+`~0min` of the 30 minute budget and called that "a short rung". Nothing consumed
+the projection except a sentence.
+
+An hour earlier the unattended stopgap adopted `Runecrafting: Smoke Rune` for a
+thirty minute budget, crafted for three seconds and was refused for missing
+materials — twice, having done the identical thing with Item Alchemy a minute
+before. The candidate label read *"inputs run out almost immediately"*. That
+figure, `sustainableMinutes`, had been computed for months and reached nothing
+but the label.
+
+Both numbers were correct, current and on screen. Both were strings by the time
+anything could act on them, and the code that had to decide reads numbers.
+
+The habit worth keeping: when a reader computes something to *say*, ask which
+decision would want it — and give it the number, not the sentence. A figure that
+exists only in prose is readable by a planning session and invisible at 3am.
+
+The corollary is about diagnosis. "The stopgap picked something unaffordable"
+was the obvious reading and it was wrong: the log said `Runecrafting.craft ok`
+three seconds before the refusal, so the craft *started* and `canAfford` was
+right. `canAfford` answers "is one action possible". A thirty minute objective
+was asking a different question, and there is no bug in the answer to a question
+nobody asked.
