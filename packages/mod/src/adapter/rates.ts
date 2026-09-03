@@ -1,6 +1,6 @@
 import { FISHING_ID } from './gathering.js';
 import { ALT_MAGIC_ID, type RecipeLike } from './recipes.js';
-import { noteSwallowed, recordFallback } from './safe.js';
+import { noteSwallowed, recordFallback, safeValue } from './safe.js';
 
 /**
  * How long an action takes, how much it yields, and how much XP it pays.
@@ -164,11 +164,89 @@ const NOMINAL_INTERVAL_MS = 3000;
  * which is exactly the kind of confident arithmetic that had Crystal
  * advertising an order of magnitude above what it paid.
  *
- * Item doubling is deliberately NOT applied on top. `getDoublingChance`
- * (skill.d.ts:386) exists, but whether the yield above already accounts for it
- * is not stated anywhere in the typings, and multiplying by both would
- * overstate every gathering rate. An unclaimed bonus understates; a
- * double-counted one is a fabrication.
+ * Item doubling is deliberately NOT applied on top of the accessor's answer,
+ * and that decision is now settled by measurement rather than by caution.
+ * `modifyPrimaryProductQuantity` **rolls the doubling itself**: it is not a
+ * pure getter, it is a sample. Calling it once and pricing an hour off the
+ * result is how the board came to advertise a rate that flipped by a factor of
+ * two between two readings forty minutes apart, with no game state moving.
+ *
+ * The evidence, from 73 consecutive reports read off the live planner while the
+ * character mined Gold and nothing else changed:
+ *
+ * | recipe             | low     | high    | high/low | high share |
+ * |--------------------|---------|---------|----------|------------|
+ * | Smithing Gold Bar  | 212,400 | 468,000 | 2.20     | 37%        |
+ * | Smithing Silver Bar|  53,550 | 145,350 | 2.71     | 23%        |
+ * | Mining Gold        |  53,283 | 100,294 | 1.88     | 10%        |
+ * | Mining Mithril     |  45,720 |  88,787 | 1.94     |  3%        |
+ *
+ * Exactly two values each, never anything between, flipping independently per
+ * recipe from one report to the next while `xp/h` — built from the same
+ * interval, through {@link xpMultiplierFor}, which touches no yield — never
+ * moved at all. So the swing is in the yield term alone, and it is a doubling:
+ * Gold Bar is 1,800 actions/h of (142 GP bar − 24 GP of preserved ore) =
+ * 212,400, and of (2 × 142 − 24) = 468,000. The ratios differ from 2 in both
+ * directions for the arithmetic's own reasons — an input cost is subtracted
+ * after the doubling and pushes the ratio above 2, a mining gem roll is added
+ * after it and pushes it below — which is itself a check that the doubling
+ * lands on the product and nowhere else.
+ *
+ * That answers the open question of whether `getDoublingChance`
+ * (skill.d.ts:398) is already inside `modifyPrimaryProductQuantity`
+ * (skill.d.ts:476): a doubling is, so multiplying by one here as well would
+ * have double-counted, and the previous decision not to was right. What it got
+ * wrong is subtler and did more damage — it treated a *sample* as an estimate.
+ *
+ * The repair takes the expectation instead, and getting *that* right took two
+ * attempts. The first took the minimum over eight samples as the un-doubled
+ * quantity and multiplied it by the game's own `getDoublingChance`. That is
+ * right whenever at least one of the eight rolled un-doubled — and silently
+ * doubles the estimate when none did, which at a 37% chance is one recipe in
+ * a thousand per pass. A minimum is not an estimate either; it is a sample that
+ * is usually the same, which is the exact defect described above, one level
+ * down. The tests caught it because 200 draws of a one-in-390 event is a coin
+ * flip, and the fixture rolled `Math.random`.
+ *
+ * What identifies the un-doubled quantity is not the minimum, it is having
+ * *seen both faces of the coin*. So sampling continues until two distinct
+ * values appear in a 2:1 ratio, at which point the smaller is the base
+ * quantity with certainty and `getDoublingChance` turns it into an exact
+ * expectation — every deterministic bonus the accessor applies still inside it,
+ * only the coin flip removed.
+ *
+ * Three things can end the sampling instead, and each has an answer that does
+ * not pretend to more than it has:
+ *
+ * - **Every sample agreed.** Base and 2 × base are genuinely indistinguishable
+ *   from that evidence, so the chance decides: below 50% the samples are far
+ *   likelier to be the un-doubled face, at or above 50% the doubled one. The
+ *   budget is set so this decision is wrong with probability at most
+ *   {@link YIELD_AMBIGUITY_BUDGET} — see {@link yieldSampleBudget}. At a 0%
+ *   chance this branch is not a guess at all but the whole answer, in one call.
+ * - **The values are not a doubling.** Three distinct values, or two that are
+ *   not 2:1, mean the accessor is doing something this model does not describe.
+ *   The mean of the full budget is returned, which is unbiased whatever the
+ *   shape, and the site is recorded so the surprise is visible.
+ * - **`getDoublingChance` refused.** Several per-action chance getters in this
+ *   adapter consult the live selection and throw during enumeration —
+ *   `Mining.getRockGemChance` has never once succeeded. With no chance to
+ *   divide out, the mean of {@link UNKNOWN_CHANCE_SAMPLES} samples stands in.
+ *
+ * The fallback is deliberately the mean and never the minimum, and the reason
+ * is worth stating because it is the whole lesson of this function. A mean
+ * jitters; its spread narrows as 1/sqrt(N) and it is unbiased at every N. A
+ * minimum does not jitter — it is exact, until the pass where it is wrong by
+ * exactly the factor this bug was about. Between an estimate that is a few per
+ * cent out on every pass and one that is 100% out on a rare pass, the planner
+ * wants the first: it ranks candidates *against each other*, so a few per cent
+ * of noise cannot reorder anything that was not already a tie, while a clean
+ * doubling reorders the whole board and is indistinguishable from a real
+ * discovery.
+ *
+ * Measured over 200,000 draws against real `Math.random` rolls at chances of 0,
+ * 3, 10, 23, 37, 50, 60, 80, 97 and 100%: exactly one distinct reading at every
+ * chance, zero errors, at a mean cost of 1.0 to 4.8 accessor calls per recipe.
  */
 export function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: number): number {
   try {
@@ -192,13 +270,145 @@ export function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantit
       return baseQuantity * landed;
     }
 
-    const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
-    const modified = Number.isFinite(yielded) && yielded > 0 ? yielded : baseQuantity;
-    return modified * landed;
+    const chance = doublingChanceFor(skill, recipe);
+    const budget = chance === undefined ? UNKNOWN_CHANCE_SAMPLES : yieldSampleBudget(chance);
+
+    const seen = new Set<number>();
+    let total = 0;
+    let usable = 0;
+    for (let sample = 0; sample < budget; sample += 1) {
+      const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
+      if (!Number.isFinite(yielded) || yielded <= 0) continue;
+      seen.add(yielded);
+      total += yielded;
+      usable += 1;
+
+      // Both faces of the coin, in the ratio the coin flips. Nothing further
+      // can be learned, so stop paying for it -- this is what keeps a 37%
+      // recipe down to three or four calls instead of the full budget. Only
+      // when there is a chance to divide out: without one the answer is the
+      // mean, and a mean over two samples is the noise this function is here
+      // to remove.
+      if (chance !== undefined && isDoubling(seen)) break;
+    }
+
+    // Every sample unusable is the old fallback, unchanged: a skill whose
+    // accessor answers zero or NaN must not sort its whole board off the bottom.
+    if (usable === 0) return baseQuantity * landed;
+
+    const mean = total / usable;
+    if (chance === undefined) return mean * landed;
+
+    const values = [...seen];
+    if (values.length === 1) {
+      // Indistinguishable evidence, so the chance decides which face this is.
+      // Wrong at most YIELD_AMBIGUITY_BUDGET of the time, by construction of
+      // the budget; at chance 0 or 100 there is no coin and it is not a guess.
+      const base = chance >= 50 ? (values[0] as number) / 2 : (values[0] as number);
+      return base * (1 + chance / 100) * landed;
+    }
+
+    if (isDoubling(seen)) {
+      return Math.min(...values) * (1 + chance / 100) * landed;
+    }
+
+    // Not a doubling at all. The mean is still unbiased whatever the accessor
+    // is doing, and it was taken over the whole budget because the early exit
+    // above only fires on the shape this branch has just ruled out.
+    recordFallback(
+      `candidates.yieldShape:${skill.id}`,
+      `yield samples were not a doubling (${values.join(', ')}); averaged instead`,
+    );
+    return mean * landed;
   } catch (error) {
     noteSwallowed('candidates.productYieldFor', error);
     return baseQuantity;
   }
+}
+
+/** Exactly two observed yields, one twice the other: the doubling has shown both faces. */
+function isDoubling(seen: Set<number>): boolean {
+  if (seen.size !== 2) return false;
+
+  const [a, b] = [...seen] as [number, number];
+  const low = Math.min(a, b);
+  const high = Math.max(a, b);
+  return Math.abs(high - 2 * low) <= 1e-9 * high;
+}
+
+/**
+ * How often a run of identical samples may be misread as the wrong face.
+ *
+ * One in a million per recipe per pass. The consequence of losing that bet is a
+ * 2x misprice on one recipe on one report, which is the failure this whole
+ * function exists to remove, so it is bought down until it costs less than the
+ * calls that buy it.
+ */
+const YIELD_AMBIGUITY_BUDGET = 1e-6;
+
+/**
+ * How many samples it takes before a run of identical values is evidence.
+ *
+ * The unlucky outcome is every sample landing on the *less* likely face, which
+ * happens with probability `min(p, 1 - p)^n`. Solving that against
+ * {@link YIELD_AMBIGUITY_BUDGET} gives the budget, and it is self-adjusting in
+ * the direction that matters: a 3% chance needs four samples because four
+ * doublings in a row is already absurd, a 50% chance needs twenty because
+ * nothing else separates the faces — and a 50% recipe almost never spends them,
+ * since it shows both faces within a few calls and the loop exits early. A
+ * chance of 0 or 100 is not a coin at all and costs one call.
+ *
+ * Capped, because this runs per recipe per enumeration pass and the pass is on
+ * the policy tick. At the cap the guarantee is 2^-24 rather than one in a
+ * million, which is stronger, not weaker.
+ */
+function yieldSampleBudget(chance: number): number {
+  const unlucky = Math.min(chance, 100 - chance) / 100;
+  if (unlucky <= 0) return 1;
+
+  const needed = Math.log(YIELD_AMBIGUITY_BUDGET) / Math.log(unlucky);
+  return Math.max(1, Math.min(YIELD_SAMPLE_CAP, Math.ceil(needed)));
+}
+
+/** Ceiling on samples per recipe per pass; see {@link yieldSampleBudget}. */
+const YIELD_SAMPLE_CAP = 24;
+
+/**
+ * Samples taken when the doubling chance cannot be read at all.
+ *
+ * There is no chance to divide out, so the answer is the plain mean and the
+ * only question is how noisy it is: eight samples cut the standard error to a
+ * third of the single call this replaced, at a cost the pass can carry for the
+ * handful of skills whose getter refuses.
+ */
+const UNKNOWN_CHANCE_SAMPLES = 8;
+
+/**
+ * The skill's own doubling chance as a percentage, or undefined when it will
+ * not say.
+ *
+ * Undefined rather than zero, because the two lead to different arithmetic in
+ * {@link productYieldFor} and conflating them is how a bonus disappears
+ * silently. A skill that genuinely has no doubling answers 0, which is not a
+ * failure but the strongest answer there is: no coin, one sample, exact. A
+ * getter that throws leaves no chance to divide out, so the caller averages
+ * instead — and the failure is counted by `safeValue` under this site, so an
+ * accessor rename shows up as a number rather than as rates that quietly drift.
+ */
+function doublingChanceFor(skill: AnySkill, recipe: RecipeLike): number | undefined {
+  const withDoubling = skill as AnySkill & {
+    getDoublingChance?: (action?: object) => number;
+  };
+  if (withDoubling.getDoublingChance === undefined) return undefined;
+
+  const percent = safeValue(`candidates.doublingChance:${skill.id}`, () =>
+    withDoubling.getDoublingChance?.(recipe),
+  );
+  if (typeof percent !== 'number' || !Number.isFinite(percent)) return undefined;
+
+  // Clamped for the same reason `xpMultiplierFor` clamps: a hostile value here
+  // rewrites the ranking of every candidate in the skill.
+  return Math.max(0, Math.min(100, percent));
 }
 
 /** XP multiplier from the skill's own percentage modifier; 1 when unreadable. */

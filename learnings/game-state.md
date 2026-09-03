@@ -657,3 +657,103 @@ its id is excluded from the offer list.
 
 `specialCost` (`altMagic.d.ts:74`) is deliberately *not* reserved by any of this - it is the
 selection itself, and reserving it would refuse every cast.
+
+## `modifyPrimaryProductQuantity` is a die roll, not a getter
+
+`Skill.modifyPrimaryProductQuantity(item, quantity, action)` (`skill.d.ts:476`) **rolls the item
+doubling internally**. It is not idempotent. Two calls a millisecond apart on identical state
+return different numbers, and the typings say nothing about it - the name and the signature both
+read as a pure modifier.
+
+Measured, not reasoned. 73 consecutive planner reports polled at 5s while the character mined
+Gold and nothing else moved:
+
+| candidate            | low     | high    | high/low | high share |
+|----------------------|---------|---------|----------|------------|
+| Smithing: Gold Bar   | 212,400 | 468,000 | 2.20     | 37%        |
+| Smithing: Silver Bar |  53,550 | 145,350 | 2.71     | 23%        |
+| Mining: Gold         |  53,283 | 100,294 | 1.88     | 10%        |
+| Mining: Mithril      |  45,720 |  88,787 | 1.94     |  3%        |
+
+Exactly two values each, never one in between, flipping **independently per recipe** from report
+to report - while `xp/h` on every one of them (36,000 and 43,876) never moved by a single point.
+XP is built from the same interval through a different multiplier that touches no yield, so the
+swing is in the yield term and nowhere else.
+
+The arithmetic identifies it as a doubling of the *product* specifically. Gold Bar runs at 1,800
+actions/h; a bar sells for 142 and the ore it burns costs 30 less preservation:
+
+```
+1800 x (142 - 24) = 212,400     1800 x (2 x 142 - 24) = 468,000
+```
+
+Both to the GP. The ratios sit either side of 2 for reasons that confirm rather than muddy it:
+an input cost is subtracted *after* the doubling and pushes Smithing above 2, a mining gem roll
+is added after it and pushes Mining below. Mining Gold's two values differ by exactly
+1,567.03 x 30 GP - one extra ore per action, at the same 1,567.03 actions/h that its 43,876 xp/h
+divides into 28.0, the rock's `baseExperience` to three figures.
+
+Three things follow.
+
+**The open question is settled.** Whether `getDoublingChance` (`skill.d.ts:398`) is already
+inside `modifyPrimaryProductQuantity` - it is. Multiplying by it again would have double-counted
+every gathering rate, so the decision not to was right. Two recipes in the *same* skill doubling
+at 37% and 23% is the per-action shape of `getDoublingChance(action)`, which takes the action as
+its argument and scales with that action's mastery.
+
+**A 2x swing across unrelated skills is not a global modifier.** The first instinct on seeing
+Smithing and Mining move together was to hunt for a shared term that expired - a potion, an
+Astrology bonus, a mastery-pool checkpoint. There is none. Two independent coin flips landing
+heads together is a 4% event, and 4% events happen. **Poll a suspected drift before theorising
+about it**: two readings cannot distinguish a trend from a sample, and 73 can.
+
+**Sampling a random accessor once and calling it a rate is the general bug.** `productYieldFor`
+now takes the expectation instead.
+
+The cost of not fixing it was not the numbers. `list_candidates` ranks candidates *across*
+skills, so a die roll inside one rate reprices every cross-skill comparison, and the agent
+churns between actions for reasons that have nothing to do with the actions.
+
+## A minimum is not an estimate either
+
+The first repair took the **minimum of 8 samples** as the un-doubled quantity and multiplied it
+by `getDoublingChance`. It was merged and reverted the same day, and the thing that caught it
+was its own test: a fixture rolling `Math.random` at even odds, called 200 times, failed 54% of
+runs with `expected [1.5, 3] to deeply equal [1.5]`.
+
+A minimum only recovers the base quantity when at least one sample rolled *un*-doubled.
+P(all 8 doubled) = 0.5^8 = 0.39%, so about one recipe in 260 per pass silently reports **twice**
+the truth. That is not a bad test, it is the same defect one level down: a minimum does not
+jitter, it is exact until the pass where it is wrong by exactly the factor the whole bug was
+about - and a clean doubling is indistinguishable from a real discovery, which is precisely what
+sent a day of planning after the original swing.
+
+**What identifies the base quantity is not the minimum, it is having seen both faces of the
+coin.** So sampling continues until two values appear in a 2:1 ratio, at which point the smaller
+is the base with certainty. Three things can end it instead:
+
+- **Every sample agreed.** Base and 2 x base are genuinely indistinguishable from that evidence,
+  so the chance decides - below 50% they are the un-doubled face, at or above 50% the doubled
+  one. The sample budget is solved from the chance so this is wrong at most one time in a
+  million: the unlucky run has probability `min(p, 1-p)^n`, so a 3% chance needs 4 samples
+  because four doublings running is already absurd, and a 50% chance needs 20 because nothing
+  else separates the faces. A chance of 0 (or 100) is not a coin and costs **one** call.
+- **The values are not a doubling.** Three distinct values, or two that are not 2:1, mean the
+  model does not describe this accessor. The mean over the full budget is returned - unbiased
+  whatever the shape - and `candidates.yieldShape:<skillId>` is recorded.
+- **`getDoublingChance` refused.** No chance to divide out, so the mean of 8 stands in, counted
+  under `candidates.doublingChance:<skillId>`.
+
+The fallback is always the mean and never the minimum, and that is the whole lesson. A mean
+jitters, narrowing as 1/sqrt(N), unbiased at every N. A minimum is exact until it is 100% wrong.
+The planner ranks candidates *against each other*, so a few per cent of noise cannot reorder
+anything that was not already a tie, while a clean doubling reorders the board.
+
+Measured over 200,000 draws against real `Math.random` rolls at chances of 0, 3, 10, 23, 37, 50,
+60, 80, 97 and 100%: **exactly one distinct reading at every chance, zero errors**, at a mean
+cost of 1.0 to 4.8 accessor calls per recipe - cheaper than the flat 8 it replaced.
+
+And the test lesson, which is general: **a probabilistic test cannot tell a defect from bad
+luck.** Drive the roll from a script the test owns, so red means broken. The scripts are also
+the only way to reach the interesting cases on purpose - a run of 32 consecutive doubles is what
+the estimator has to survive, and waiting for `Math.random` to produce one is not a test.

@@ -7,6 +7,7 @@ import {
   xpMultiplierFor,
 } from '../src/adapter/rates.js';
 import type { RecipeLike } from '../src/adapter/recipes.js';
+import { readAdapterFailures, resetAdapterFailures } from '../src/adapter/safe.js';
 
 /**
  * Rates scale with mastery, so an instantaneous rate is a myopic way to choose
@@ -247,5 +248,199 @@ describe('yield and XP scale with mastery', () => {
         recipe,
       ),
     ).toBe(1);
+  });
+});
+
+/**
+ * The yield accessor is a sample, not a getter, and a rate built from one call
+ * is a coin flip.
+ *
+ * Measured live: 37 consecutive planner reports, character mining Gold, nothing
+ * else moving. Smithing Gold Bar alternated between exactly 212,400 and exactly
+ * 468,000 GP/h; Mining Gold between 53,283 and 100,294; two values each, never
+ * anything between, flipping independently per recipe while every `xp/h` on the
+ * board stayed fixed. `modifyPrimaryProductQuantity` (skill.d.ts:476) rolls the
+ * doubling internally, so `productYieldFor` was pricing an hour of work off one
+ * throw of that die, and the planner re-ranked every skill against every other
+ * one each time the die landed differently.
+ *
+ * These drive the real `productYieldFor` against accessors that roll, because
+ * the whole bug is that the accessor rolls. A fixture returning a constant
+ * cannot fail this way, which is why the tests above passed throughout.
+ *
+ * Every roll here comes from a script this file owns rather than from
+ * `Math.random`. The first version of these tests did use `Math.random`, and it
+ * failed about half of all runs: the implementation it was written against read
+ * the *minimum* of eight samples as the un-doubled quantity, which is wrong
+ * whenever all eight happen to double, and 200 draws of a one-in-390 event is
+ * itself a coin flip. A probabilistic test cannot tell a defect from bad luck,
+ * so a red run has to mean a defect. The scripts below make each case
+ * reproducible, including the runs of identical samples that are exactly what
+ * the estimator has to survive.
+ */
+describe('yield is an expectation, not a sample', () => {
+  const goldBar: RecipeLike = {
+    id: 'melvorD:Gold_Bar',
+    name: 'Gold Bar',
+    level: 40,
+    baseExperience: 20,
+    product: { id: 'melvorD:Gold_Bar' },
+  };
+
+  /**
+   * Doubles exactly where `script` says to, cycling. `true` is a roll that
+   * landed, which is the only thing `modifyPrimaryProductQuantity` hides.
+   */
+  const scriptedDoubler = (
+    script: readonly boolean[],
+    accessors: Record<string, unknown> = {},
+  ): AnySkill => {
+    let call = 0;
+    return skillWith('melvorD:Smithing', {
+      modifyPrimaryProductQuantity: (_i: object, q: number) =>
+        script[call++ % script.length] === true ? q * 2 : q,
+      ...accessors,
+    });
+  };
+
+  /** Alternating heads and tails: the coin is fair and always shows both faces. */
+  const ALTERNATING = [true, false] as const;
+
+  it('returns the same number every call when the accessor rolls', () => {
+    const skill = scriptedDoubler(ALTERNATING, { getDoublingChance: () => 50 });
+    const readings = new Set(Array.from({ length: 200 }, () => productYieldFor(skill, goldBar, 1)));
+
+    // One value, not two. This is the assertion the live swing violates.
+    expect([...readings]).toEqual([1.5]);
+  });
+
+  it('survives a long run of identical samples', () => {
+    // The regression that got this reverted. A minimum-of-N estimator reads a
+    // run of doubled samples as the un-doubled quantity and reports twice the
+    // truth -- a sample dressed as an estimate, which is the very defect this
+    // function was written to remove. These runs are longer than any budget, so
+    // nothing here can have seen the other face; the chance has to decide which
+    // face it is looking at.
+    const ALWAYS = new Array<boolean>(32).fill(true);
+    const NEVER = new Array<boolean>(32).fill(false);
+
+    // Doubles six times in ten, and every sample doubled: the doubled face.
+    expect(
+      productYieldFor(scriptedDoubler(ALWAYS, { getDoublingChance: () => 60 }), goldBar, 1),
+    ).toBeCloseTo(1.6, 5);
+
+    // Doubles one time in ten, and no sample doubled: the un-doubled face.
+    expect(
+      productYieldFor(scriptedDoubler(NEVER, { getDoublingChance: () => 10 }), goldBar, 1),
+    ).toBeCloseTo(1.1, 5);
+  });
+
+  it('states the price of the one run it cannot read', () => {
+    // Honesty about the residual rather than a claim of none. A run that
+    // contradicts its own chance -- every sample doubled on a recipe that
+    // doubles one time in ten -- is indistinguishable from a base quantity of
+    // two that never doubled, and the estimator reads it as the latter. That is
+    // a 2x misprice, the same size as the bug this replaces.
+    //
+    // The difference is the frequency, and it is bought deliberately: the
+    // budget is set so a run this misleading turns up about once in a million
+    // recipe-passes, against the every-other-pass of a single call. Six
+    // consecutive doubles at a 10% chance is a one-in-a-million event; this
+    // fixture simply performs it on demand.
+    expect(
+      productYieldFor(
+        scriptedDoubler(new Array<boolean>(32).fill(true), { getDoublingChance: () => 10 }),
+        goldBar,
+        1,
+      ),
+    ).toBeCloseTo(2.2, 5);
+  });
+
+  it('prices the doubling at the chance, not at whether it landed', () => {
+    // The alternating fixture's sample mean is 1.5x and its stated chance is
+    // 1.25x, so an implementation that averaged would pass a test written
+    // against the mean. It has to be the chance.
+    expect(
+      productYieldFor(scriptedDoubler(ALTERNATING, { getDoublingChance: () => 25 }), goldBar, 1),
+    ) //
+      .toBeCloseTo(1.25, 5);
+    expect(
+      productYieldFor(scriptedDoubler(ALTERNATING, { getDoublingChance: () => 25 }), goldBar, 4),
+    ) //
+      .toBeCloseTo(5, 5);
+  });
+
+  it('keeps the deterministic bonuses the accessor applies', () => {
+    // Removing the coin flip must not remove anything else: a skill that adds a
+    // flat bar per action still reports it. A zero chance is also the one case
+    // with no coin to remove, so it costs a single call and is exact.
+    expect(
+      productYieldFor(
+        skillWith('melvorD:Smithing', {
+          modifyPrimaryProductQuantity: (_i: object, q: number) => q + 1,
+          getDoublingChance: () => 0,
+        }),
+        goldBar,
+        2,
+      ),
+    ).toBe(3);
+  });
+
+  it('averages, and names the site, when the chance getter refuses', () => {
+    // Several per-action chance getters in this adapter consult the live
+    // selection and throw during enumeration -- `Mining.getRockGemChance` has
+    // never once succeeded. A doubling getter that does the same must not
+    // silently strip the bonus: with no chance to divide out, the mean of the
+    // samples is still unbiased, and the failure has to be countable rather
+    // than invisible.
+    resetAdapterFailures();
+    const skill = scriptedDoubler(ALTERNATING, {
+      getDoublingChance: () => {
+        throw new Error('Tried to get active recipe data, but none is selected');
+      },
+    });
+
+    expect(productYieldFor(skill, goldBar, 1)).toBeCloseTo(1.5, 5);
+    expect(readAdapterFailures().map((failure) => failure.site)) //
+      .toContain('candidates.doublingChance:melvorD:Smithing');
+    resetAdapterFailures();
+  });
+
+  it('averages, and names the site, when the samples are not a doubling', () => {
+    // Three halves is not twice one, so whatever this accessor is doing the
+    // doubling model does not describe it. Guessing a base quantity from
+    // evidence that contradicts the model is how the reverted version got its
+    // 2x; the mean is unbiased whatever the shape, and the surprise is recorded
+    // rather than absorbed.
+    resetAdapterFailures();
+    let call = 0;
+    const skill = skillWith('melvorD:Smithing', {
+      modifyPrimaryProductQuantity: (_i: object, q: number) => (call++ % 2 === 0 ? q * 1.5 : q),
+      getDoublingChance: () => 50,
+    });
+
+    expect(productYieldFor(skill, goldBar, 1)).toBeCloseTo(1.25, 5);
+    expect(readAdapterFailures().map((failure) => failure.site)) //
+      .toContain('candidates.yieldShape:melvorD:Smithing');
+    resetAdapterFailures();
+  });
+
+  it('still discounts the expectation by the chance the action lands', () => {
+    // The two corrections compose: a recipe that lands seven times in ten and
+    // doubles one time in five is worth 0.7 x 1.2.
+    expect(
+      productYieldFor(
+        skillWith('melvorD:Cooking', {
+          modifyPrimaryProductQuantity: (() => {
+            let call = 0;
+            return (_i: object, q: number) => (call++ % 2 === 0 ? q * 2 : q);
+          })(),
+          getDoublingChance: () => 20,
+          getRecipeSuccessChance: () => 70,
+        }),
+        goldBar,
+        1,
+      ),
+    ).toBeCloseTo(0.84, 5);
   });
 });
