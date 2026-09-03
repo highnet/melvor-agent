@@ -263,6 +263,21 @@ export { dumpRegistries } from './registries.js';
 export { CharacterSettings, type PersistenceHealth } from './storage.js';
 export { addSidebarPanel, type PanelHandle } from './sidebar.js';
 export { exportSave, loadCharacterByName, reloadGame } from './save.js';
+export {
+  forgetStashedValuables,
+  hasStashedValuables,
+  readStrippableValuables,
+  restoreStashedValuables,
+  stashValuablesForCombat,
+  whyInertInFight,
+  whyQuiverIsDeadWeight,
+} from './valuables.js';
+export type {
+  ModifierFacts,
+  StashProjection,
+  StrippableValuable,
+  WornItemFacts,
+} from './valuables.js';
 export type {
   ActionResult,
   ActiveActionState,

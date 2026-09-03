@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-227 exports.
+238 exports.
 
 ## `act`
 
@@ -825,6 +825,16 @@ FightPricing: any
 FISHING_ID: "melvorD:Fishing"
 ```
 
+## `forgetStashedValuables`
+
+`function`
+
+Test seam, and the reset a fresh character select needs.
+
+```ts
+forgetStashedValuables: () => void
+```
+
 ## `GATHERING_SKILL_IDS`
 
 `const`
@@ -868,6 +878,16 @@ Whether Auto Eat is owned, which feeds from the bank and needs no reflex.
 
 ```ts
 hasAutoEat: () => boolean
+```
+
+## `hasStashedValuables`
+
+`function`
+
+Whether anything is waiting to be put back on.
+
+```ts
+hasStashedValuables: () => boolean
 ```
 
 ## `increaseTownHealth`
@@ -989,6 +1009,16 @@ these would be invented rather than observed.
 
 ```ts
 MISC_SKILL_IDS: readonly ["melvorD:Firemaking", "melvorD:Cooking", "melvorD:Thieving", "melvorD:Astrology", "melvorD:Agility", "melvorD:Magic", "melvorItA:Harvesting"]
+```
+
+## `ModifierFacts`
+
+`interface`
+
+One modifier on a worn item, reduced to what the inertness test reads.
+
+```ts
+ModifierFacts: any
 ```
 
 ## `ModifierGear`
@@ -1917,6 +1947,12 @@ reflex; displacing worn gear is a comparison that has already been wrong once
 unable to land a shot — so it carries the margin by which it claims to win
 and lets the caller decide how much to trust a stat sum.
 
+Says nothing about gear deliberately *set aside*. Valuables stripped for a
+fight (`valuables.stashValuablesForCombat`) leave an empty slot and sit in
+the bank, which is exactly the shape this reader offers — so the caller has
+to stand its fill reflex down while a restore is outstanding rather than ask
+this function to know why an item is not being worn. See `runReflexes`.
+
 ```ts
 readGearUpgrades: () => { emptySlot: { itemId: string; slotId: string; name: string; scopedModifiers: number; }[]; replacement: { itemId: string; slotId: string; name: string; gain: number; }[]; }
 ```
@@ -2564,6 +2600,20 @@ while it can still be acted on.
 readSpentChargesNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
+## `readStrippableValuables`
+
+`function`
+
+Worn gear that earns nothing in a fight and can be lost by dying in one.
+
+Reads only. Every slot is judged independently and one unreadable slot costs
+only itself: a slot that cannot describe its own contents is left alone,
+which is the direction that keeps gear on the character.
+
+```ts
+readStrippableValuables: () => StrippableValuable[]
+```
+
 ## `readSynergyCandidates`
 
 `function`
@@ -2936,6 +2986,31 @@ neglect, which makes it exactly the kind of transition worth automating.
 repairTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
 ```
 
+## `restoreStashedValuables`
+
+`function`
+
+Puts back everything the last strip took off.
+
+The half that makes stripping acceptable at all. The operator's own
+selections are their state — today's `withBuyQuantity` work made that
+explicit and it is written down in `learnings/` — so a strip without a
+restore is not a guard, it is a different kind of taking.
+
+Two things it deliberately declines to force, both for the same reason:
+
+- A slot that is no longer empty is left alone and said so. Something else
+  chose what is in it — the operator, or a planner objective — and putting
+  the old item back would make this the third tier fighting over a slot,
+  which is the shape that produced forty equips a minute for forty minutes
+  (`StuckEquipWatch`, and the note on `readGearUpgrades`).
+- An item the bank no longer holds is dropped from the stash with a named
+  reason rather than retried forever.
+
+```ts
+restoreStashedValuables: (isSuspended: () => boolean) => ActionResult<StashProjection>
+```
+
 ## `SaleProjection`
 
 `interface`
@@ -3280,6 +3355,42 @@ the background is what eventually makes combat possible.
 startPassiveCooking: (categoryId: string, isSuspended: () => boolean) => ActionResult<PassiveCookProjection>
 ```
 
+## `StashProjection`
+
+`interface`
+
+What stripping and restoring claim to change.
+
+```ts
+StashProjection: any
+```
+
+## `stashValuablesForCombat`
+
+`function`
+
+Takes the valuables off, recording where each came from.
+
+Driven by `stripValuablesForFight` in the reflex tier, which is what decides
+*when* — once a fight is actually running, and never outside one, because the
+Thiever's Cape earns its place every second the character is Thieving.
+
+Anything already stashed is restored first — see
+{@link restoreStashedValuables} — because a stash keyed by slot cannot hold
+two generations of the same slot, and a strip that quietly dropped the older
+record would strand an item in the bank forever.
+
+Every removal goes through {@link unequipItem}, which owns the one
+precondition that can genuinely lose the item: unequipping moves it to the
+bank, and a full bank holding none of it has nowhere to put it. That is not
+theoretical here — the bank runs 53 of 64 slots most of the day — and the
+refusal is the right answer: that piece stays worn, exactly as exposed as it
+is today, and nothing about the fight changes either way.
+
+```ts
+stashValuablesForCombat: (isSuspended: () => boolean) => ActionResult<StashProjection>
+```
+
 ## `StateSnapshot`
 
 `type`
@@ -3356,6 +3467,16 @@ clear the next one, and the coins are the only thing carried out.
 
 ```ts
 stopGolbinRaid: (isSuspended: () => boolean) => ActionResult<RaidProjection>
+```
+
+## `StrippableValuable`
+
+`interface`
+
+A worn item worth taking off before a fight.
+
+```ts
+StrippableValuable: any
 ```
 
 ## `Subscriptions`
@@ -3605,6 +3726,62 @@ wasteful otherwise.
 usePotion: (itemId: string, isSuspended: () => boolean) => ActionResult<{ potionId: string | null; charges: number; }>
 ```
 
+## `whyInertInFight`
+
+`function`
+
+Why this item demonstrably does nothing in a fight, or null.
+
+Pure, so the judgement can be exercised without a live game — and the
+judgement is the whole risk here. Every clause must hold; the first that does
+not is the reason the item stays on.
+
+"No equipment stats" is the load-bearing clause and it is a genuine
+discriminator rather than an absence of evidence. Leather Gloves carry
+`meleeDefenceBonus: 1`, Bronze Arrows `rangedStrengthBonus: 7`, a combat
+familiar `summoningMaxhit: 5.9`; the Thiever's Cape and the Jeweled Necklace
+carry `equipmentStats: []`. A stat worth zero is treated as absent, because
+the game adds it to the same total either way.
+
+`conditionalModifiers` is a refusal rather than a filter, for the reason
+`skillScopedModifiers` already gives: a conditional carries a condition this
+code cannot evaluate (conditionalModifiers.d.ts:375-379), so an item with one
+is an item whose worth is unknown, and unknown is not inert.
+
+```ts
+whyInertInFight: (item: WornItemFacts) => string | null
+```
+
+## `whyQuiverIsDeadWeight`
+
+`function`
+
+Why the loaded ammunition cannot be fired, or null when it can.
+
+The quiver gets its own rule because it fails the test above for the wrong
+reason: Bronze Arrows carry `rangedStrengthBonus: 7`, a real equipment stat,
+and the stat still lands in the character's totals — it simply cannot do
+anything for a caster. 981 of them are worn here behind a Staff of Air.
+
+Not a second describer. This is the same comparison `readCannotAttackReason`
+makes, from the same lines of the shipped `Player.attack`
+(f_00019a.js:759-766):
+
+    if (weapon.ammoTypeRequired === 4) break;
+    if (weapon.ammoTypeRequired !== quiver.ammoType) { ...canAttack = false; }
+
+A weapon requiring `None` never reads the quiver at all, and one requiring a
+type the quiver does not hold answers with `TOASTS_WRONG_AMMO`
+(f_00019a.js:720-725). Either way the stack in the slot is dead weight for
+this fight, and the fight is one where the ranged branch of
+`readCannotAttackReason` is not the thing refusing — that branch withholds
+the fight outright, so nothing reaches here with a mismatch it would have
+blocked.
+
+```ts
+whyQuiverIsDeadWeight: (required: number | undefined, loaded: number | undefined) => string | null
+```
+
 ## `WOODCUTTING_ID`
 
 `const`
@@ -3622,4 +3799,14 @@ uniform and a shared abstraction would be a lie:
 
 ```ts
 WOODCUTTING_ID: "melvorD:Woodcutting"
+```
+
+## `WornItemFacts`
+
+`interface`
+
+A worn item, reduced to what the inertness test reads.
+
+```ts
+WornItemFacts: any
 ```

@@ -738,6 +738,100 @@ export function removePenalisingGear(
 }
 
 /**
+ * Takes off gear a fight has no use for, once a fight is actually running.
+ *
+ * The sibling of {@link removePenalisingGear} and deliberately right beside it:
+ * that one acts on gear that *actively hurts* the style in use, and a Jeweled
+ * Necklace does not hurt anything — it is merely neutral, so nothing ever
+ * touched it and it rode into all 55 of this character's deaths.
+ * "Contributes nothing" is the distinction being added; "actively hurts" was
+ * the one that already existed. Two separate opinions about what should come
+ * off is the bug class this repo keeps paying for, so this is one more clause
+ * in the same place rather than a second path somewhere else.
+ *
+ * The reason it is worth the tick at all is `Player.applyDeathPenalty`
+ * (player.d.ts:410), which rolls one entry of the equipment array on death and
+ * destroys whatever is in it — with empty slots in the roll, so taking an item
+ * off converts its ticket into a blank rather than merely removing it.
+ *
+ * **Only in combat, and that is the whole point of the condition.** The
+ * Thiever's Cape is 25 Stealth and +10% Thieving GP; it is worth wearing every
+ * second the character is not fighting, and stripping it whenever it fails a
+ * *combat* test would quietly cost the Thieving income this run depends on. So
+ * the condition is the mirror image of its sibling's: that one stands down
+ * during a fight, this one only acts during one.
+ *
+ * The cost of that choice, stated plainly: the strip lands one throttled reflex
+ * tick into the fight rather than before the first swing, so a death inside
+ * that first tick still rolls against the full loadout. That is the honest
+ * trade for having one path instead of two, and it is small — a death takes
+ * many seconds of exchanges, and the alternative bought a fraction of a second
+ * at the price of a second opinion about what should come off.
+ *
+ * Placed after the bank reflexes for the reason its sibling already documents:
+ * unequipping puts the item *back in the bank*, so a slot has to exist before
+ * the gear can come off, and this bank has run 53 of 64 slots for most of the
+ * day. `unequipItem` refuses rather than losing the item, and the refusal is
+ * the correct outcome — the valuables stay exactly as exposed as they are
+ * today, and nothing about the fight changes.
+ */
+export function stripValuablesForFight(
+  state: {
+    inCombat: boolean;
+    /** Worn items that demonstrably do nothing in a fight. */
+    strippable: number;
+  },
+  strip: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (!state.inCombat) return null;
+  if (state.strippable === 0) return null;
+
+  return { name: 'reflex.stripValuables', result: strip() };
+}
+
+/**
+ * Puts back the valuables the last fight was stripped of.
+ *
+ * The other half of `valuables.stashValuablesForCombat`, and the half that
+ * makes stripping acceptable at all: the operator's own selections are their
+ * state, so a strip that does not restore is a different kind of taking.
+ *
+ * It is a reflex rather than something bolted to the end of a fight because a
+ * fight has more than one ending, and the ones that matter are the ones nobody
+ * is standing on. **Death is the whole point** — the strip exists because
+ * `Player.applyDeathPenalty` rolls a slot on death, so the case this must not
+ * miss is precisely the one where the fight ended by the character dying. An
+ * abort, a disengage at a kill boundary, a victory and a policy tier that moved
+ * on to Thieving all arrive here identically: combat is over and the stash is
+ * not empty.
+ *
+ * This is the load-bearing half of the pair. The agent is expected to die and
+ * expected to go on fighting; nothing here makes it fight less or treats damage
+ * as a cost. What it must not do is take something off and fail to give it
+ * back, which is why the restore is broader than the strip in every direction
+ * — it fires on any ending, it does not care why the fight stopped, and the
+ * reload path restores separately because a reload takes the page and this
+ * stash with it.
+ *
+ * The condition is deliberately "not in combat" and nothing else. Anything
+ * narrower — a death counter, an objective transition — would be a second
+ * reading of the same fact, and this repo has already had two readings of one
+ * fact disagree while neither looked broken alone.
+ *
+ * The reload path restores separately (`adapter/save.ts`), because a reload
+ * takes the page and this stash with it.
+ */
+export function restoreValuablesAfterCombat(
+  state: { inCombat: boolean; hasStashedValuables: boolean },
+  restore: () => ActionResult<unknown>,
+): ReflexOutcome | null {
+  if (state.inCombat) return null;
+  if (!state.hasStashedValuables) return null;
+
+  return { name: 'reflex.restoreValuables', result: restore() };
+}
+
+/**
  * Claims Mastery Tokens sitting in the bank.
  *
  * The same shape as opening a container, and for the same reason: holding one

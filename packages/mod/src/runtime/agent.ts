@@ -46,6 +46,7 @@ import {
   exportSave,
   harvestFarmPlot,
   hasAutoEat,
+  hasStashedValuables,
   increaseTownHealth,
   mergeDemands,
   newSlayerTask,
@@ -119,6 +120,7 @@ import {
   readSnapshot,
   readSpellCandidates,
   readSpentChargesNotice,
+  readStrippableValuables,
   readSynergyCandidates,
   readTaskCandidates,
   readTaskOpportunities,
@@ -136,6 +138,7 @@ import {
   reloadGame,
   repairAllTownshipBuildings,
   repairTownshipBuilding,
+  restoreStashedValuables,
   selectAttackSpell,
   selectDigSiteMap,
   selectDigSiteTool,
@@ -152,6 +155,7 @@ import {
   startGolbinRaid,
   startPaperMaking,
   startPassiveCooking,
+  stashValuablesForCombat,
   stopGathering,
   stopGolbinRaid,
   surveyBestHex,
@@ -201,8 +205,10 @@ import {
   refillQuiver,
   removePenalisingGear,
   repairDegradedBuildings,
+  restoreValuablesAfterCombat,
   sellToEscapeFullBank,
   stopWhenStarving,
+  stripValuablesForFight,
   unlockAffordablePlots,
 } from './combat-reflex.js';
 import { DeathWatch } from './death-watch.js';
@@ -820,7 +826,22 @@ export class Agent {
       }
     }
 
-    const gearUpgrades = readGearUpgrades();
+    // Nothing while a fight's stripped valuables are still set aside.
+    //
+    // Two reasons, and the second is the one that bites. Offering the stashed
+    // item itself would have the fill reflex undo the strip between the engage
+    // and the first punch. And offering anything *else* for those slots is
+    // acting on a picture that this very tick is about to invalidate: the
+    // restore below runs first and fills them, so an equip chosen from the
+    // empty view would displace the item that just went back on — two tiers
+    // trading one slot, which is the shape that produced forty verified equips
+    // a minute for forty minutes.
+    //
+    // Standing down for the tick that restores is free; the fill reflex runs
+    // every tick and the slots are honest again on the next one.
+    const gearUpgrades = hasStashedValuables()
+      ? { emptySlot: [], replacement: [] }
+      : readGearUpgrades();
 
     // Read live rather than from the snapshot. The snapshot refreshes only on
     // report, so a reflex could not see the effect of its own previous tick and
@@ -889,6 +910,18 @@ export class Agent {
       // re-use.
       keepPotionsActive({ lapsing: readLapsingPotions() }, (actionId) =>
         setPotionAutoReuse(actionId, true, isSuspended),
+      ),
+      // Before every gear reflex below, and unconditionally on the fight being
+      // over. This is what pays back the strip that happens at the engage
+      // gate, and the ending it must not miss is death: `applyDeathPenalty`
+      // (player.d.ts:410) is the whole reason anything came off, so the fight
+      // that ends by dying is the fight whose restore matters most.
+      restoreValuablesAfterCombat(
+        {
+          inCombat: snapshot.combat.inCombat,
+          hasStashedValuables: hasStashedValuables(),
+        },
+        () => restoreStashedValuables(isSuspended),
       ),
       // Gear the character is plainly missing. An empty slot has nothing on the
       // other side of the trade; a replacement must clear a margin.
@@ -1005,6 +1038,18 @@ export class Agent {
           penalising: readPenalisingGear(),
         },
         (slotId) => unequipItem(slotId, isSuspended),
+      ),
+      // Its sibling, sharing this position for the same bank-slot reason. That
+      // one takes off gear which actively hurts the style in use; this one
+      // takes off gear the fight has no use for at all, which is the case
+      // nothing covered — a Jeweled Necklace hurts nothing, so it rode into
+      // all 55 deaths while `applyDeathPenalty` rolled for it every time.
+      stripValuablesForFight(
+        {
+          inCombat: snapshot.combat.inCombat,
+          strippable: readStrippableValuables().length,
+        },
+        () => stashValuablesForCombat(isSuspended),
       ),
       // Farming does not occupy the action slot, so a ready plot can be
       // cleared without interrupting anything. Left to the objective tier it
