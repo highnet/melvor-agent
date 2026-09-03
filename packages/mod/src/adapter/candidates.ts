@@ -21,7 +21,7 @@ import {
   WOODCUTTING_ID,
 } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
-import { noteSwallowed, recordFallback, safeList, safeNumber } from './safe.js';
+import { noteSwallowed, recordFallback, safeBoolean, safeList, safeNumber } from './safe.js';
 import { readShopCandidates, readShopGoals } from './shop.js';
 import { readTaskWantedQuantities } from './township.js';
 
@@ -72,6 +72,18 @@ export interface RecipeLike {
   baseQuantity?: number;
   /** ArtisanSkillRecipe.itemCosts (artisanSkill.d.ts:82); absent on gathering. */
   itemCosts?: { item: AnyItem; quantity: number }[];
+  /**
+   * An Alt Magic spell prices itself in runes, not in `itemCosts`.
+   *
+   * `AltMagicSpell extends BaseSpell` (altMagic.d.ts:66), which declares
+   * `runesRequired: RuneQuantity[]` and an optional `runesRequiredAlt`
+   * (spells.d.ts:27-28); `fixedItemCosts` (altMagic.d.ts:72) is the spell's
+   * equivalent of `itemCosts`. Nothing here ever read any of them, so every
+   * spell priced itself as free. See {@link spellCosts}.
+   */
+  runesRequired?: { item: AnyItem; quantity: number }[];
+  runesRequiredAlt?: { item: AnyItem; quantity: number }[];
+  fixedItemCosts?: { item: AnyItem; quantity: number }[];
 }
 
 /**
@@ -195,41 +207,61 @@ function genericSkillCandidates(): Candidate[] {
     // delivered about 6.
     const lapXpPerHour = skillId === AGILITY_ID ? readAgilityLapRate() : null;
 
+    // Asked once for the whole skill, because whether the mastery answer is a
+    // lock at all is a property of the skill, not of one recipe. Null means it
+    // is not; the level requirement is then the gate. See readMasteryGate.
+    const masteryUnlocked = readMasteryGate(skill, withActions, recipes);
+
+    // Why recipes were dropped, so a skill that vanishes entirely still says
+    // something. See reportSilentSkill: total silence is what made Alt Magic
+    // cost a day.
+    const dropped = { mastery: 0, level: 0, realm: 0, cost: 0 };
+    let emitted = 0;
+
     for (const recipe of recipes) {
+      const requirement = recipeRequirement(recipe);
+
       // The mastery check is separated from the affordability check because a
       // single try around both conflates two different failures.
       //
       // "This action is locked" and "the lock could not be consulted" are not
-      // the same claim, and treating them alike hides whole skills. Alt Magic's
-      // spells are not mastery actions in the way `isMasteryActionUnlocked`
-      // expects, so the call is a candidate for throwing on every spell -- and
-      // a throw here discarded the recipe entirely, producing no candidate and
-      // no blocked entry either. The skill simply was not there, which is the
-      // hardest kind of absence to notice.
-      //
-      // So a mastery check that cannot answer is read as "unlocked". If that is
+      // the same claim, and treating them alike hides whole skills. A mastery
+      // check that cannot answer is therefore read as "unlocked": if that is
       // wrong the action is offered and the game refuses it, which is visible
       // and recoverable. Silence is neither.
-      let masteryLocked = false;
-      try {
-        masteryLocked = withActions.isMasteryActionUnlocked?.(recipe) === false;
-      } catch (error) {
-        noteSwallowed('candidates.genericSkillCandidates', error);
-        masteryLocked = false;
-      }
-      if (masteryLocked) continue;
-
-      try {
-        if (!isRecipeRealmUnlocked(recipe)) continue;
-        // Affordability is different: a candidate the adapter would then refuse
-        // is a planner trap, so an unanswerable cost check does skip.
-        if (!canAfford(withActions, recipe)) continue;
-      } catch (error) {
-        noteSwallowed('candidates.genericSkillCandidates', error);
+      //
+      // There is a third case, and it is the one that hid Alt Magic for a day.
+      // `isMasteryActionUnlocked` can answer perfectly well and still not be
+      // answering this question -- see readMasteryGate. When that is so the
+      // level requirement takes over, because for every skill in this loop the
+      // mastery answer *is* the level check, and dropping it without a
+      // replacement would offer level-70 spells at Magic 10.
+      if (masteryUnlocked !== null) {
+        if (!masteryUnlocked.has(recipe)) {
+          dropped.mastery += 1;
+          continue;
+        }
+      } else if (requirement.level > currentLevelFor(skill, requirement.abyssal)) {
+        dropped.level += 1;
         continue;
       }
 
-      const requirement = recipeRequirement(recipe);
+      try {
+        if (!isRecipeRealmUnlocked(recipe)) {
+          dropped.realm += 1;
+          continue;
+        }
+        // Affordability is different: a candidate the adapter would then refuse
+        // is a planner trap, so an unanswerable cost check does skip.
+        if (!canAfford(withActions, recipe)) {
+          dropped.cost += 1;
+          continue;
+        }
+      } catch (error) {
+        noteSwallowed('candidates.genericSkillCandidates', error);
+        dropped.cost += 1;
+        continue;
+      }
 
       // Per recipe, not per skill: mastery is earned on the individual action,
       // so two recipes in one skill do not share an interval.
@@ -266,10 +298,126 @@ function genericSkillCandidates(): Candidate[] {
         requiresLevel: requirement.level,
         available: true,
       });
+      emitted += 1;
     }
+
+    reportSilentSkill(skillId, recipes.length, emitted, dropped);
   }
 
   return candidates;
+}
+
+/**
+ * The level track a recipe is actually gated on.
+ *
+ * Melvor-realm and Abyssal progressions are separate (`Skill.level`
+ * skill.d.ts:167, `Skill.abyssalLevel` skill.d.ts:186), and comparing across
+ * them is how a zero became an invitation once already -- see recipeRequirement.
+ */
+function currentLevelFor(skill: AnySkill, abyssal: boolean): number {
+  return safeNumber(
+    `candidates.skillLevel:${skill.id}`,
+    () => (abyssal ? skill.abyssalLevel : skill.level),
+    0,
+  );
+}
+
+/**
+ * Which of a skill's recipes the mastery gate says are unlocked, or null when
+ * it is not answering that question.
+ *
+ * `isMasteryActionUnlocked` (skill.d.ts:806, abstract) is what keeps a
+ * level-gated recipe off the board for every skill in this loop. Alt Magic
+ * overrides it (altMagic.d.ts:109) alongside `hasMastery` (:102),
+ * `computeTotalMasteryActions` (:107) and `updateTotalUnlockedMasteryActions`
+ * (:108) -- the full set a skill overrides when it has no mastery at all -- and
+ * its answer for a spell is not "this spell is locked".
+ *
+ * The cost of not distinguishing the two was a full day. Every one of the 26
+ * spells was dropped here, silently: no candidate, no blocked entry, no
+ * adapter-failure line, nothing thrown. `set_objective` cast Just Learning
+ * perfectly and took Magic 2 to 10 in six minutes, while `list_candidates`
+ * showed the skill did not exist. The live report is what settled it: Magic was
+ * in `game.skills`, `readLockedActions` enumerated the same registry and
+ * reported "Bone Offering unlocks at level 18", `adapterFailures` named no site
+ * in this file, and `canAfford` cannot refuse a spell (AltMagic declares no
+ * `getRecipeCosts` and a spell has no `itemCosts`) -- which leaves exactly one
+ * silent `continue`.
+ *
+ * Two signals, either sufficient, because the typings state the *shape* of the
+ * override and not what it returns:
+ *
+ * 1. `hasMastery` false (skill.d.ts:178, overridden at skill.d.ts:680 and again
+ *    by Alt Magic). A skill that says it has no mastery is not being asked
+ *    whether a mastery action is unlocked; the question does not apply.
+ * 2. Every recipe refused. No skill ships with all of its actions locked -- the
+ *    level-1 action is always available -- so a gate that admits nothing is a
+ *    category error, not a lock. This is the backstop that does not depend on
+ *    a value the typings decline to state.
+ *
+ * Returning a set rather than a predicate so each recipe is asked exactly once
+ * per pass: the probe and the gate are the same call.
+ */
+function readMasteryGate(
+  skill: AnySkill,
+  withActions: { isMasteryActionUnlocked?: (recipe: object) => boolean },
+  recipes: readonly RecipeLike[],
+): Set<RecipeLike> | null {
+  const ask = withActions.isMasteryActionUnlocked;
+  if (typeof ask !== 'function') return null;
+
+  const hasMastery = safeBoolean(
+    `candidates.hasMastery:${skill.id}`,
+    () => (skill as AnySkill & { hasMastery: boolean }).hasMastery,
+    true,
+  );
+  if (!hasMastery) return null;
+
+  const unlocked = new Set<RecipeLike>();
+  for (const recipe of recipes) {
+    try {
+      if (ask.call(withActions, recipe) !== false) unlocked.add(recipe);
+    } catch (error) {
+      noteSwallowed(`candidates.masteryUnlocked:${skill.id}`, error);
+      unlocked.add(recipe);
+    }
+  }
+
+  return unlocked.size === 0 && recipes.length > 0 ? null : unlocked;
+}
+
+/**
+ * Records a skill that produced nothing for a reason nothing else reports.
+ *
+ * A recipe dropped here leaves no trace anywhere by itself, and a whole skill
+ * dropped here is invisible in the strongest sense: the planner reads absence
+ * as "this skill does not exist" and never asks again.
+ *
+ * Deliberately not one entry per dropped recipe, and not one per empty skill.
+ * Two of the four reasons already reach the planner in the list built for them:
+ * `readLockedActions` names the nearest level-gated recipe, and
+ * `readUnstockedSkills` says "no candidates because nothing it can make is in
+ * stock". Filing those here as well would put a permanent line per idle skill
+ * in the one report whose job is to show what actually broke, and that noise
+ * has already evicted real diagnostics twice; see `safe.ts`.
+ *
+ * The mastery gate and the realm gate have no such channel, and between them
+ * they can empty a whole skill. That is the shape Alt Magic had: 26 spells in,
+ * nothing out, nowhere.
+ */
+function reportSilentSkill(
+  skillId: string,
+  total: number,
+  emitted: number,
+  dropped: { mastery: number; level: number; realm: number; cost: number },
+): void {
+  if (total === 0 || emitted > 0) return;
+  if (dropped.mastery === 0 && dropped.realm === 0) return;
+
+  recordFallback(
+    `candidates.noCandidates:${skillId}`,
+    `all ${total} recipe(s) dropped: ${dropped.mastery} mastery-locked, ${dropped.level} level-locked, ${dropped.realm} realm-locked, ${dropped.cost} unaffordable`,
+  );
 }
 
 /** Harvesting's skill id; see veinDecayNote for why it is called out. */
@@ -753,8 +901,70 @@ function canAfford(
     return consumes.itemCosts.every((cost) => game.bank.getQty(cost.item) >= cost.quantity);
   }
 
+  // Alt Magic pays in runes, and nothing above reads them: AltMagic declares no
+  // `getRecipeCosts`, and a spell has neither `log` nor `itemCosts`. So every
+  // spell fell through to the `return true` below and read as free, which is
+  // the planner trap this whole function exists to prevent -- worse here than
+  // elsewhere, because the executor then casts once, runs out and stops.
+  const spell = spellCosts(recipe);
+  if (spell !== null) {
+    return spell.every((cost) => game.bank.getQty(cost.item) >= cost.quantity);
+  }
+
   // Consumes nothing identifiable — a gathering skill, most likely.
   return true;
+}
+
+/**
+ * What one cast of an Alt Magic spell consumes, or null for anything else.
+ *
+ * Runes plus `fixedItemCosts` (altMagic.d.ts:72), which is the spell's
+ * equivalent of `itemCosts`. `runesRequiredAlt` (spells.d.ts:28) is the
+ * combination-rune list and is used when the player has them enabled --
+ * `Player.useCombinationRunes` (player.d.ts:122), documented as "If the player
+ * should use combination runes for spellcasting". Holding the standard runes
+ * does not help in that mode, so the two lists are alternatives, not a union.
+ *
+ * Three things this deliberately does not price:
+ *
+ * - **The staff discount.** Equipping the matching staff lowers a spell's rune
+ *   cost. `EquipmentItem.providedRunes` (item.d.ts:267),
+ *   `Player.runesProvided` (player.d.ts:81) and `Player.computeRuneProvision`
+ *   (player.d.ts:156) are the machinery, but *how* they apply to an Alt Magic
+ *   cast is stated nowhere in the typings: `Player.getRuneCosts`
+ *   (player.d.ts:163) carries no documentation at all, and
+ *   `AltMagic.getCurrentRecipeRuneCosts` (altMagic.d.ts:151) prices only the
+ *   selected spell, which is never set during enumeration. So the unreduced
+ *   cost is used. That can withhold a spell a staff would have paid for -- a
+ *   missing candidate, which is the recoverable direction -- rather than invent
+ *   a discount, which is how Crystal came to advertise ten times what it paid.
+ * - **Rune preservation.** `runePreservationChance` (altMagic.d.ts:127) is a
+ *   chance not to consume, so it lowers the *average* cost over many casts.
+ *   The question here is whether one cast can be paid for, and a chance cannot
+ *   pay for it.
+ * - **The item a spell converts.** `specialCost` (altMagic.d.ts:74) is a
+ *   selection rather than a fixed cost, and the executor's precondition
+ *   already refuses when nothing eligible is banked (`skills-misc.ts`,
+ *   `startAltMagic`). That refusal is visible; this silence was not.
+ *
+ * Attack spells share `runesRequired` and would match this shape, but they live
+ * in `game.attackSpells` and never reach a skill's `actions` registry.
+ */
+function spellCosts(recipe: object): { item: AnyItem; quantity: number }[] | null {
+  const spell = recipe as RecipeLike;
+  if (!Array.isArray(spell.runesRequired)) return null;
+
+  const useAlt =
+    Array.isArray(spell.runesRequiredAlt) &&
+    safeBoolean(
+      'candidates.useCombinationRunes',
+      () => game.combat.player.useCombinationRunes,
+      false,
+    );
+
+  const costs = [...(useAlt ? (spell.runesRequiredAlt ?? []) : spell.runesRequired)];
+  if (Array.isArray(spell.fixedItemCosts)) costs.push(...spell.fixedItemCosts);
+  return costs;
 }
 
 /**
@@ -1829,6 +2039,8 @@ export function readBlockedOpportunities(): {
       () => withActions.baseInterval,
     );
 
+    const masteryUnlocked = readMasteryGate(skill, withActions, recipes);
+
     for (const recipe of recipes) {
       try {
         // Per recipe, exactly as on the candidate path -- and it was not, which
@@ -1866,7 +2078,11 @@ export function readBlockedOpportunities(): {
         const actionsPerHour = interval > 0 ? MS_PER_HOUR / interval : 0;
 
         if (skill.level < recipe.level) continue;
-        if (withActions.isMasteryActionUnlocked?.(recipe) === false) continue;
+        // Same gate as the candidate path, for the same reason: a skill whose
+        // mastery answer is not a lock would otherwise be absent from both
+        // lists, which is how Alt Magic managed to be neither available nor
+        // blocked. See readMasteryGate.
+        if (masteryUnlocked !== null && !masteryUnlocked.has(recipe)) continue;
         // Only the ones we cannot do: the rest are already real candidates.
         if (canAfford(withActions, recipe)) continue;
 
@@ -2023,8 +2239,14 @@ function missingInputs(
     }
   }
 
-  if (Array.isArray(consumes.itemCosts)) {
-    return consumes.itemCosts
+  // Runes are the Alt Magic equivalent, and this list is what turns a dropped
+  // candidate into a stated reason. Without it a spell short of Nature Runes
+  // would be refused by `canAfford` and then produce no blocked entry either,
+  // because `missing.length === 0` discards it -- the skill absent from both
+  // lists again, one filter further along.
+  const costs = consumes.itemCosts ?? spellCosts(recipe);
+  if (Array.isArray(costs)) {
+    return costs
       .map((cost) => ({
         itemId: cost.item.id,
         name: cost.item.name,
@@ -2456,7 +2678,10 @@ const SUSTAIN_NOTICE_MINUTES = 60;
  */
 export function sustainableMinutes(recipe: RecipeLike, intervalMs: number): number | null {
   try {
-    const costs = recipe.itemCosts ?? [];
+    // Spells included: a spell's runes run out exactly as a recipe's bars do,
+    // and the note exists because Acolyte Wizard Robes advertised the best rate
+    // on the board and aborted in twenty seconds.
+    const costs = recipe.itemCosts ?? spellCosts(recipe) ?? [];
     if (costs.length === 0) return null;
     if (intervalMs <= 0) return null;
 
