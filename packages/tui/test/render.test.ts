@@ -48,6 +48,7 @@ const snapshot = {
     enemy: null,
   },
   township: null,
+  shopPurchases: [],
 };
 
 function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {

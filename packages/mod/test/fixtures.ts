@@ -34,6 +34,7 @@ export function snapshot(overrides: Partial<StateSnapshot> = {}): StateSnapshot 
     activeAction: null,
     farm: [],
     township: null,
+    shopPurchases: [],
     combat: {
       inCombat: false,
       hitpoints: 100,

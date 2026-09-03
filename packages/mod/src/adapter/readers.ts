@@ -1,6 +1,6 @@
 import { readActiveRecipeIds } from './active.js';
 import { readFarmPlots } from './farming.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, safeList, safeNumber } from './safe.js';
 import type { ActiveActionState, SkillState, StateSnapshot } from './surface.js';
 import { readTownshipSummary } from './township.js';
 
@@ -134,6 +134,18 @@ export function readSnapshot(): StateSnapshot {
     activeAction: readActiveAction(),
     farm: readFarmPlots(),
     township: readTownshipSummary(),
+    // Owned purchases only. `game.shop.getPurchaseCount` (shop.d.ts) answers
+    // per purchase, and the catalogue is 434 entries against 18 owned, so
+    // filtering here keeps the heartbeat small rather than shipping 400
+    // `owned: 0` rows to answer a question about a handful of items.
+    shopPurchases: safeList('readers.shopPurchases', () =>
+      game.shop.purchases.allObjects
+        .map((purchase) => ({
+          id: purchase.id,
+          owned: safeNumber('readers.purchaseCount', () => game.shop.getPurchaseCount(purchase), 0),
+        }))
+        .filter((entry) => entry.owned > 0),
+    ),
     combat: {
       inCombat: manager.isActive,
       hitpoints: player.hitpoints,

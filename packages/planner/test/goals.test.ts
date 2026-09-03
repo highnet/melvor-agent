@@ -109,3 +109,73 @@ describe('goal annotations', () => {
     expect(statuses[0]?.detail).toMatch(/no measurable/i);
   });
 });
+
+/**
+ * A goal that buys something.
+ *
+ * The failure these pin down happened live. `auto-eat` read
+ * `currency melvorD:GP >= 1000000`; the agent funded it, the buy reflex spent
+ * the money on Auto Eat - Tier I, and the goal fell from 89% to 3% — because
+ * paying is what empties the balance. It could never complete, and
+ * `fundingTarget` is documented as expiring on success, so the authorisation to
+ * sell surplus never expired either.
+ */
+describe('a goal measured by owning a purchase', () => {
+  const AUTO_EAT = 'melvorD:Auto_Eat_Tier_I';
+
+  const buyGoal = [
+    '- Buy Auto Eat - Tier I. <!-- id: auto-eat -->',
+    `  <!-- done: shop ${AUTO_EAT} >= 1 --> <!-- advances: gp -->`,
+  ].join('\n');
+
+  it('parses the condition rather than leaving it unmeasurable', async () => {
+    const goals = await goalsFrom(buyGoal);
+
+    expect(goals[0]?.done).toEqual({
+      type: 'shop_owned_at_least',
+      purchaseId: AUTO_EAT,
+      count: 1,
+    });
+  });
+
+  it('reads done once owned, even with the balance spent', async () => {
+    const goals = await goalsFrom(buyGoal);
+
+    const [status] = evaluateGoals(
+      goals,
+      snapshot({
+        // The exact shape after the live purchase: owned, and nearly broke.
+        currencies: [{ id: 'melvorD:GP', name: 'GP', amount: 5161 }],
+        shopPurchases: [{ id: AUTO_EAT, owned: 1 }],
+      }),
+    );
+
+    expect(status?.state).toBe('done');
+  });
+
+  it('stays active while unowned, however much money is banked', async () => {
+    const goals = await goalsFrom(buyGoal);
+
+    const [status] = evaluateGoals(
+      goals,
+      snapshot({
+        currencies: [{ id: 'melvorD:GP', name: 'GP', amount: 5_000_000 }],
+        shopPurchases: [],
+      }),
+    );
+
+    expect(status?.state).toBe('active');
+    expect(status?.detail).toBe('0/1 owned');
+  });
+
+  it('survives a snapshot from a mod build predating the field', async () => {
+    const goals = await goalsFrom(buyGoal);
+    // `.default([])` is applied by parsing, and an older mod sends no field at
+    // all. Reading it unguarded threw and took the whole evaluation down.
+    const { shopPurchases: _omitted, ...older } = snapshot();
+
+    const [status] = evaluateGoals(goals, older as StateSnapshot);
+
+    expect(status?.state).toBe('active');
+  });
+});

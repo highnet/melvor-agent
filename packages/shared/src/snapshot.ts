@@ -89,6 +89,28 @@ export const combatStateSchema = z.object({
     .nullable(),
 });
 
+/**
+ * Shop purchases the character owns, and how many.
+ *
+ * Only the owned ones. The shop holds 434 entries and 18 were owned when this
+ * was added, so carrying the whole catalogue in every heartbeat would be 400
+ * lines of `owned: 0` to answer a question about a handful of items.
+ *
+ * It exists because a goal that *buys* something could not be expressed. The
+ * `auto-eat` goal read `currency melvorD:GP >= 1000000`, the agent funded it,
+ * the buy reflex spent it on Auto Eat - Tier I, and the goal went from 89% to
+ * 3% -- because paying is what empties the balance. Worse, `fundingTarget` is
+ * documented as expiring on success, so an unreachable success meant the sell
+ * authorisation never expired and the reflex kept converting stock toward a
+ * million forever.
+ *
+ * Defaulted so a mod build older than the service still validates.
+ */
+export const shopPurchaseStateSchema = z.object({
+  id: gameIdSchema,
+  owned: z.number().int().nonnegative(),
+});
+
 export const activeActionStateSchema = z
   .object({
     id: gameIdSchema,
@@ -205,6 +227,8 @@ export const stateSnapshotSchema = z.object({
    * added from here on has to be optional or it breaks the running game.
    */
   township: townshipStateSchema.nullable().default(null),
+  /** Owned shop purchases only; see {@link shopPurchaseStateSchema}. */
+  shopPurchases: z.array(shopPurchaseStateSchema).default([]),
 });
 export type StateSnapshot = z.infer<typeof stateSnapshotSchema>;
 

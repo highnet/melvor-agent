@@ -27,7 +27,8 @@ export type GoalCondition =
   | { type: 'skill_level_at_least'; skillId: string; level: number }
   | { type: 'currency_at_least'; currencyId: string; amount: number }
   | { type: 'item_qty_at_least'; itemId: string; qty: number }
-  | { type: 'total_level_at_least'; level: number };
+  | { type: 'total_level_at_least'; level: number }
+  | { type: 'shop_owned_at_least'; purchaseId: string; count: number };
 
 export interface Goal {
   id: string;
@@ -178,7 +179,7 @@ function slug(description: string): string {
 function parseCondition(value: string | null): GoalCondition | null {
   if (value === null) return null;
 
-  const match = /^(skill|currency|item|total)\s*(\S+)?\s*>=\s*(\d+)$/i.exec(value.trim());
+  const match = /^(skill|currency|item|total|shop)\s*(\S+)?\s*>=\s*(\d+)$/i.exec(value.trim());
   if (match === null) return null;
 
   const [, kind, id, amountText] = match;
@@ -193,6 +194,16 @@ function parseCondition(value: string | null): GoalCondition | null {
       return id === undefined ? null : { type: 'item_qty_at_least', itemId: id, qty: amount };
     case 'total':
       return { type: 'total_level_at_least', level: amount };
+    // A goal that *buys* something has to be measured by owning it, not by
+    // holding the price. `auto-eat` read `currency melvorD:GP >= 1000000`; the
+    // agent funded it, the buy reflex spent it, and the goal fell from 89% to
+    // 3%, because paying is what empties the balance. It could never complete,
+    // and `fundingTarget`'s documented "expires on success" therefore never
+    // expired -- the sell authorisation became permanent.
+    case 'shop':
+      return id === undefined
+        ? null
+        : { type: 'shop_owned_at_least', purchaseId: id, count: amount };
     default:
       return null;
   }
@@ -538,6 +549,12 @@ function impliedTags(done: GoalCondition | undefined): string[] {
       // Every skilling candidate advances total level, so tagging them all
       // would say nothing. Left untagged deliberately.
       return [];
+    case 'shop_owned_at_least':
+      // The purchase itself, so the shop candidate that buys it is tagged. The
+      // GP that funds it is not tagged here: `fundingTarget` is what authorises
+      // selling toward a purchase, and tagging every money-maker with a buy
+      // goal would say the same nothing as tagging every skill with total level.
+      return [done.purchaseId];
   }
 }
 
@@ -586,6 +603,21 @@ function measure(
         satisfied: amount >= condition.amount,
         progress: clamp(amount / condition.amount),
         detail: `${amount.toLocaleString()}/${condition.amount.toLocaleString()} GP`,
+      };
+    }
+    case 'shop_owned_at_least': {
+      // The snapshot carries only owned purchases, so an absent id means zero.
+      //
+      // `?? []` because the field is `.default([])` in the schema and a default
+      // is applied by *parsing*. A snapshot from a mod build older than this
+      // field arrives without it, and so does any snapshot assembled as a
+      // literal rather than parsed -- which is what three planner tests do.
+      const owned =
+        (snapshot.shopPurchases ?? []).find((p) => p.id === condition.purchaseId)?.owned ?? 0;
+      return {
+        satisfied: owned >= condition.count,
+        progress: clamp(owned / condition.count),
+        detail: `${owned}/${condition.count} owned`,
       };
     }
     case 'item_qty_at_least': {
