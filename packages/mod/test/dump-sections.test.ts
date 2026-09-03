@@ -1,3 +1,4 @@
+import { checkDumpFreshness, knowledgeDumpSchema } from '@melvor-agent/knowledge';
 import { describe, expect, it } from 'vitest';
 import { capSection } from '../src/adapter/registries.js';
 
@@ -77,5 +78,37 @@ describe('splitting build costs from consumption', () => {
       const row = split(['Logs'], oneTime);
       expect(row.itemCosts.length === 0 || row.buildCosts.length === 0).toBe(true);
     }
+  });
+});
+
+/**
+ * A new section has to be required, or it is never collected.
+ *
+ * The policy at the top of `dump-schema.ts`, learned by defeating it: monster
+ * loot tables were added with `.default([])` "for safety", so every stale dump
+ * kept validating, the default was filled in, and 377 monsters carried empty
+ * loot tables for as long as nobody checked. `equipment` is the section that
+ * answers whether a crossbow fires an arrow — a `.default([])` on it would read
+ * as "no equipment has requirements" rather than "this was never collected",
+ * which is the worse of the two failures by a wide margin.
+ */
+describe('the equipment section is required', () => {
+  it('refuses a dump that predates it, so the mod regenerates instead', () => {
+    const stale = knowledgeDumpSchema.safeParse({ gameVersion: 'v1.3.1' });
+
+    expect(stale.success).toBe(false);
+    expect(stale.success ? [] : stale.error.issues.map((issue) => issue.path.join('.'))).toContain(
+      'equipment',
+    );
+  });
+
+  it('is what checkDumpFreshness reports as malformed rather than fresh', () => {
+    // The path that matters: the arm refusal treats malformed as a trigger to
+    // dump again, so a schema addition reaches the live dump without anyone
+    // pressing a button. A section that parsed would never get there.
+    const freshness = checkDumpFreshness({ gameVersion: 'v1.3.1' }, 'v1.3.1');
+
+    expect(freshness.fresh).toBe(false);
+    expect(freshness.fresh === false ? freshness.reason : null).toBe('malformed');
   });
 });

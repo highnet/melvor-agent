@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-216 exports.
+218 exports.
 
 ## `act`
 
@@ -121,6 +121,20 @@ on a modal earns nothing at all.
 
 ```ts
 advanceGolbinRaid: (isSuspended: () => boolean) => ActionResult<RaidProjection>
+```
+
+## `ammoTypeName`
+
+`function`
+
+The name of an ammunition class, or empty where there is none.
+
+Empty and `'None'` are different answers and both occur: a platebody has no
+`ammoType` at all, while an item may be explicitly typed `None`. Collapsing
+the first into the second would claim the game said something it did not.
+
+```ts
+ammoTypeName: (value: number | undefined) => string
 ```
 
 ## `ARTISAN_SKILL_IDS`
@@ -2599,6 +2613,35 @@ rather than a second inventory listing.
 
 ```ts
 readUnsellableNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+```
+
+## `readUnusableCombatStyles`
+
+`function`
+
+Combat styles the character owns nothing usable for, and the reason.
+
+`readEquipCandidates` gates every item on `game.checkRequirements` and, when
+it fails, does a bare `continue`. That is the right call for a candidate list
+— offering gear that cannot be worn spends an objective discovering a level
+the game already knew — but the reason was computed and thrown away, so from
+outside, gear held behind a requirement and gear that does not exist read
+identically. A `ranged-20` goal sat at 15% for a run with a bank full of
+arrows and crossbows and no line anywhere saying why nothing could be
+equipped; the only way to learn the level was to reach it.
+
+Reported, never acted on, and deliberately not a route. This says what the
+game refuses and what it refuses it for. Whether the answer is to level up,
+to fletch a bow or to leave the style alone is a plan, and inventing one here
+would be guessing with a bank list — the mistake that put a fabricated
+`requires:` on the Abyssal goal and kept it blocked for a reason that did not
+exist.
+
+Bounded at one entry per style, so it cannot crowd out the countdowns that
+share the blocked list.
+
+```ts
+readUnusableCombatStyles: () => { label: string; xpPerHour: number; severity: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readUpgradeCandidates`

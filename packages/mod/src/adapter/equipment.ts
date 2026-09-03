@@ -1,6 +1,7 @@
 import type { ActionResult, BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { describeUnmetRequirements } from './requirements.js';
 import { noteSwallowed, safeValue } from './safe.js';
 
 /**
@@ -1004,6 +1005,13 @@ export function readRefillableAmmo(): { itemId: string; quantity: number } | nul
       const item = entry.item;
       if (!(item instanceof EquipmentItem)) continue;
       if (item.ammoType !== required) continue;
+      // Ammunition carries `equipRequirements` like any other equipment
+      // (item.d.ts:251), and a stack the character cannot equip refills
+      // nothing: `equipItem` refuses it on the same check, so offering it here
+      // would spend the reflex's retries on a stack that can never load. The
+      // right answer in that case is null — no refill exists — which is what
+      // makes `refillQuiver` leave a fight it cannot win.
+      if (!game.checkRequirements(item.equipRequirements, false)) continue;
       if (best === null || entry.quantity > best.quantity) {
         best = { itemId: item.id, quantity: entry.quantity };
       }
@@ -1014,6 +1022,217 @@ export function readRefillableAmmo(): { itemId: string; quantity: number } | nul
     noteSwallowed('equipment.readRefillableAmmo', error);
     return null;
   }
+}
+
+/**
+ * Names for `AmmoTypeID`, which both the dump and every label here need as text.
+ *
+ * `EquipmentItem.ammoType` and `WeaponItem.ammoTypeRequired` are the numeric
+ * enum (item.d.ts:269, :308), and "fires 1" answers nothing about whether a
+ * crossbow can shoot what is in the bank. Spelled out here rather than read off
+ * a runtime `AmmoTypeID` global: the typings declare the enum
+ * (enums.d.ts:2983-2991) but nothing promises it is emitted as a value, and a
+ * missing global would silently blank the field this exists for.
+ *
+ * Keyed by the enum type so a content update that adds a member fails the build
+ * instead of producing an empty string for it.
+ */
+const AMMO_TYPE_NAMES: Record<AmmoTypeID, string> = {
+  0: 'Arrows',
+  1: 'Bolts',
+  2: 'Javelins',
+  3: 'ThrowingKnives',
+  4: 'None',
+  5: 'AbyssalArrows',
+  6: 'AbyssalBolts',
+};
+
+/**
+ * The name of an ammunition class, or empty where there is none.
+ *
+ * Empty and `'None'` are different answers and both occur: a platebody has no
+ * `ammoType` at all, while an item may be explicitly typed `None`. Collapsing
+ * the first into the second would claim the game said something it did not.
+ */
+export function ammoTypeName(value: number | undefined): string {
+  if (value === undefined) return '';
+  return AMMO_TYPE_NAMES[value as AmmoTypeID] ?? '';
+}
+
+/** The three styles a character can fight in. character.d.ts:621. */
+const ATTACK_TYPES = ['melee', 'ranged', 'magic'] as const;
+
+/** How many blocked weapons or ammunition stacks a line names before counting. */
+const NAMED_IN_LABEL = 3;
+
+/** A weapon or ammunition stack the character owns but cannot put on. */
+interface RefusedGear {
+  name: string;
+  quantity: number;
+  /** Unmet `equipRequirements`, already rendered. Empty when none are unmet. */
+  unmet: string[];
+}
+
+function describeRefused(refused: readonly RefusedGear[]): string {
+  const named = refused
+    .slice(0, NAMED_IN_LABEL)
+    .map(
+      (entry) =>
+        `${entry.quantity}x ${entry.name}${
+          entry.unmet.length === 0 ? '' : ` needs ${entry.unmet.join(' and ')}`
+        }`,
+    );
+  const remainder = refused.length - named.length;
+  return `${named.join('; ')}${remainder > 0 ? `; and ${remainder} more` : ''}`;
+}
+
+/**
+ * Combat styles the character owns nothing usable for, and the reason.
+ *
+ * `readEquipCandidates` gates every item on `game.checkRequirements` and, when
+ * it fails, does a bare `continue`. That is the right call for a candidate list
+ * — offering gear that cannot be worn spends an objective discovering a level
+ * the game already knew — but the reason was computed and thrown away, so from
+ * outside, gear held behind a requirement and gear that does not exist read
+ * identically. A `ranged-20` goal sat at 15% for a run with a bank full of
+ * arrows and crossbows and no line anywhere saying why nothing could be
+ * equipped; the only way to learn the level was to reach it.
+ *
+ * Reported, never acted on, and deliberately not a route. This says what the
+ * game refuses and what it refuses it for. Whether the answer is to level up,
+ * to fletch a bow or to leave the style alone is a plan, and inventing one here
+ * would be guessing with a bank list — the mistake that put a fabricated
+ * `requires:` on the Abyssal goal and kept it blocked for a reason that did not
+ * exist.
+ *
+ * Bounded at one entry per style, so it cannot crowd out the countdowns that
+ * share the blocked list.
+ */
+export function readUnusableCombatStyles(): {
+  label: string;
+  xpPerHour: number;
+  severity: BlockedSeverity;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    const player = game.combat.player;
+    const banked = [...game.bank.items.values()];
+    const lines: ReturnType<typeof readUnusableCombatStyles> = [];
+
+    for (const attackType of ATTACK_TYPES) {
+      // The style currently being fought in is by definition usable: the game
+      // derives `attackType` (character.d.ts:106) from the equipped weapon.
+      if (player.attackType === attackType) continue;
+
+      const owned = banked.filter(
+        (entry) => entry.item instanceof WeaponItem && entry.item.attackType === attackType,
+      );
+
+      // Nothing to explain: the character simply has no such weapon. Saying so
+      // is still the point — "no ranged weapon is owned" and "a ranged weapon
+      // is owned and refused" want completely different responses, and neither
+      // was distinguishable from silence.
+      if (owned.length === 0) {
+        lines.push({
+          severity: 'normal',
+          label: `${attackType}: no ${attackType} weapon is owned, so the style cannot be started at all.`,
+          xpPerHour: 0,
+          missing: [],
+        });
+        continue;
+      }
+
+      const usable = owned.filter((entry) =>
+        game.checkRequirements((entry.item as WeaponItem).equipRequirements, false),
+      );
+
+      if (usable.length === 0) {
+        const refused = owned.map((entry) => ({
+          name: entry.item.name,
+          quantity: entry.quantity,
+          unmet: describeUnmetRequirements(() => (entry.item as WeaponItem).equipRequirements),
+        }));
+
+        lines.push({
+          severity: 'normal',
+          label: `${attackType}: none of the ${owned.length} ${attackType} weapon(s) owned can be equipped — ${describeRefused(refused)}.${ammoClause(attackType, owned, banked)}`,
+          xpPerHour: 0,
+          missing: [],
+        });
+        continue;
+      }
+
+      // Equippable, and still unusable if it fires something the character
+      // cannot load. A weapon with no ammunition is the zero-damage stall the
+      // quiver reflex exists for, arriving before the fight rather than during.
+      const clause = ammoClause(attackType, usable, banked);
+      if (clause !== '') {
+        lines.push({
+          severity: 'normal',
+          label: `${attackType}: ${usable[0]?.item.name} can be equipped, but${clause}`,
+          xpPerHour: 0,
+          missing: [],
+        });
+      }
+    }
+
+    return lines;
+  } catch (error) {
+    noteSwallowed('equipment.readUnusableCombatStyles', error);
+    return [];
+  }
+}
+
+/**
+ * What the given weapons fire, and whether any of it can be loaded.
+ *
+ * Returns empty when there is nothing to say — every weapon either needs no
+ * ammunition or has some it can equip. Ammunition held but refused is named
+ * explicitly: 1,620 arrows in the bank and an empty quiver is the exact shape
+ * that reads as "the bank is stocked" to everything that counts stacks.
+ */
+function ammoClause(
+  attackType: string,
+  weapons: readonly { item: AnyItem }[],
+  banked: readonly { item: AnyItem; quantity: number }[],
+): string {
+  const required = new Set<AmmoTypeID>();
+  for (const entry of weapons) {
+    const needs = entry.item instanceof WeaponItem ? entry.item.ammoTypeRequired : undefined;
+    if (needs !== undefined) required.add(needs);
+  }
+  if (required.size === 0) return '';
+
+  const clauses: string[] = [];
+  for (const ammoType of required) {
+    const held = banked.filter(
+      (entry) => entry.item instanceof EquipmentItem && entry.item.ammoType === ammoType,
+    );
+    const loadable = held.filter((entry) =>
+      game.checkRequirements((entry.item as EquipmentItem).equipRequirements, false),
+    );
+    if (loadable.length > 0) continue;
+
+    const className = ammoTypeName(ammoType);
+
+    if (held.length === 0) {
+      clauses.push(`no ${className} are held at all`);
+      continue;
+    }
+
+    clauses.push(
+      `the ${className} held cannot be equipped — ${describeRefused(
+        held.map((entry) => ({
+          name: entry.item.name,
+          quantity: entry.quantity,
+          unmet: describeUnmetRequirements(() => (entry.item as EquipmentItem).equipRequirements),
+        })),
+      )}`,
+    );
+  }
+
+  if (clauses.length === 0) return '';
+  return ` Every ${attackType} weapon here needs ammunition, and ${clauses.join('; ')}.`;
 }
 
 /** Owned gear whose value is in modifiers rather than in equipment stats. */
