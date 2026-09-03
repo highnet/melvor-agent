@@ -166,16 +166,51 @@ Township summary reported 0% health while the repair reflex correctly computed
       for the `modifyPrimaryProductQuantity` trap: if a combat quantity getter
       rolls the same way, an hour must not be priced off one call.
 
-- [ ] **Ranged cannot be trained at all and nothing says so** — S. `ranged-20`
-      is a stated goal reading 3/20. The bank holds 1,620 Adamant Arrows, 344
-      Rune Arrows, 170 Dragon Arrows and Rune/Adamant/Dragon Crossbows, but no
-      bow, and no crossbow is offered as equippable at Ranged 3 -- presumably a
-      level requirement, though the dump records neither `ammoType` nor
-      `validSlots` so compatibility cannot be checked offline. The goal text
-      still says "using the bow and the 1,259 self-made arrows", so the bow was
-      expected and is gone. Two things to settle: whether the dump should carry
-      equip requirements and ammo types, and whether a goal whose equipment is
-      unobtainable should say so rather than sitting at 15% forever.
+- [x] **Ranged cannot be trained at all and nothing says so** — S. All three
+      questions settled; the premise in the title turned out to be half wrong.
+
+      **Why nothing was equippable.** Not a mystery in the code:
+      `readEquipCandidates` calls `game.checkRequirements(item.equipRequirements,
+      false)` (equipment.ts) and, on false, does a bare `continue`. The style
+      filters below it never ran — a crossbow against a Staff of Air is a
+      `switchesStyle` candidate, which bypasses both the penalty filter and the
+      stat sum — so the requirement check is the only thing that could have
+      dropped them. The refusal and the reason were computed one line apart and
+      only the refusal survived. `readUnusableCombatStyles` now reports the
+      reason, and `readRefillableAmmo` applies the same gate, which it did not:
+      it would have handed the quiver reflex a stack `equipItem` refuses.
+
+      **Which level each crossbow needs is still unverified**, and deliberately
+      not guessed. It is exactly what the dump could not say.
+
+      **The dump now carries it.** New `equipment` section: `validSlots`,
+      `equipRequirements`, `attackType`, `ammoType`, `ammoTypeRequired`. Scoped
+      to `game.items.equipment` (namespaceRegistry.d.ts:116) rather than added
+      to the 3,748-row item table — the fields are empty on the ~1,800 items
+      that are not equipment, and the game already maintains the subset, so the
+      split costs nothing. Required rather than `.default()`ed, per the policy
+      note in `dump-schema.ts`: the next arm regenerates. **Residual: read the
+      regenerated dump and record the actual crossbow and arrow levels.**
+
+      **The goal should not be `blocked`.** `blocked` in `GoalStatus` means one
+      thing today — a goal named in another goal's `requires:` that is
+      measurable and unmet (goals.ts:435) — and it withholds the goal from
+      `goalsAdvancedBy`, so every fight would stop being tagged as advancing
+      Ranged. That would be wrong, because Ranged is reachable. From the dump:
+      Normal Shortbow is Fletching 1 from Normal Shortbow (u) + 1 Bowstring;
+      the unstrung bow is Fletching 1 from 1 Normal Logs; Normal Tree is
+      Woodcutting 1 and Woodcutting is 60; the bank holds the Bowstring and the
+      shop sells more at 24 GP with no requirement and no buy limit. Bronze
+      Arrows are Fletching 1 from Bronze Arrowtips (Smithing 1, one Bronze Bar)
+      and Headless Arrows (15 Arrow Shafts, of which 4,322 are banked, and 15
+      Feathers at 8 GP in the shop). Every input is held, mined or under 100 GP.
+
+      So the honest answer is not "unobtainable, mark it blocked" but "obtainable
+      and nobody said how" — which is `readBlockedOpportunities`' job, not
+      `goals.ts`'. Putting equipment reachability into goal evaluation would put
+      an inferred route where the file currently does snapshot arithmetic, and
+      that inference is what a fabricated `requires:` already cost the Abyssal
+      goal. See `learnings/game-state.md`.
 
 - [ ] **What undoes a verified equip** — S. `equipment.equip` returns a truthful
       `ok`: the adapter reads `player.equipment.equippedItems`, `act` fails any
