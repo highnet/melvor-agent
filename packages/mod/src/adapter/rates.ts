@@ -820,12 +820,33 @@ function monsterHitpoints(monster: Monster): number | null {
  * legitimately runs in, so it will not fire every pass.
  */
 function hitpointsPerLevel(): number {
-  const multiplier = (globalThis as { numberMultiplier?: unknown }).numberMultiplier;
+  // The bare identifier, not `globalThis.numberMultiplier`.
+  //
+  // `main.d.ts:16` declares it `declare let numberMultiplier`, and a top-level
+  // `let` -- unlike `var` -- does not become a property of the global object.
+  // So the `globalThis` read could never have succeeded: it reported 488 times
+  // in a single session, which is the volume that buries the reports worth
+  // reading. The fallback happens to be right, so nothing was mispriced; the
+  // defect was entirely in the noise.
+  //
+  // Read through a `try`, because a bare identifier that is genuinely absent
+  // throws a ReferenceError rather than yielding undefined -- which is the one
+  // way this can fail in a build that does not run beside the game.
+  let multiplier: unknown;
+  try {
+    multiplier = numberMultiplier;
+  } catch {
+    multiplier = (globalThis as { numberMultiplier?: unknown }).numberMultiplier;
+  }
+
   if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0) {
     return multiplier;
   }
 
-  recordFallback('rates.numberMultiplier', 'numberMultiplier was not readable off globalThis');
+  recordFallback(
+    'rates.numberMultiplier',
+    'numberMultiplier is neither a global binding nor a globalThis property',
+  );
   return NOMINAL_HITPOINTS_PER_LEVEL;
 }
 
