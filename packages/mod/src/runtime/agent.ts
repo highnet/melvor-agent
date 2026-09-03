@@ -73,6 +73,7 @@ import {
   readCookedStockpile,
   readDeathCount,
   readDigSiteSetupCandidates,
+  readDungeonPricing,
   readEquipCandidates,
   readEquipmentSetCandidates,
   readEquippedFood,
@@ -81,6 +82,7 @@ import {
   readExplorationCandidates,
   readFarmCandidates,
   readFarmPlots,
+  readFightPricing,
   readGameVersion,
   readGatherCandidates,
   readGearUpgrades,
@@ -2489,10 +2491,23 @@ export class Agent {
           ? ''
           : ` — SLAYER TASK, ${target.slayerKillsLeft} kill(s) left, and no new task can be taken until it is done`;
 
+      // Priced before the gate is consulted, so that a *refused* fight can say
+      // how big it was as well as why it was refused. "Fight Sweaty Monster —
+      // could be one-shot" and "Fight Chicken — could be one-shot" are the same
+      // line about two wildly different propositions, and the scale is what
+      // tells a planner whether the answer is better gear or a smaller target.
+      //
+      // Pricing is emphatically not a permit: the refusal below still returns
+      // before any candidate is built, and nothing in the pricing path touches
+      // the gate's verdict.
+      const pricing =
+        target.kind === 'run_dungeon' ? readDungeonPricing(target.id) : readFightPricing(target.id);
+      const priced = pricing?.note ?? '';
+
       const refusal = this.gateRefusal(target.id);
       if (refusal !== null) {
         blocked.push({
-          label: `Fight ${target.name} (combat level ${target.combatLevel})${slayer} — ${refusal}`,
+          label: `Fight ${target.name} (combat level ${target.combatLevel})${priced}${slayer} — ${refusal}`,
           xpPerHour: 0,
           missing: [],
         });
@@ -2508,16 +2523,26 @@ export class Agent {
       // which measures danger rather than value.
       const drops =
         target.kind === 'run_dungeon' ? [] : readMonsterDropsOfInterest(target.id, wantedItemIds);
-      const label =
-        drops.length === 0
-          ? `Fight ${target.name} (${where})${slayer}`
-          : `Fight ${target.name} (${where})${slayer} — drops ${drops.join(', ')}, which you are short of`;
+      const wanted =
+        drops.length === 0 ? '' : ` — drops ${drops.join(', ')}, which you are short of`;
+      const label = `Fight ${target.name} (${where})${slayer}${priced}${wanted}`;
+
+      // Coins into the balance, not items that would fetch coins. What the
+      // drops are worth is in the label and deliberately not in this number:
+      // an hour of banking gems moves the balance by exactly zero, and a GP
+      // goal was once reported as advanced by exactly that.
+      const earnings =
+        pricing === null || pricing.gpPerHour <= 0
+          ? {}
+          : { gpPerHour: pricing.gpPerHour, gpIsEarned: true as const };
 
       if (target.kind === 'run_dungeon') {
         candidates.push({
           kind: 'run_dungeon',
           params: { kind: 'run_dungeon', dungeonId: target.id },
           label,
+          ...earnings,
+          ...(target.requiresLevel === undefined ? {} : { requiresLevel: target.requiresLevel }),
           available: true,
         });
         continue;
@@ -2527,6 +2552,8 @@ export class Agent {
         kind: 'fight_monster',
         params: { kind: 'fight_monster', monsterId: target.id, areaId: target.areaId ?? '' },
         label,
+        ...earnings,
+        ...(target.requiresLevel === undefined ? {} : { requiresLevel: target.requiresLevel }),
         available: true,
       });
     }

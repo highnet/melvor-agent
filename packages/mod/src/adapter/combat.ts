@@ -8,7 +8,9 @@ import type {
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
-import { noteSwallowed } from './safe.js';
+import { killValueFor } from './pricing.js';
+import { readFightRate } from './rates.js';
+import { noteSwallowed, safeValue } from './safe.js';
 
 /** Stats measured from a probe enemy, plus the damage type they arrive as. */
 interface ProbedStats {
@@ -602,6 +604,16 @@ export interface CombatTarget {
   name: string;
   areaName: string;
   combatLevel: number;
+  /**
+   * The highest skill level this fight's entry requirements ask for.
+   *
+   * Always a requirement the character already meets -- an area that fails
+   * `checkRequirements` is not enumerated at all -- so this is stated rather
+   * than gating, exactly as `requiresLevel` is for every other candidate. It
+   * exists because a fight with no level on it reads as free, and "free" sorts
+   * a Chicken level with a Slayer-gated area.
+   */
+  requiresLevel?: number | undefined;
   /** Kills still owed on the active Slayer task, when this is that monster. */
   slayerKillsLeft?: number;
 }
@@ -652,6 +664,7 @@ export function readCombatTargets(): CombatTarget[] {
         name: monster.name,
         areaName: area.name,
         combatLevel: combatLevelOf(monster),
+        requiresLevel: levelRequirementOf(area.entryRequirements),
       });
     }
   }
@@ -674,6 +687,7 @@ export function readCombatTargets(): CombatTarget[] {
       name: dungeon.name,
       areaName: dungeon.name,
       combatLevel: combatLevelOf(hardest),
+      requiresLevel: levelRequirementOf(dungeon.entryRequirements),
     });
   }
 
@@ -732,6 +746,7 @@ export function readSlayerTaskTarget(): CombatTarget | null {
       name: monster.name,
       areaName: area.name,
       combatLevel: combatLevelOf(monster),
+      requiresLevel: levelRequirementOf(area.entryRequirements),
       // Zero would be indistinguishable from "not a task monster" downstream,
       // and a task with no kills left is one the game has already finished.
       slayerKillsLeft: Math.max(1, task.killsLeft),
@@ -741,6 +756,168 @@ export function readSlayerTaskTarget(): CombatTarget | null {
     // still explains why Slayer is offering nothing.
     return null;
   }
+}
+
+/**
+ * The highest skill level a set of entry requirements asks for.
+ *
+ * `AnyRequirement` is a union (requirements.d.ts:371); only
+ * `SkillLevelRequirement` carries a level, and it identifies itself with a
+ * literal `type` of `'SkillLevel'` alongside `skill` and `level`
+ * (requirements.d.ts:52-56). Everything else -- a dungeon completion, an item
+ * held -- is deliberately ignored rather than flattened into a number, because
+ * a fake level would be worse than an absent one.
+ *
+ * @returns The level, or undefined when nothing asks for one.
+ */
+function levelRequirementOf(requirements: readonly AnyRequirement[]): number | undefined {
+  try {
+    let highest = 0;
+    for (const requirement of requirements) {
+      if (requirement.type !== 'SkillLevel') continue;
+      highest = Math.max(highest, numberOrZero(requirement.level));
+    }
+    return highest > 0 ? highest : undefined;
+  } catch (error) {
+    noteSwallowed('combat.levelRequirementOf', error);
+    return undefined;
+  }
+}
+
+// --- pricing ---------------------------------------------------------------
+
+/** A fight priced: the numbers that separate one monster from another. */
+export interface FightPricing {
+  /** Appended to the candidate's label. Empty when nothing could be priced. */
+  note: string;
+  /**
+   * GP the kills pay straight into the balance over an hour.
+   *
+   * Coins only. What the drops would fetch is named in {@link note} instead,
+   * because an hour of banking gems moves the balance by exactly zero and the
+   * candidate's `gpIsEarned` flag exists to keep those two claims apart.
+   */
+  gpPerHour: number;
+}
+
+/**
+ * Prices one monster fight.
+ *
+ * The join between {@link readFightRate}, which says how fast kills come, and
+ * `killValueFor`, which says what a kill is worth. Neither belongs here: rate
+ * maths lives in `rates.ts` and value maths in `pricing.ts`, and this only
+ * turns them into a line a planner can read.
+ *
+ * Runs *after* the survivability gate and the level screen, never instead of
+ * them. Pricing a fight is not a route to taking it: an unsurvivable monster is
+ * refused before this is ever called, and a priced number must never be
+ * mistakable for a permit. That ordering is enforced by the caller, which
+ * builds a blocked entry and moves on before reaching this.
+ *
+ * @param monsterId - The monster to price.
+ * @returns Its rate and worth, or null when a term could not be read.
+ */
+export function readFightPricing(monsterId: string): FightPricing | null {
+  const monster = game.monsters.getObjectByID(monsterId);
+  if (monster === undefined) return null;
+
+  const rate = readFightRate(monster);
+  if (rate === null) return null;
+
+  const value = killValueFor(monster);
+  const parts = [
+    `${Math.round(rate.hitpoints).toLocaleString()} HP (defence ${rate.defenceLevel})`,
+    // "~" throughout, because every attack is assumed to land: the hit chance
+    // against a specific monster cannot be read outside combat. See the note on
+    // FightRate for why the Defence level above is the correction axis.
+    `~${round(rate.killsPerHour)} kills/h`,
+    `~${round(rate.damagePerHour)} damage/h${describeTrainedSkills()}`,
+  ];
+
+  if (value.bones !== null) {
+    // Prayer has exactly one input and this is it, so a fight that supplies it
+    // is a different offer from one that does not -- and `prayer-20` is open.
+    const each = value.bones.quantity === 1 ? '' : `${value.bones.quantity}x `;
+    parts.push(`${each}${value.bones.name} every kill`);
+  }
+
+  const lootPerHour = value.lootGpPerKill * rate.killsPerHour;
+  if (lootPerHour > 0) parts.push(`drops worth ~${round(lootPerHour)} gp/h if sold`);
+
+  return {
+    note: ` — ${parts.join(', ')}`,
+    gpPerHour: value.gpPerKill * rate.killsPerHour,
+  };
+}
+
+/**
+ * How long one run of a dungeon takes, and what it is worth.
+ *
+ * A dungeon is every one of its monsters in sequence, so it is priced as the
+ * sum rather than by its hardest inhabitant -- the hardest one decides whether
+ * the run is *survivable*, which is a different question and already answered
+ * by the gate. Reporting only the boss would have priced a twenty-monster
+ * dungeon as one fight.
+ *
+ * One unpriceable monster abandons the whole figure, for the same reason
+ * `worstCaseStats` refuses a dungeon with one unmeasurable monster: a total
+ * over the monsters that happened to read is not a total.
+ */
+export function readDungeonPricing(dungeonId: string): FightPricing | null {
+  const dungeon = game.dungeons.getObjectByID(dungeonId);
+  if (dungeon === undefined || dungeon.monsters.length === 0) return null;
+
+  let seconds = 0;
+  let damage = 0;
+  let gp = 0;
+  let loot = 0;
+
+  for (const monster of dungeon.monsters) {
+    const rate = readFightRate(monster);
+    if (rate === null) return null;
+
+    const value = killValueFor(monster);
+    seconds += rate.secondsPerKill;
+    damage += rate.hitpoints;
+    gp += value.gpPerKill;
+    loot += value.lootGpPerKill;
+  }
+
+  if (!(seconds > 0)) return null;
+  const runsPerHour = 3600 / seconds;
+
+  const parts = [
+    `${dungeon.monsters.length} monsters, ${Math.round(damage).toLocaleString()} HP in total`,
+    `~${Math.round(seconds / 60)} min per run`,
+    `~${round(damage * runsPerHour)} damage/h${describeTrainedSkills()}`,
+  ];
+  if (loot > 0) parts.push(`drops worth ~${round(loot * runsPerHour)} gp/h if sold`);
+
+  return { note: ` — ${parts.join(', ')}`, gpPerHour: gp * runsPerHour };
+}
+
+/** Rounded and grouped, the way every other rate on the board is written. */
+function round(value: number): string {
+  return Math.round(value).toLocaleString();
+}
+
+/**
+ * Which skills the damage will actually land in.
+ *
+ * `Player.getExperienceGainSkills()` (player.d.ts:426) is the game's own answer
+ * for the selected attack style, so nothing has to be inferred from a weapon or
+ * a style name. It is worth naming on every fight because the style is the
+ * single lever on four open goals -- `ranged-20`, `defence-20`, `hp-40` and
+ * Attack 40 for `first-dungeon` -- and a damage rate with no destination cannot
+ * tell the planner whether a fight advances any of them.
+ */
+function describeTrainedSkills(): string {
+  const skills = safeValue('combat.experienceGainSkills', () =>
+    game.combat.player.getExperienceGainSkills(),
+  );
+  if (skills === undefined || skills.length === 0) return '';
+
+  return ` into ${skills.map((skill) => skill.name).join(' and ')}`;
 }
 
 /** `combatLevel` is a getter that can throw on malformed modded monsters. */

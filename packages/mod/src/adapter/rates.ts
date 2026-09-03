@@ -1,6 +1,6 @@
 import { FISHING_ID } from './gathering.js';
 import { ALT_MAGIC_ID, type RecipeLike } from './recipes.js';
-import { noteSwallowed, recordFallback, safeValue } from './safe.js';
+import { noteSwallowed, recordFallback, safeNumber, safeValue } from './safe.js';
 
 /**
  * How long an action takes, how much it yields, and how much XP it pays.
@@ -668,4 +668,191 @@ export function miningIntervalFor(rock: MiningRock): number {
     noteSwallowed('candidates.miningIntervalFor', error);
     return base;
   }
+}
+
+// --- combat ----------------------------------------------------------------
+
+/**
+ * What one kill costs in time and pays in damage.
+ *
+ * Fights were the only candidates on the board carrying no rate at all, so all
+ * sixty of them sorted identically and the planner could not tell a level-1
+ * Chicken from a level-27 Sweaty Monster. Every other candidate priced itself;
+ * a fight offered its drops and its combat level, and combat level measures
+ * danger rather than value.
+ *
+ * Only stated numbers go in here, and the two that are *not* stated are named
+ * rather than guessed:
+ *
+ * - **XP per point of damage is not in the typings.** The only statement about
+ *   how combat pays is `Player.rewardXPAndPetsForDamage(damage)`
+ *   (player.d.ts:435) -- XP is a function of damage dealt, and no coefficient
+ *   appears anywhere in `gameTypes/`. So this reports
+ *   {@link FightRate.damagePerHour} rather than an invented xp/h. The
+ *   coefficient is the same for every fight, so damage/hour ranks fights
+ *   exactly as XP/hour would; what it cannot do is compare a fight against
+ *   Thieving, and saying so beats fabricating a constant that would make the
+ *   comparison look sound.
+ * - **Hit chance against a specific monster is unreadable outside combat.** The
+ *   probe in `combat.ts` exists to answer exactly this and the game's own
+ *   `computeCombatStats` returns NaN for a detached enemy. So every attack is
+ *   assumed to land, which overstates uniformly and overstates *most* against
+ *   high-Defence monsters. That is why {@link FightRate.defenceLevel} is
+ *   carried into the label: the axis the estimate is optimistic along is put in
+ *   front of the planner rather than hidden inside the number.
+ *
+ * The spawn gap is charged, and it is the whole reason two monsters differ
+ * here. Without it damage/hour would be the character's DPS and identical for
+ * every fight; with it, a 30 HP Chicken pays three seconds of nothing for every
+ * six of fighting while a 350 HP Hill Giant pays the same three for seventy.
+ * This is the mining-respawn lesson in a second skill -- price the part that
+ * costs, not only the part that produces.
+ */
+export interface FightRate {
+  /** The monster's maximum hitpoints. */
+  hitpoints: number;
+  /** Its Defence level, so the label can name what the estimate ignores. */
+  defenceLevel: number;
+  /** Expected damage the character lands per attack that connects. */
+  damagePerAttack: number;
+  /** Dead air between one kill and the next enemy spawning. */
+  spawnSecondsPerKill: number;
+  /** Kill to kill, spawn gap included. */
+  secondsPerKill: number;
+  killsPerHour: number;
+  /** Damage dealt per hour, which is what combat XP is paid on. */
+  damagePerHour: number;
+}
+
+/**
+ * Prices one fight, or nothing when a term could not be read.
+ *
+ * Null rather than a partial estimate, for the same reason a failed probe
+ * refuses rather than assuming a monster is harmless: a fight whose rate is a
+ * guess would sort against fights whose rates are real, and once both are
+ * numbers there is no way to tell them apart.
+ *
+ * Makes no safety judgement whatsoever and must never be read as one. The
+ * survivability gate and the level screen are the only things that decide
+ * whether a fight may be taken; this only ranks the ones they have allowed.
+ */
+export function readFightRate(monster: Monster): FightRate | null {
+  const hitpoints = monsterHitpoints(monster);
+  if (hitpoints === null) return null;
+
+  const player = game.combat.player;
+  // `CharacterCombatStats` getters: minHit (character.d.ts:567), maxHit (565),
+  // attackInterval (556). All three are modifier-aware and answer outside
+  // combat, unlike the enemy-side stats the probe cannot compute.
+  const minHit = safeNumber('rates.playerMinHit', () => player.stats.minHit, 0);
+  const maxHit = safeNumber('rates.playerMaxHit', () => player.stats.maxHit, 0);
+  const attackIntervalMs = safeNumber(
+    'rates.playerAttackInterval',
+    () => player.stats.attackInterval,
+    0,
+  );
+
+  // Zero is not a fast character, it is an unread one -- and a zero interval
+  // divides into an infinite kill rate, which would pin every fight to the top
+  // of the board and keep it there. Same reasoning as `firstUsableInterval`.
+  if (!(maxHit > 0) || !(attackIntervalMs > 0)) return null;
+
+  // The midpoint of the damage range. That the roll is uniform between minHit
+  // and maxHit is not stated in the typings; the midpoint is the unbiased
+  // single number for any symmetric roll, and an asymmetry would shift every
+  // fight by the same factor and so reorder nothing.
+  const damagePerAttack = (minHit + maxHit) / 2;
+  const spawnSecondsPerKill = monsterSpawnSeconds();
+  const secondsPerKill =
+    (hitpoints / damagePerAttack) * (attackIntervalMs / 1000) + spawnSecondsPerKill;
+  if (!(secondsPerKill > 0)) return null;
+
+  const killsPerHour = SECONDS_PER_HOUR / secondsPerKill;
+
+  return {
+    hitpoints,
+    defenceLevel: safeNumber('rates.monsterDefenceLevel', () => monster.levels.Defence, 0),
+    damagePerAttack,
+    spawnSecondsPerKill,
+    secondsPerKill,
+    killsPerHour,
+    // Every point of the monster's health is a point of damage dealt, so this
+    // is the kill rate priced in the unit combat XP is actually paid in.
+    damagePerHour: killsPerHour * hitpoints,
+  };
+}
+
+const SECONDS_PER_HOUR = 3600;
+
+/**
+ * A monster's maximum hitpoints.
+ *
+ * `Monster` carries `levels` (monsters.d.ts:103) and nothing else about health:
+ * there is no `hitpoints` field, because health lives on `Character` and only
+ * an instantiated `Enemy` has it -- the same reason the dump omits `maxHit`.
+ *
+ * The conversion from a Hitpoints level to a health bar is **not stated in the
+ * typings**, so it is settled by measurement. `numberMultiplier` (main.d.ts:16)
+ * is the game's global scale, and the live character reads Hitpoints 15 against
+ * a 150 bar, which is that multiplier exactly.
+ *
+ * The consequence of being wrong about it is bounded, and worth stating because
+ * it is why measurement is enough here: the multiplier is a single global, so a
+ * wrong value scales every monster's health by the same factor. Kill rates
+ * would be uniformly wrong and the *ordering* of fights -- which is all a
+ * candidate list is for -- would be untouched.
+ */
+function monsterHitpoints(monster: Monster): number | null {
+  const level = safeNumber('rates.monsterHitpointsLevel', () => monster.levels.Hitpoints, 0);
+  if (!(level > 0)) return null;
+
+  return level * hitpointsPerLevel();
+}
+
+/**
+ * The game's global number scale, or a nominal stand-in.
+ *
+ * Read off `globalThis` rather than as the bare ambient identifier, because a
+ * bare reference to a global the bundle does not define throws `ReferenceError`
+ * rather than yielding undefined -- which would take out the whole enumeration
+ * pass instead of one rate. The fallback is recorded because reaching it means
+ * the global was renamed, which is a real fault rather than a state the agent
+ * legitimately runs in, so it will not fire every pass.
+ */
+function hitpointsPerLevel(): number {
+  const multiplier = (globalThis as { numberMultiplier?: unknown }).numberMultiplier;
+  if (typeof multiplier === 'number' && Number.isFinite(multiplier) && multiplier > 0) {
+    return multiplier;
+  }
+
+  recordFallback('rates.numberMultiplier', 'numberMultiplier was not readable off globalThis');
+  return NOMINAL_HITPOINTS_PER_LEVEL;
+}
+
+/** Health per Hitpoints level when `numberMultiplier` cannot be read. */
+const NOMINAL_HITPOINTS_PER_LEVEL = 10;
+
+/**
+ * Seconds of nothing between one kill and the next enemy.
+ *
+ * `Player.getMonsterSpawnTime()` (player.d.ts:134) is the modifier-aware
+ * accessor -- the game has both `decreasedMonsterRespawnTimer` and
+ * `increasedMonsterRespawnTimer` modifiers (enums.d.ts:2084, 2125), so a
+ * constant here would ignore exactly the upgrades a character buys to make
+ * fights faster. `baseSpawnInterval` (player.d.ts:131) is the unmodified field
+ * behind it and stands in when the accessor refuses.
+ *
+ * Failing to zero last is deliberate, and it is the understating direction: it
+ * prices the wait as free, which flatters short fights. Naming a number instead
+ * would be a guess at the one term separating a Chicken from a Hill Giant.
+ */
+function monsterSpawnSeconds(): number {
+  const player = game.combat.player;
+  const ms = safeNumber(
+    'rates.monsterSpawnTime',
+    () => player.getMonsterSpawnTime(),
+    safeNumber('rates.baseSpawnInterval', () => player.baseSpawnInterval, 0),
+  );
+
+  return ms > 0 ? ms / 1000 : 0;
 }

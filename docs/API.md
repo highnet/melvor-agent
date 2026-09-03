@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-216 exports.
+219 exports.
 
 ## `act`
 
@@ -734,6 +734,16 @@ FARMING_ID: "melvorD:Farming"
 
 ```ts
 FarmPlotState: any
+```
+
+## `FightPricing`
+
+`interface`
+
+A fight priced: the numbers that separate one monster from another.
+
+```ts
+FightPricing: any
 ```
 
 ## `FISHING_ID`
@@ -1542,6 +1552,26 @@ artefact sizes, so the right choice depends on what the run is for.
 readDigSiteSetupCandidates: () => Candidate[]
 ```
 
+## `readDungeonPricing`
+
+`function`
+
+How long one run of a dungeon takes, and what it is worth.
+
+A dungeon is every one of its monsters in sequence, so it is priced as the
+sum rather than by its hardest inhabitant -- the hardest one decides whether
+the run is *survivable*, which is a different question and already answered
+by the gate. Reporting only the boss would have priced a twenty-monster
+dungeon as one fight.
+
+One unpriceable monster abandons the whole figure, for the same reason
+`worstCaseStats` refuses a dungeon with one unmeasurable monster: a total
+over the monsters that happened to read is not a total.
+
+```ts
+readDungeonPricing: (dungeonId: string) => FightPricing | null
+```
+
 ## `readEquipCandidates`
 
 `function`
@@ -1702,6 +1732,27 @@ player loses every cycle after the first.
 
 ```ts
 readFarmPlots: () => FarmPlotState[]
+```
+
+## `readFightPricing`
+
+`function`
+
+Prices one monster fight.
+
+The join between {@link readFightRate}, which says how fast kills come, and
+`killValueFor`, which says what a kill is worth. Neither belongs here: rate
+maths lives in `rates.ts` and value maths in `pricing.ts`, and this only
+turns them into a line a planner can read.
+
+Runs *after* the survivability gate and the level screen, never instead of
+them. Pricing a fight is not a route to taking it: an unsurvivable monster is
+refused before this is ever called, and a priced number must never be
+mistakable for a permit. That ordering is enforced by the caller, which
+builds a blocked entry and moves on before reaching this.
+
+```ts
+readFightPricing: (monsterId: string) => FightPricing | null
 ```
 
 ## `readFoodReserve`

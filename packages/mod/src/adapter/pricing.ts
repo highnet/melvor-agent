@@ -1,6 +1,6 @@
 import { spellCosts } from './affordability.js';
 import { ALT_MAGIC_ID, type RecipeLike } from './recipes.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, safeNumber, safeValue } from './safe.js';
 
 /**
  * What one action of a recipe is worth, and how long its inputs will last.
@@ -224,5 +224,124 @@ export function sustainableMinutes(recipe: RecipeLike, intervalMs: number): numb
   } catch (error) {
     noteSwallowed('candidates.sustainableMinutes', error);
     return null;
+  }
+}
+
+// --- combat ----------------------------------------------------------------
+
+/** What one kill pays, split by whether the payment is already money. */
+export interface KillValue {
+  /**
+   * Currency the kill drops straight into the balance.
+   *
+   * Kept apart from {@link lootGpPerKill} for the reason `gpIsEarned` exists on
+   * a candidate: coins and items that *would* fetch coins are different claims,
+   * and a GP goal was once reported as advanced by mining a gem, an hour of
+   * which moves the balance by exactly zero.
+   */
+  gpPerKill: number;
+  /** What the kill's items would fetch, if something sells them. */
+  lootGpPerKill: number;
+  /**
+   * The bones a kill drops, which are the only thing Prayer is trained on.
+   *
+   * `Monster.bones` (monsters.d.ts:114) is optional and sits outside the loot
+   * table, so it is neither rolled nor discounted by `lootChance` -- a monster
+   * that has bones drops them every kill. Named rather than only counted,
+   * because `prayer-20` is an open goal and nothing else advances it.
+   */
+  bones: { name: string; quantity: number } | null;
+}
+
+/**
+ * What a monster is worth per kill.
+ *
+ * Every term comes from a stated field or a getter documented as an *average*.
+ * That distinction is the whole care in this function: `DropTable` offers
+ * `getDrop()` (utils.d.ts:541) and `getRawDrop()` (utils.d.ts:543), both
+ * documented as rolling, and `getAverageDropValue()` (utils.d.ts:545),
+ * documented as "the average currency value of a drop in this table". Pricing
+ * an hour off either of the first two would repeat the
+ * `modifyPrimaryProductQuantity` bug exactly -- a sample read as an estimate,
+ * which had the board advertising rates that flipped by a factor of two between
+ * two readings with no game state moving.
+ *
+ * `lootChance` (monsters.d.ts:110) is applied on top, because it is the chance
+ * the table rolls *at all* and the average is conditional on it rolling.
+ * Treating the two as one is how "drops Garum Seeds at 100% loot chance"
+ * welded two true facts into a false one.
+ */
+export function killValueFor(monster: Monster): KillValue {
+  const bones = safeValue('pricing.monsterBones', () => monster.bones);
+
+  return {
+    gpPerKill: currencyPerKill(monster),
+    lootGpPerKill:
+      lootValuePerKill(monster) + (bones === undefined ? 0 : gpValue(bones.item) * bones.quantity),
+    bones: bones === undefined ? null : { name: bones.item.name, quantity: bones.quantity },
+  };
+}
+
+/**
+ * GP a kill pays directly.
+ *
+ * `Monster.currencyDrops` is `CurrencyDrop[]` (monsters.d.ts:112), each a
+ * `{ currency, min, max }` (monsters.d.ts:12-16) -- a range the game rolls, so
+ * the midpoint is the expectation. Non-GP currencies are skipped rather than
+ * summed in: reporting Slayer Coins as `gpPerHour` would quietly mislead the
+ * planner, the same reason {@link gpValue} checks the currency on `sellsFor`.
+ */
+function currencyPerKill(monster: Monster): number {
+  try {
+    let total = 0;
+    for (const drop of monster.currencyDrops) {
+      if (drop.currency !== game.gp) continue;
+      total += (drop.min + drop.max) / 2;
+    }
+    return total;
+  } catch (error) {
+    noteSwallowed('pricing.currencyPerKill', error);
+    return 0;
+  }
+}
+
+/** Expected sale value of the loot table, discounted by the chance it rolls. */
+function lootValuePerKill(monster: Monster): number {
+  const chance = safeNumber('pricing.lootChance', () => monster.lootChance, 0) / 100;
+  if (!(chance > 0)) return 0;
+
+  const table = safeValue('pricing.lootTable', () => monster.lootTable);
+  if (table === undefined) return 0;
+
+  const average =
+    safeValue('pricing.averageDropValue', () => table.getAverageDropValue().get(game.gp)) ??
+    weightedTableValue(table);
+
+  return Number.isFinite(average) && average > 0 ? average * Math.min(1, chance) : 0;
+}
+
+/**
+ * The same average, computed from the table's own fields.
+ *
+ * Stands in when `getAverageDropValue` is missing or throws. Not a
+ * reimplementation of a game formula -- it is arithmetic over four documented
+ * numbers, `totalWeight` (utils.d.ts:531) and each element's `weight`,
+ * `minQuantity` and `maxQuantity` (utils.d.ts:511-516) -- so an accessor rename
+ * costs the rate its precision rather than costing every fight its rate.
+ */
+function weightedTableValue(table: DropTable): number {
+  try {
+    const total = table.totalWeight;
+    if (!(total > 0)) return 0;
+
+    let value = 0;
+    for (const drop of table.drops) {
+      value +=
+        (drop.weight / total) * gpValue(drop.item) * ((drop.minQuantity + drop.maxQuantity) / 2);
+    }
+    return value;
+  } catch (error) {
+    noteSwallowed('pricing.weightedTableValue', error);
+    return 0;
   }
 }
