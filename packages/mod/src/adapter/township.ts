@@ -46,6 +46,48 @@ function projectBuilding(building: TownshipBuilding, biome: TownshipBiome): Town
 }
 
 /**
+ * Runs a per-building town call with the town page pointed at one biome.
+ *
+ * Neither `buildBuilding` (township.d.ts:722) nor `repairBuilding` (:723) takes
+ * a biome. Both are the game's own button callbacks, and both read
+ * `Township.currentTownBiome` (:423) instead — `repairBuilding` opening with a
+ * bare `if (biome === undefined) return;`, so with no biome selected it spends
+ * nothing, changes nothing and reports nothing.
+ *
+ * The agent never opens the town page, so `currentTownBiome` is absent and that
+ * early return is the *normal* path for us. It cost a day of:
+ *
+ *   reflex.repairTownship: state unchanged after call:
+ *   {"buildingId":"melvorF:Miners_Pit","biomeId":"melvorF:Mountains","count":1,"efficiency":85}
+ *   -> {...,"efficiency":85}
+ *
+ * once a minute, forever, with `canAffordRepair(building, biome)` (:691)
+ * truthfully answering yes about a biome the call itself would never look at.
+ *
+ * Scoping is temporary in both directions: leaving the biome changed would
+ * silently redirect a human's next click to a biome they did not choose.
+ *
+ * @typeParam T - Whatever the wrapped call returns; passed straight back.
+ */
+function withTownBiome<T>(township: typeof game.township, biome: TownshipBiome, call: () => T): T {
+  const previousBiome = township.currentTownBiome;
+  township.currentTownBiome = biome;
+  try {
+    return call();
+  } finally {
+    // `exactOptionalPropertyTypes` makes "absent" and "undefined" different
+    // things, and the game treats absent as "viewing all biomes" — so restoring
+    // it has to delete rather than assign. Assigning undefined is not the same
+    // as removing the property: the game reads an absent `currentTownBiome` as
+    // "viewing all biomes", which is the state a human who never opened a
+    // specific biome is in.
+    // biome-ignore lint/performance/noDelete: its suggested fix reintroduces exactly that bug.
+    if (previousBiome === undefined) delete township.currentTownBiome;
+    else township.currentTownBiome = previousBiome;
+  }
+}
+
+/**
  * Builds one building in a biome.
  *
  * `buildBuilding` takes no biome argument: it builds into whichever biome the
@@ -122,23 +164,7 @@ export function buildTownshipBuilding(
         }
         return null;
       },
-      perform: () => {
-        const previousBiome = township.currentTownBiome;
-        township.currentTownBiome = biome;
-        try {
-          township.buildBuilding(building);
-        } finally {
-          // `exactOptionalPropertyTypes` makes "absent" and "undefined"
-          // different things, and the game treats absent as "viewing all
-          // biomes" — so restoring it has to delete rather than assign.
-          // Assigning undefined is not the same as removing the property: the
-          // game reads an absent `currentTownBiome` as "viewing all biomes",
-          // which is the state a human who never opened a specific biome is in.
-          // biome-ignore lint/performance/noDelete: its suggested fix reintroduces exactly that bug.
-          if (previousBiome === undefined) delete township.currentTownBiome;
-          else township.currentTownBiome = previousBiome;
-        }
-      },
+      perform: () => withTownBiome(township, biome, () => township.buildBuilding(building)),
       changed: (before, after) => after.count > before.count,
     },
     isSuspended,
@@ -180,8 +206,14 @@ export function repairTownshipBuilding(
         }
         return null;
       },
-      // `render: false` — the agent is not looking at the town page.
-      perform: () => township.repairBuilding(building, false),
+      // Scoped to the biome for the same reason building is: `repairBuilding`
+      // reads `currentTownBiome` and returns without doing anything when it is
+      // absent. See `withTownBiome`.
+      //
+      // `render: false` — the agent is not looking at the town page. It also
+      // keeps `onBuildingRepair` (township.d.ts:724) out of the way, and that
+      // call ends in `setTownBiome`, which would move the human's view.
+      perform: () => withTownBiome(township, biome, () => township.repairBuilding(building, false)),
       changed: (before, after) => after.efficiency > before.efficiency,
     },
     isSuspended,
