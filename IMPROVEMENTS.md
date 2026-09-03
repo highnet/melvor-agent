@@ -40,6 +40,33 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [x] **The sell reflex ate the food chain** — S. Live log, three consecutive
+      lines: `cooking.cook ok`, `reflex.liquidateSurplus fired`,
+      `cooking.cook refused: missing ingredients for melvorAoD:Halibut`. The
+      raw fish were sold out from under the cook consuming them, the objective
+      was abandoned as "the game refuses it in this state", and the plan
+      advanced past the one step that would have produced food. It had happened
+      before unnoticed -- 259 cooked Seahorse and their raw stock went the same
+      way earlier in the session. The larder guard could not catch it because it
+      asks `item instanceof FoodItem` and a raw fish is not food, it is what
+      food is made of; so the guard held the meals and sold the means of making
+      more. `saleExclusionReason` now withholds cooking inputs too, but only
+      while the larder is under the 40-meal floor -- Raw Poison Fish is one of
+      the best GP rates on the board and is ordinary stock once there is food.
+
+- [ ] **A plan step whose target is already met completes instantly and drains
+      the plan** — S. Observed twice: a three-step plan asked for Cooking 44 and
+      Fishing 40 when Cooking was already 44 and Fishing 42, so both steps were
+      satisfied the moment they were queued, completed without doing anything,
+      and the plan emptied within minutes -- the operator's own report was "we
+      are skipping through the steps without doing them". `rungFor`
+      (`packages/planner/src/mcp-tools.ts`) clamps a target *down* when it
+      exceeds the budget but has no notion of one already reached; it projected
+      "~0min" and said only that this was "a short rung". A target at or below
+      the current level is not a short rung, it is a no-op, and `set_plan`
+      should refuse it or raise it rather than queue it. The ~0min projection is
+      the available signal.
+
 - [x] **Food is not auto-liquidated** *(2×)* — S. `sellToEscapeFullBank` sells the
       cheapest stack, and cheap food is the cheapest thing in a bank. One call
       from "bank full" to "starved".

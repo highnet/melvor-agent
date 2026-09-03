@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   readCheapestExpendableStack,
   readMostValuableExpendableStack,
+  readSellCandidates,
 } from '../src/adapter/disposal.js';
 
 /**
@@ -47,7 +48,8 @@ const MIND_RUNE = item('melvorD:Mind_Rune', 'Mind Rune', 1);
 const SHRIMP = item('melvorD:Shrimp', 'Shrimp', 3);
 const ARROWS = item('melvorD:Bronze_Arrows', 'Bronze Arrows', 2);
 
-const ITEMS = [GOLD_BAR, SILVER_BAR, RUSTY_KEY, POTATO_SEED, MIND_RUNE, SHRIMP, ARROWS];
+const RAW_FISH = item('melvorAoD:Raw_Halibut', 'Raw Halibut', 40);
+const ITEMS = [GOLD_BAR, SILVER_BAR, RUSTY_KEY, POTATO_SEED, MIND_RUNE, SHRIMP, ARROWS, RAW_FISH];
 
 /**
  * The game's item classes, as classes, so `instanceof` answers.
@@ -82,6 +84,7 @@ function stockBank(): void {
         [MIND_RUNE, 81],
         [FOOD, 12],
         [AMMO, 1259],
+        [RAW_FISH, 68],
       ] as [FakeItem, number][]
     ).map(([entry, quantity]) => [entry.id, { item: entry, quantity }]),
   );
@@ -114,6 +117,9 @@ function installGame(): void {
       },
     },
     herblore: { actions: { allObjects: [] } },
+    cooking: {
+      actions: { allObjects: [{ itemCosts: [{ item: RAW_FISH, quantity: 1 }] }] },
+    },
     township: {
       townData: { townCreated: true },
       tasks: {
@@ -223,5 +229,39 @@ describe('readCheapestExpendableStack', () => {
     installGame();
 
     expect(readCheapestExpendableStack()).toBeNull();
+  });
+});
+
+/**
+ * Raw ingredients, while the larder is empty.
+ *
+ * The live failure, three consecutive log lines: `cooking.cook ok`,
+ * `reflex.liquidateSurplus fired`, `cooking.cook refused: missing ingredients
+ * for melvorAoD:Halibut`. The sell reflex sold the raw fish out from under the
+ * cook consuming them, so the one step that would have produced food was
+ * abandoned. The larder guard could not see it: a raw fish is not a `FoodItem`.
+ */
+describe('raw stock that food is cooked from', () => {
+  const offered = (): string[] =>
+    readSellCandidates().map((candidate) =>
+      String((candidate.params as { itemId?: unknown }).itemId ?? ''),
+    );
+
+  it('is withheld while the larder is below the reserve', () => {
+    // 12 meals banked, well under the 40-meal floor.
+    expect(offered()).not.toContain(RAW_FISH.id);
+  });
+
+  it('is ordinary sellable stock once there is food', () => {
+    // Raw Poison Fish is one of the best GP rates on the board; this guard is
+    // about scarcity, not about raw fish being precious in themselves.
+    banked.set(FOOD.id, { item: FOOD, quantity: 500 });
+    installGame();
+
+    expect(offered()).toContain(RAW_FISH.id);
+  });
+
+  it('still withholds the cooked meals themselves', () => {
+    expect(offered()).not.toContain(FOOD.id);
   });
 });

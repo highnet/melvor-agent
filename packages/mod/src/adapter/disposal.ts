@@ -43,6 +43,48 @@ import { readTaskWantedQuantities } from './township.js';
  */
 const FOOD_SELL_FLOOR = 40;
 
+/**
+ * Raw ingredients a cooking recipe turns into food.
+ *
+ * The failure this exists for, from a live log, in three consecutive lines:
+ *
+ *     cooking.cook ok — active false -> true
+ *     reflex.liquidateSurplus fired
+ *     cooking.cook refused: missing ingredients for melvorAoD:Halibut
+ *
+ * The sell reflex sold the 68 Raw Halibut out from under the cook that was
+ * consuming them, the objective was abandoned as "the game refuses it in this
+ * state", and the plan advanced past the one step that would have produced
+ * food. It had happened before unnoticed: 259 cooked Seahorse and their raw
+ * stock went the same way earlier in the session.
+ *
+ * The larder guard below could not catch it, because it asks
+ * `item instanceof FoodItem` and a *raw* fish is not food — it is what food is
+ * made of. So the guard held the meals and sold the means of making more,
+ * which is the worse half to lose: meals are finite and ingredients are the
+ * supply.
+ *
+ * Narrow on purpose, and only while the larder is thin. Raw fish are ordinary
+ * sellable stock once there is food banked — Raw Poison Fish is one of the
+ * best GP rates on the board — so this withholds them exactly while they are
+ * needed for something the character cannot otherwise get.
+ */
+function readFoodIngredientIds(): Set<string> {
+  const ingredients = new Set<string>();
+
+  try {
+    for (const recipe of game.cooking.actions.allObjects) {
+      for (const cost of recipe.itemCosts) ingredients.add(cost.item.id);
+    }
+  } catch (error) {
+    noteSwallowed('disposal.readFoodIngredientIds', error);
+    // A skill that will not report its recipes protects nothing, which is the
+    // same trade the seed and ingredient readers make.
+  }
+
+  return ingredients;
+}
+
 /** Whether an item is ammunition, and so must not be liquidated. */
 function isAmmunition(item: AnyItem): boolean {
   try {
@@ -357,6 +399,10 @@ function saleExclusionReason(
     if (isAmmunition(item)) return 'it is ammunition';
     if (item instanceof FoodItem && readMealCount() < FOOD_SELL_FLOOR) {
       return `it is food and the larder is below ${FOOD_SELL_FLOOR} meals`;
+    }
+    // And the raw stock it is cooked from; see readFoodIngredientIds.
+    if (readMealCount() < FOOD_SELL_FLOOR && readFoodIngredientIds().has(item.id)) {
+      return `it is cooked into food and the larder is below ${FOOD_SELL_FLOOR} meals`;
     }
     // The only guard that is about the *sale* rather than about the item, and
     // so the only one that does not carry over to consumption. A stack the shop
