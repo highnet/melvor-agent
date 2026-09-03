@@ -40,6 +40,25 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **`reflex.repairTownship` never succeeds and never stops** — S. Fires once a
+      minute, indefinitely, always warning `state unchanged after call:
+      {"buildingId":"melvorF:Miners_Pit","biomeId":"melvorF:Mountains","count":1,
+      "efficiency":85} -> {identical}`. 17 times in one observation window, and
+      it has been in every log read today. Not an affordability problem:
+      `readRepairableBuildings` already filters on `township.canAffordRepair`
+      (township.ts) before offering anything.
+      **Lead, not a conclusion:** `repairBuilding(building, render?)`
+      (township.d.ts:723) takes only the building, while efficiency is measured
+      per biome via `biome.getBuildingEfficiency(building)` (:44) and there is a
+      separate `getBuildingEfficiencyInBiome` (:494). A building present in
+      several biomes could be repaired in one and measured in another. Settle it
+      by measurement.
+      Whatever the cause, this is the fourth loop of the same shape today
+      (Agility stop/run, Alt Magic cast/stop, equip/revert, and this): an action
+      that reports and retries forever while the world does not move. The
+      `StuckEquipWatch` pattern -- bound the retry, report the transition once,
+      name what did not change -- applies if the root cause proves unreachable.
+
 - [x] **The sell reflex ate the food chain** — S. Live log, three consecutive
       lines: `cooking.cook ok`, `reflex.liquidateSurplus fired`,
       `cooking.cook refused: missing ingredients for melvorAoD:Halibut`. The
