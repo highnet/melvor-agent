@@ -204,6 +204,7 @@ import type { Logger } from './logger.js';
 import { LoopStallWatch } from './loop-stall.js';
 import { type ObjectiveMetrics, objectiveDeltas, objectiveMetrics, snapshotGp } from './metrics.js';
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
+import { QualityWindow } from './quality-window.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
 import type { Transport } from './transport.js';
@@ -403,7 +404,7 @@ export class Agent {
    * {@link LoopStallWatch}.
    */
   private readonly loopStall = new LoopStallWatch();
-  private quality: QualitySample[] = [];
+  private readonly quality = new QualityWindow();
   /**
    * When a reflex that changed nothing may complain again, keyed by name and
    * detail. See runReflexes: an unchanging refusal repeated every tick is how a
@@ -503,31 +504,9 @@ export class Agent {
    * objective that never arrives — and the real cause is invisible from inside
    * the game without this.
    */
-  /**
-   * Levels and GP per hour across the sample window.
-   *
-   * The project's one metric, which until now lived only in the planner's
-   * replies — visible when a session asked, invisible while the agent actually
-   * ran. An operator watching the panel could see everything about the current
-   * action and nothing about whether the last four hours were worth it.
-   *
-   * Deliberately not compared against the control here: the control rate needs
-   * the candidate list, which the panel has no business recomputing on every
-   * render. The raw rate is the honest half that is cheap.
-   */
+  /** Levels and GP per hour across the sample window; see {@link QualityWindow}. */
   get progressRate(): { hours: number; levelsPerHour: number; gpPerHour: number } | null {
-    const first = this.quality[0];
-    const last = this.quality[this.quality.length - 1];
-    if (first === undefined || last === undefined || first === last) return null;
-
-    const hours = (last.at - first.at) / 3_600_000;
-    if (hours < 0.05) return null;
-
-    return {
-      hours,
-      levelsPerHour: (last.totalLevel - first.totalLevel) / hours,
-      gpPerHour: (last.gp - first.gp) / hours,
-    };
+    return this.quality.progressRate;
   }
 
   /** Whether this build could start the planner; see the service launcher. */
@@ -2080,7 +2059,7 @@ export class Agent {
   private sampleQuality(): void {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return;
-    this.quality.push({
+    this.quality.add({
       at: snapshot.capturedAt,
       totalLevel: snapshot.totalLevel,
       completionPercent: snapshot.completionPercent,
@@ -2092,9 +2071,6 @@ export class Agent {
       activeSkillXp: snapshot.skills.find((skill) => skill.id === snapshot.activeAction?.id)?.xp,
       activeRecipeId: readActiveRecipeIds()[0],
     });
-    // 48h of minute samples is plenty to compare a planner change against the
-    // control condition of one skill left running.
-    if (this.quality.length > 2880) this.quality.shift();
   }
 
   /**
@@ -2244,7 +2220,7 @@ export class Agent {
       blockedOpportunities: quiet ? [] : this.safeBlocked(),
       buildStamp: readBuildStamp(),
       logs,
-      quality: this.quality.slice(-120),
+      quality: this.quality.recent(),
       journalEntries,
       // Cumulative, not drained: a guarded read that has been failing all night
       // is the signal, and a per-tick counter cannot express it.
