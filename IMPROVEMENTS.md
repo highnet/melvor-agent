@@ -40,6 +40,37 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **Materials are checked when a fight starts and never again, so combat runs
+      dry mid-grind** — M. The operator: *"we should always check that we have
+      enough materials before going into combat"* and *"we are deffo not casting
+      anything right now"*. Both correct. Air Runes reached zero during a Chicken
+      grind; Wind Strike needs one Air plus one Mind; and over a measured 90
+      seconds Hitpoints, Prayer and Magic XP each moved by **exactly zero** while
+      3,774 Mind Runes sat unused and `inCombat` stayed true.
+      `readCannotAttackReason` exists and is correct -- it is consulted when the
+      fight is *chosen*, when the runes were still there, and never again as they
+      drained. This is the third instance today of the same shape: an Alt Magic
+      spell's consumed item chosen once and never revisited, an equip decided
+      once, and now a fight's ammunition. **A sustained activity needs its
+      preconditions re-checked while it runs, not only when it starts.**
+      Note the honest scoping question: re-checking every tick is the cost, and
+      `spellCosts` already walks the rune list. A cheaper trigger may be enough
+      -- re-check when a rune the selected spell needs drops below N casts'
+      worth, which is knowable from the same data the candidate already builds.
+
+- [ ] **A fight that produces nothing for minutes raises no alarm** — S. The
+      stall above was found only because the operator noticed. `inCombat` was
+      true, kills were zero, XP was flat and rune consumption was zero, and
+      nothing reported it. The no-movement detector exists but fires at 15
+      minutes against total level and GP, which is far too coarse for an
+      activity whose whole output is XP.
+      The instrumentation to do better already exists and is not wired to this:
+      `measureAgainstClaim` compares realised rates against advertised ones, and
+      a fight now advertises kills/h and damage/h. A fight realising **0%** of a
+      claim for minutes is exactly the signal that was missing, and it is the
+      same class as the stuck-action ledgers added today -- an action that
+      reports fine while the world does not move.
+
 - [ ] **The policy's idle reason never reaches the report, so waiting looks like
       disobedience** — S. The operator asked "we are mining but it says fight
       chickens wtf", and they were right to: for five minutes the objective read
