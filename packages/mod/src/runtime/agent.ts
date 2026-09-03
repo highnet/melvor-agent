@@ -272,6 +272,17 @@ const SUSPEND_TIMEOUT_MS = 600_000;
 const ACTION_FAILURE_LIMIT = 5;
 
 /**
+ * Under this, a completion happened before the objective could have acted.
+ *
+ * Ten seconds against a policy tier that ticks every three: an objective that
+ * satisfies its criteria this fast satisfied them on adoption. It is not a
+ * threshold on how much work counts, it is the gap between "the criteria were
+ * met by doing the work" and "the criteria were met already" — which the log
+ * could not tell apart while a three-step plan emptied in nine seconds.
+ */
+const NO_OP_COMPLETION_MS = 10_000;
+
+/**
  * Triggers the planner request schema accepts.
  *
  * An unrecognised trigger would fail validation at the service and cost a
@@ -1594,7 +1605,24 @@ export class Agent {
       case 'idle':
         break;
       case 'complete':
-        this.log.info('policy', `objective complete: ${decision.detail}`);
+        // A completion this fast is not a completion, and saying so is the only
+        // way it is ever visible.
+        //
+        // The planner refuses to queue a step whose criteria already hold, but
+        // it can only refuse what it can see: a stock target for something the
+        // step before it was going to spend is legitimately undecidable when the
+        // plan is written, and reads as satisfied only at the moment the step
+        // starts. Live, the same shape at the level end produced "objective
+        // complete: all 1 criteria met" twice in six seconds and an empty plan,
+        // logged at info, indistinguishable from an hour of work paying off.
+        if (Date.now() - this.objectiveStartedAt < NO_OP_COMPLETION_MS) {
+          this.log.warn(
+            'policy',
+            `objective completed without acting: its criteria were already met when it started (${decision.detail}). The plan advances having done nothing`,
+          );
+        } else {
+          this.log.info('policy', `objective complete: ${decision.detail}`);
+        }
         this.recordJournal(objective, 'completed', snapshot, decision.detail);
         this.settings = { ...this.settings, objective: null };
         this.requestReplan('objective_completed');

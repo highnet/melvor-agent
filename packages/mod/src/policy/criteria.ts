@@ -1,53 +1,25 @@
-import type { AbortConditions, StateSnapshot, SuccessCriterion } from '@melvor-agent/shared';
+import type { AbortConditions, StateSnapshot } from '@melvor-agent/shared';
+import { currencyAmount } from '@melvor-agent/shared';
 
 const GP_CURRENCY_ID = 'melvorD:GP';
 
-/** Current amount of a currency in the snapshot, or 0 when absent. */
-export function currencyAmount(snapshot: StateSnapshot, currencyId: string): number {
-  return snapshot.currencies.find((entry) => entry.id === currencyId)?.amount ?? 0;
-}
-
-/** Quantity of a banked item, or 0 when the bank holds none. */
-export function bankQuantity(snapshot: StateSnapshot, itemId: string): number {
-  return snapshot.bank.items.find((entry) => entry.id === itemId)?.qty ?? 0;
-}
-
-/** Level of a skill, or 0 when the skill is not registered. */
-export function skillLevel(snapshot: StateSnapshot, skillId: string): number {
-  return snapshot.skills.find((entry) => entry.id === skillId)?.level ?? 0;
-}
-
 /**
- * Whether one success criterion currently holds.
+ * Criterion evaluation now lives in `shared`; see `criteria.ts` there.
  *
- * @param snapshot - The observation to evaluate against.
- * @param criterion - A machine-checkable condition chosen by the planner.
- * @returns True when the criterion is satisfied.
+ * It moved because the planner has to ask the same question at the other end of
+ * the loop — whether a plan step's criteria are satisfied *before* it starts,
+ * which makes it a no-op — and two switches over the criterion union would have
+ * agreed on the day they were written and drifted afterwards. Re-exported here
+ * so every policy executor keeps importing its completion test from the module
+ * that owns the abort test beside it.
  */
-export function isCriterionMet(snapshot: StateSnapshot, criterion: SuccessCriterion): boolean {
-  switch (criterion.type) {
-    case 'skill_level_at_least':
-      return skillLevel(snapshot, criterion.skillId) >= criterion.level;
-    case 'item_qty_at_least':
-      return bankQuantity(snapshot, criterion.itemId) >= criterion.qty;
-    case 'currency_at_least':
-      return currencyAmount(snapshot, criterion.currencyId) >= criterion.amount;
-  }
-}
-
-/** An objective is complete when every one of its criteria holds. */
-export function isObjectiveComplete(
-  snapshot: StateSnapshot,
-  criteria: readonly SuccessCriterion[],
-): boolean {
-  // An empty list means "no criterion applies" — a one-shot action whose
-  // executor decides when it is done. Vacuous truth would mean the opposite:
-  // instantly complete, before acting even once. That bug is invisible, because
-  // the objective is accepted and then immediately reported completed.
-  if (criteria.length === 0) return false;
-
-  return criteria.every((criterion) => isCriterionMet(snapshot, criterion));
-}
+export {
+  bankQuantity,
+  currencyAmount,
+  isCriterionMet,
+  isObjectiveComplete,
+  skillLevel,
+} from '@melvor-agent/shared';
 
 export type AbortVerdict =
   | { abort: false }

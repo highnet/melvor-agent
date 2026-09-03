@@ -1,5 +1,11 @@
-import type { Candidate, Objective, StateSnapshot } from '@melvor-agent/shared';
-import { describeDropped, levelsPerHour, selectBlocked } from '@melvor-agent/shared';
+import type { Candidate, Objective, StateSnapshot, SuccessCriterion } from '@melvor-agent/shared';
+import {
+  describeDropped,
+  describeSatisfied,
+  isMonotonicCriterion,
+  levelsPerHour,
+  selectBlocked,
+} from '@melvor-agent/shared';
 import { isNewerBuild, parseBuildInfo, readBuildInfo } from './build-info.js';
 import {
   evaluateGoals,
@@ -300,18 +306,7 @@ export const TOOLS: Record<string, ToolHandler> = {
         ? { itemId: stockItemId, quantity: stockQuantity }
         : undefined;
 
-    // A target the character has already passed makes an objective that
-    // completes on its first tick without acting — it looks like success and
-    // does nothing. Live, "fletch bows to level 20" at Fletching 20 finished
-    // instantly and produced no bows.
     const snapshot = store.report?.snapshot ?? null;
-    const alreadyThere =
-      snapshot === null || stockTarget !== undefined
-        ? null
-        : levelAlreadyReached(chosen, targetLevel, snapshot);
-    if (alreadyThere !== null) {
-      return `Refused: ${alreadyThere}. Pick a level above it, or a different candidate.`;
-    }
 
     // A target level is a guess until it is checked against the rate and the
     // budget. Unchecked, it lands on one of the two failures nextRung was
@@ -322,6 +317,19 @@ export const TOOLS: Record<string, ToolHandler> = {
       stockTarget !== undefined
         ? { level: targetLevel, note: null }
         : rungFor(chosen, targetLevel, abortMinutes, snapshot);
+
+    // The criteria are checked *as queued*, after the rung has been sized, and
+    // an objective whose criteria already hold is refused rather than accepted.
+    //
+    // This objective replaces whatever is running the moment the mod reports,
+    // so "already satisfied" and "would complete without acting" are the same
+    // statement — every criterion type included, a stock target as much as a
+    // level. Live, "fletch bows to level 20" at Fletching 20 finished instantly
+    // and produced no bows.
+    const noOp = noOpReason(snapshot, successFor(chosen, rung.level, stockTarget), 'immediately');
+    if (noOp !== null) {
+      return `Refused: ${noOp}. It would complete without acting. Pick a target above the figure named, or a different candidate.`;
+    }
 
     // Attached to every objective, whatever it does. Selling is not the job of
     // this objective and must not become it -- the target is a standing
@@ -421,12 +429,42 @@ export const TOOLS: Record<string, ToolHandler> = {
           : rungFor(chosen, Number(step.targetLevel ?? 0), abortMinutes, store.report?.snapshot);
       if (stepRung.note !== null) notes.push(`step ${position + 1}: ${stepRung.note}`);
 
+      const stepCriteria = successFor(chosen, stepRung.level, stepStock);
+
+      // A step already satisfied when the plan is queued is not a short rung,
+      // it is a no-op, and a plan made of them empties without the agent doing
+      // anything at all.
+      //
+      // Observed twice. A three-step plan asked for Cooking 44 and Fishing 40
+      // while Cooking was already 44 and Fishing 42 — the levels had risen since
+      // the listing those targets were read off. Both steps completed on their
+      // first tick, the plan drained in nine seconds ("plan set: 3 objectives"
+      // at 6:13:23, "plan advanced (0 left)" at 6:13:32), and the agent fell
+      // through to a stopgap. `rungFor` had the signal and did not use it: it
+      // projected "~0min" and called that a short rung.
+      //
+      // Refused rather than raised. `rungFor` argues at length that lifting a
+      // target inside the budget would mean grinding further than the caller
+      // chose, "which is not a correction to make on someone's behalf", and
+      // that reasoning holds here with more force, not less: the caller read a
+      // stale level and every number they might have raised it *to* is equally
+      // stale. What they need back is the current figure, which the refusal
+      // names, so the retry is a decision rather than a second guess.
+      const noOp = noOpReason(
+        store.report?.snapshot ?? null,
+        stepCriteria,
+        position === 0 ? 'immediately' : 'later',
+      );
+      if (noOp !== null) {
+        return `Refused: step ${position + 1} (${chosen.label}) — ${noOp}, so it would complete without acting and drain the plan. Pick a target above the figure named, or drop the step.`;
+      }
+
       objectives.push({
         id: `plan-${Date.now()}-${position}`,
         kind: chosen.kind,
         params: chosen.params,
         ...(fundingTarget === undefined ? {} : { fundingTarget }),
-        successWhen: successFor(chosen, stepRung.level, stepStock),
+        successWhen: stepCriteria,
         abortWhen: { minutesExceed: abortMinutes },
         expectedDurationMin: Math.min(abortMinutes, 60),
         rationale: String(step.rationale ?? 'no rationale given'),
@@ -740,23 +778,48 @@ function describe(
 
 /** Success criterion for a chosen candidate; skill kinds use the caller's target. */
 /**
- * Whether a level target is already satisfied.
+ * Whether an objective's criteria are satisfied before it has done anything.
  *
- * @returns A reason to refuse, or null when the target is still ahead.
+ * The check is at the criterion level rather than at the level target, because
+ * the shape being caught is not "the level was wrong" — it is "this objective
+ * has nothing to do". `item_qty_at_least` for a stack already banked drains a
+ * plan exactly as `skill_level_at_least` for a level already passed does, and a
+ * guard written around levels alone would have to be written again the next
+ * time `successFor` learns to emit something new.
+ *
+ * `when` is what keeps the check from breaking the case the plan tool
+ * advertises. A step behind another step does not start now, and its criteria
+ * are judged against a character that has since done the work in front of it —
+ * "mine 200 Gold Ore, then smelt" is precisely a plan whose second step
+ * consumes what its first produced, so a stock target met today can be real
+ * work tomorrow. Only criteria that cannot regress are decidable that far
+ * ahead; see {@link isMonotonicCriterion}. Anything else is left to the moment
+ * the step actually starts, where the mod's own completion test reads it.
+ *
+ * @param snapshot - The observation to judge against; null means no judgement.
+ * @param criteria - The criteria as they would be queued.
+ * @param when - Whether the objective starts on the mod's next report, or only
+ *   after the steps ahead of it have run.
+ * @returns A reason to refuse, naming the readings, or null.
  */
-function levelAlreadyReached(
-  candidate: { params: Record<string, unknown> },
-  targetLevel: number,
-  snapshot: { skills: { id: string; name: string; level: number }[] },
+function noOpReason(
+  snapshot: StateSnapshot | null,
+  criteria: readonly SuccessCriterion[],
+  when: 'immediately' | 'later',
 ): string | null {
-  const skillId = candidate.params.skillId;
-  if (typeof skillId !== 'string') return null;
+  if (snapshot === null) return null;
 
-  const skill = snapshot.skills.find((entry) => entry.id === skillId);
-  if (skill === undefined) return null;
-  if (skill.level < targetLevel) return null;
+  // An empty list is a one-shot — buying, equipping, toggling — whose executor
+  // decides when it is done. It is the *opposite* of a no-op: nothing here can
+  // say whether it has work to do, and refusing it would refuse every purchase.
+  if (criteria.length === 0) return null;
 
-  return `${skill.name} is already level ${skill.level}, so a target of ${targetLevel} is met before the objective starts and it would finish without acting`;
+  if (when === 'later' && !criteria.every(isMonotonicCriterion)) return null;
+
+  const readings = criteria.map((criterion) => describeSatisfied(snapshot, criterion));
+  if (readings.some((reading) => reading === null)) return null;
+
+  return readings.join('; and ');
 }
 
 /**
