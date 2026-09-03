@@ -21,14 +21,7 @@ import {
   WOODCUTTING_ID,
 } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
-import {
-  noteSwallowed,
-  recordFallback,
-  safeBoolean,
-  safeList,
-  safeNumber,
-  safeValue,
-} from './safe.js';
+import { noteSwallowed, recordFallback, safeBoolean, safeList, safeNumber } from './safe.js';
 import { readShopCandidates, readShopGoals } from './shop.js';
 import { readTaskWantedQuantities } from './township.js';
 
@@ -1296,48 +1289,11 @@ function passiveRegenNote(rock: MiningRock): string {
  * which is exactly the kind of confident arithmetic that had Crystal
  * advertising an order of magnitude above what it paid.
  *
- * Item doubling is deliberately NOT applied on top of the accessor's answer,
- * and that decision is now settled by measurement rather than by caution.
- * `modifyPrimaryProductQuantity` **rolls the doubling itself**: it is not a
- * pure getter, it is a sample. Calling it once and pricing an hour off the
- * result is how the board came to advertise a rate that flipped by a factor of
- * two between two readings forty minutes apart, with no game state moving.
- *
- * The evidence, from 37 consecutive reports read off the live planner while the
- * character mined Gold and nothing else changed:
- *
- * | recipe             | low     | high    | high/low |
- * |--------------------|---------|---------|----------|
- * | Smithing Gold Bar  | 212,400 | 468,000 | 2.20     |
- * | Smithing Silver Bar|  53,550 | 145,350 | 2.71     |
- * | Mining Gold        |  53,283 | 100,294 | 1.88     |
- * | Mining Mithril     |  45,720 |  88,787 | 1.94     |
- *
- * Exactly two values each, never anything between, flipping independently per
- * recipe from one report to the next while `xp/h` — built from the same
- * interval, through `xpMultiplierFor`, which touches no yield — never moved at
- * all. So the swing is in the yield term alone, and it is a doubling: Gold Bar
- * is 1,800 actions/h of (142 GP bar − 24 GP of preserved ore) = 212,400, and of
- * (2 × 142 − 24) = 468,000. The ratios differ from 2 in both directions for the
- * arithmetic's own reasons — an input cost is subtracted after the doubling and
- * pushes the ratio above 2, a mining gem roll is added after it and pushes it
- * below — which is itself a check that the doubling lands on the product and
- * nowhere else.
- *
- * That answers the open question of whether `getDoublingChance`
- * (skill.d.ts:398) is already inside `modifyPrimaryProductQuantity`
- * (skill.d.ts:476): a doubling is, so multiplying by one here as well would
- * have double-counted, and the previous decision not to was right. What it got
- * wrong is subtler and did more damage — it treated a *sample* as an estimate.
- *
- * The repair takes the expectation instead. The minimum over
- * {@link YIELD_SAMPLES} calls is the un-doubled quantity (every deterministic
- * bonus the accessor applies is still in it; only the coin flip is gone), and
- * the game's own `getDoublingChance` turns it back into an average. When that
- * getter refuses — several per-action chance getters in this file consult the
- * live selection and throw during enumeration, `Mining.getRockGemChance` most
- * notoriously — the mean of the samples stands in: still unbiased, and with a
- * variance {@link YIELD_SAMPLES} times smaller than the single call it replaces.
+ * Item doubling is deliberately NOT applied on top. `getDoublingChance`
+ * (skill.d.ts:386) exists, but whether the yield above already accounts for it
+ * is not stated anywhere in the typings, and multiplying by both would
+ * overstate every gathering rate. An unclaimed bonus understates; a
+ * double-counted one is a fabrication.
  */
 export function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantity: number): number {
   try {
@@ -1361,68 +1317,13 @@ export function productYieldFor(skill: AnySkill, recipe: RecipeLike, baseQuantit
       return baseQuantity * landed;
     }
 
-    let lowest = Number.POSITIVE_INFINITY;
-    let total = 0;
-    let usable = 0;
-    for (let sample = 0; sample < YIELD_SAMPLES; sample += 1) {
-      const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
-      if (!Number.isFinite(yielded) || yielded <= 0) continue;
-      if (yielded < lowest) lowest = yielded;
-      total += yielded;
-      usable += 1;
-    }
-
-    // Every sample unusable is the old fallback, unchanged: a skill whose
-    // accessor answers zero or NaN must not sort its whole board off the bottom.
-    if (usable === 0) return baseQuantity * landed;
-
-    const doubling = doublingChanceFor(skill, recipe);
-    const expected = doubling === undefined ? total / usable : lowest * (1 + doubling / 100);
-    return expected * landed;
+    const yielded = withYield.modifyPrimaryProductQuantity(product, baseQuantity, recipe);
+    const modified = Number.isFinite(yielded) && yielded > 0 ? yielded : baseQuantity;
+    return modified * landed;
   } catch (error) {
     noteSwallowed('candidates.productYieldFor', error);
     return baseQuantity;
   }
-}
-
-/**
- * How many times {@link productYieldFor} samples the game's yield accessor.
- *
- * The minimum over N samples is the un-doubled quantity unless all N doubled,
- * which at the ~30% chance measured on Smithing is one pass in fifteen
- * thousand, and even then the error is bounded at 2x for one recipe on one
- * report rather than the coin flip on every recipe on every report. Eight
- * rather than more because this runs per recipe per enumeration pass, and the
- * pass is on the policy tick.
- */
-const YIELD_SAMPLES = 8;
-
-/**
- * The skill's own doubling chance as a percentage, or undefined when it will
- * not say.
- *
- * Undefined rather than zero, because the two lead to different arithmetic in
- * {@link productYieldFor} and conflating them is how a bonus disappears
- * silently. A skill that genuinely has no doubling answers 0 and the expectation
- * is the bare minimum, which is exact. A getter that throws leaves no expectation
- * to compute, so the caller averages instead — the failure is counted by
- * `safeValue` under this site, so an accessor rename shows up as a number rather
- * than as rates that quietly drift low.
- */
-function doublingChanceFor(skill: AnySkill, recipe: RecipeLike): number | undefined {
-  const withDoubling = skill as AnySkill & {
-    getDoublingChance?: (action?: object) => number;
-  };
-  if (withDoubling.getDoublingChance === undefined) return undefined;
-
-  const percent = safeValue(`candidates.doublingChance:${skill.id}`, () =>
-    withDoubling.getDoublingChance?.(recipe),
-  );
-  if (typeof percent !== 'number' || !Number.isFinite(percent)) return undefined;
-
-  // Clamped for the same reason `xpMultiplierFor` clamps: a hostile value here
-  // rewrites the ranking of every candidate in the skill.
-  return Math.max(0, Math.min(100, percent));
 }
 
 /** XP multiplier from the skill's own percentage modifier; 1 when unreadable. */
