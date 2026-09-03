@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readBlockedOpportunities, readGatherCandidates } from '../src/adapter/candidates.js';
+import { readBlockedOpportunities } from '../src/adapter/blocked.js';
+import { readGatherCandidates } from '../src/adapter/candidates.js';
 import { readAdapterFailures, resetAdapterFailures } from '../src/adapter/safe.js';
 import { installFakeGame } from './fixtures.js';
 

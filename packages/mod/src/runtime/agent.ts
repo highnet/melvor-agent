@@ -198,8 +198,13 @@ import {
   stopWhenStarving,
   unlockAffordablePlots,
 } from './combat-reflex.js';
+import { DeathWatch } from './death-watch.js';
+import { JournalBuffer } from './journal.js';
 import type { Logger } from './logger.js';
+import { LoopStallWatch } from './loop-stall.js';
+import { type ObjectiveMetrics, objectiveDeltas, objectiveMetrics, snapshotGp } from './metrics.js';
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
+import { QualityWindow } from './quality-window.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
 import type { Transport } from './transport.js';
@@ -215,8 +220,6 @@ const POLICY_INTERVAL_MS = 3000;
  * acting blind.
  */
 const SNAPSHOT_FAILURES_BEFORE_BLOCK = 5;
-
-const LOOP_STALL_MS = 15_000;
 
 const REFLEX_THROTTLE_MS = 1000;
 /**
@@ -258,8 +261,6 @@ const SUSPEND_TIMEOUT_MS = 600_000;
  * tick for over ten minutes without escalating.
  */
 const ACTION_FAILURE_LIMIT = 5;
-
-const GP_CURRENCY_ID = 'melvorD:GP';
 
 /**
  * Triggers the planner request schema accepts.
@@ -371,15 +372,14 @@ export class Agent {
     blocked: ReturnType<typeof readBlockedOpportunities>;
   } | null = null;
   private objectiveStartedAt = Date.now();
-  private deathsSinceStart = 0;
 
   /**
-   * Last observed value of the game's lifetime death counter.
+   * Deaths, and the baseline they are counted from.
    *
    * `null` until the first reading, so arming does not report the character's
-   * entire history as deaths that just happened.
+   * entire history as deaths that just happened. See {@link DeathWatch}.
    */
-  private lastDeathCount: number | null = null;
+  private readonly deaths = new DeathWatch();
 
   /** Game-loop ticks since load. The only evidence the loop is alive. */
   private tickCount = 0;
@@ -388,23 +388,23 @@ export class Agent {
   private stateBeforeSuspend: RunState | null = null;
 
   /** Objectives finished since the last report, shipped and then cleared. */
-  private pendingJournal: JournalEntry[] = [];
+  private readonly journal = new JournalBuffer();
 
   /** Metrics captured when the current objective began, for measured deltas. */
-  private objectiveStartMetrics: { totalLevel: number; gp: number; deaths: number } | null = null;
+  private objectiveStartMetrics: ObjectiveMetrics | null = null;
 
   /** Consecutive snapshot validation failures; reset by any success. */
   private snapshotFailures = 0;
 
-  /** Tick count at the previous policy tick, for the liveness comparison. */
-  private lastSeenTickCount = 0;
-
-  /** When the loop was first seen not to tick, or null while it is healthy. */
-  private loopStalledSince: number | null = null;
-
-  /** Whether the current stall has already been reported. */
-  private loopStalledReported = false;
-  private quality: QualitySample[] = [];
+  /**
+   * Whether the loop is still ticking, compared from the policy timer.
+   *
+   * Holds the previous tick count, when the loop was first seen not to tick,
+   * and whether the current stall has already been reported. See
+   * {@link LoopStallWatch}.
+   */
+  private readonly loopStall = new LoopStallWatch();
+  private readonly quality = new QualityWindow();
   /**
    * When a reflex that changed nothing may complain again, keyed by name and
    * detail. See runReflexes: an unchanging refusal repeated every tick is how a
@@ -504,31 +504,9 @@ export class Agent {
    * objective that never arrives — and the real cause is invisible from inside
    * the game without this.
    */
-  /**
-   * Levels and GP per hour across the sample window.
-   *
-   * The project's one metric, which until now lived only in the planner's
-   * replies — visible when a session asked, invisible while the agent actually
-   * ran. An operator watching the panel could see everything about the current
-   * action and nothing about whether the last four hours were worth it.
-   *
-   * Deliberately not compared against the control here: the control rate needs
-   * the candidate list, which the panel has no business recomputing on every
-   * render. The raw rate is the honest half that is cheap.
-   */
+  /** Levels and GP per hour across the sample window; see {@link QualityWindow}. */
   get progressRate(): { hours: number; levelsPerHour: number; gpPerHour: number } | null {
-    const first = this.quality[0];
-    const last = this.quality[this.quality.length - 1];
-    if (first === undefined || last === undefined || first === last) return null;
-
-    const hours = (last.at - first.at) / 3_600_000;
-    if (hours < 0.05) return null;
-
-    return {
-      hours,
-      levelsPerHour: (last.totalLevel - first.totalLevel) / hours,
-      gpPerHour: (last.gp - first.gp) / hours,
-    };
+    return this.quality.progressRate;
   }
 
   /** Whether this build could start the planner; see the service launcher. */
@@ -932,7 +910,7 @@ export class Agent {
       // interval is worth more the earlier it is bought.
       buyTrivialUpgrades(
         {
-          gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+          gp: snapshotGp(snapshot),
           upgrades: readCheapPermanentUpgrades(),
         },
         (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
@@ -1131,7 +1109,7 @@ export class Agent {
     this.settings = { ...this.settings, enabled: true, lastDeathCount: readDeathCount() };
     this.objectiveStartedAt = Date.now();
     this.objectiveStartMetrics = this.captureMetrics();
-    this.deathsSinceStart = 0;
+    this.deaths.resetRun();
     this.log.info('runtime', 'armed');
     this.notify();
   }
@@ -1213,7 +1191,7 @@ export class Agent {
       this.settings = { ...this.settings, objective: next, plan: rest };
       this.objectiveStartedAt = now;
       this.objectivelessSince = null;
-      this.deathsSinceStart = 0;
+      this.deaths.resetRun();
       this.consecutiveActionFailures = 0;
       this.log.info('planner', `plan advanced (${rest.length} left): ${next.rationale}`);
       this.notify();
@@ -1244,7 +1222,7 @@ export class Agent {
     this.settings = { ...this.settings, objective };
     this.objectiveStartedAt = now;
     this.objectivelessSince = null;
-    this.deathsSinceStart = 0;
+    this.deaths.resetRun();
     this.consecutiveActionFailures = 0;
     this.log.warn('policy', `stopgap adopted: ${objective.rationale}`);
     this.requestReplan('objective_completed');
@@ -1321,7 +1299,7 @@ export class Agent {
     // A real plan arrived, so the stopgap clock starts again from scratch next
     // time rather than firing immediately after this objective ends.
     this.objectivelessSince = null;
-    this.deathsSinceStart = 0;
+    this.deaths.resetRun();
     this.consecutiveActionFailures = 0;
     this.log.info('planner', `new objective (${trigger}): ${usable.rationale}`, {
       reasoning: response.reasoning,
@@ -1444,37 +1422,18 @@ export class Agent {
    * can fix from inside; what it can do is stop claiming to be fine.
    */
   private detectDeadLoop(): void {
-    const ticked = this.tickCount !== this.lastSeenTickCount;
-    this.lastSeenTickCount = this.tickCount;
+    const event = this.loopStall.observe(this.tickCount, this.state === 'running', Date.now());
+    if (event === null) return;
 
-    if (ticked) {
-      this.loopStalledReported = false;
-      if (this.loopStalledSince !== null) {
-        this.log.info('runtime', 'game loop is ticking again');
-        this.loopStalledSince = null;
-      }
+    if (event.kind === 'resumed') {
+      this.log.info('runtime', 'game loop is ticking again');
       return;
     }
 
-    if (this.state !== 'running') return;
-
-    const now = Date.now();
-    if (this.loopStalledSince === null) {
-      this.loopStalledSince = now;
-      return;
-    }
-
-    // Reported once per stall, not once per tick: an alarm that repeats every
-    // three seconds fills the log queue and evicts the diagnostics that would
-    // explain it.
-    if (this.loopStalledReported) return;
-    if (now - this.loopStalledSince < LOOP_STALL_MS) return;
-
-    this.loopStalledReported = true;
     this.log.error(
       'runtime',
       `game loop has not ticked for ${Math.round(
-        (now - this.loopStalledSince) / 1000,
+        event.stalledMs / 1000,
       )}s; reflexes are not running, so eating and the starvation stop are both inactive`,
     );
   }
@@ -1500,26 +1459,12 @@ export class Agent {
    */
   private detectDeath(): void {
     const deaths = readDeathCount();
-
-    // First reading establishes the baseline; a character with a long history
-    // has not just died forty times.
-    if (this.lastDeathCount === null) {
-      this.lastDeathCount = deaths;
-      return;
-    }
-
-    if (deaths <= this.lastDeathCount) {
-      this.lastDeathCount = deaths;
-      return;
-    }
-
-    const died = deaths - this.lastDeathCount;
-    this.lastDeathCount = deaths;
-    this.deathsSinceStart += died;
+    const died = this.deaths.observe(deaths);
+    if (died === 0) return;
 
     this.log.error(
       'runtime',
-      `character died (${died} since last check, ${this.deathsSinceStart} this run); clearing the objective`,
+      `character died (${died} since last check, ${this.deaths.deathsSinceStart} this run); clearing the objective`,
     );
 
     // The baseline moves with it. A death the agent has already seen, reported
@@ -1587,7 +1532,7 @@ export class Agent {
       objective,
       now: Date.now(),
       objectiveStartedAt: this.objectiveStartedAt,
-      deathsSinceStart: this.deathsSinceStart,
+      deathsSinceStart: this.deaths.deathsSinceStart,
     });
 
     switch (decision.kind) {
@@ -2114,11 +2059,11 @@ export class Agent {
   private sampleQuality(): void {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return;
-    this.quality.push({
+    this.quality.add({
       at: snapshot.capturedAt,
       totalLevel: snapshot.totalLevel,
       completionPercent: snapshot.completionPercent,
-      gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+      gp: snapshotGp(snapshot),
       // What produced the progress, so a realised rate can be compared against
       // the rate the candidate advertised. Without it a sample records that
       // progress happened and not what caused it.
@@ -2126,9 +2071,6 @@ export class Agent {
       activeSkillXp: snapshot.skills.find((skill) => skill.id === snapshot.activeAction?.id)?.xp,
       activeRecipeId: readActiveRecipeIds()[0],
     });
-    // 48h of minute samples is plenty to compare a planner change against the
-    // control condition of one skill left running.
-    if (this.quality.length > 2880) this.quality.shift();
   }
 
   /**
@@ -2141,7 +2083,7 @@ export class Agent {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return;
 
-    const gp = snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
+    const gp = snapshotGp(snapshot);
     // Deliberately *not* completionPercent, which was in this marker and is why
     // the detector never fired on a dead objective. Township ticks in the
     // background and nudges completion on its own, so a fight producing
@@ -2212,15 +2154,11 @@ export class Agent {
   }
 
   /** Metrics an objective's cost is measured against. Null when unreadable. */
-  private captureMetrics(): { totalLevel: number; gp: number; deaths: number } | null {
+  private captureMetrics(): ObjectiveMetrics | null {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return null;
 
-    return {
-      totalLevel: snapshot.totalLevel,
-      gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
-      deaths: this.deathsSinceStart,
-    };
+    return objectiveMetrics(snapshot, this.deaths.deathsSinceStart);
   }
 
   /**
@@ -2249,18 +2187,12 @@ export class Agent {
     this.objectiveStartMetrics = null;
     if (started === null) return;
 
-    const gp = snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
-
-    this.pendingJournal.push({
+    this.journal.record({
       objective,
       startedAt: this.objectiveStartedAt,
       endedAt: Date.now(),
       outcome,
-      deltas: {
-        totalLevel: snapshot.totalLevel - started.totalLevel,
-        gp: gp - started.gp,
-        deaths: Math.max(0, this.deathsSinceStart - started.deaths),
-      },
+      deltas: objectiveDeltas(started, objectiveMetrics(snapshot, this.deaths.deathsSinceStart)),
       note,
     });
   }
@@ -2273,8 +2205,7 @@ export class Agent {
    */
   private async pushReport(options: { stateOnly?: boolean } = {}): Promise<void> {
     const logs = this.log.drain();
-    const journalEntries = this.pendingJournal;
-    this.pendingJournal = [];
+    const journalEntries = this.journal.drain();
     const quiet = options.stateOnly === true || this.state === 'killed';
 
     const reply = await this.transport.report({
@@ -2289,7 +2220,7 @@ export class Agent {
       blockedOpportunities: quiet ? [] : this.safeBlocked(),
       buildStamp: readBuildStamp(),
       logs,
-      quality: this.quality.slice(-120),
+      quality: this.quality.recent(),
       journalEntries,
       // Cumulative, not drained: a guarded read that has been failing all night
       // is the signal, and a per-tick counter cannot express it.
@@ -2312,7 +2243,7 @@ export class Agent {
       this.log.requeue(logs);
       // Entries survive a failed send for the same reason logs do: an outcome
       // that is never recorded is one the planner will propose again.
-      this.pendingJournal = [...journalEntries, ...this.pendingJournal];
+      this.journal.requeue(journalEntries);
       return;
     }
 
@@ -2634,7 +2565,7 @@ export class Agent {
         this.objectiveStartedAt = Date.now();
         this.objectiveStartMetrics = this.captureMetrics();
         this.objectivelessSince = null;
-        this.deathsSinceStart = 0;
+        this.deaths.resetRun();
         this.consecutiveActionFailures = 0;
         this.log.info(
           'operator',
@@ -2691,7 +2622,7 @@ export class Agent {
         this.objectiveStartedAt = Date.now();
         this.objectiveStartMetrics = this.captureMetrics();
         this.objectivelessSince = null;
-        this.deathsSinceStart = 0;
+        this.deaths.resetRun();
         this.consecutiveActionFailures = 0;
         this.log.info(
           'operator',

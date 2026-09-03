@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { miningIntervalFor } from '../src/adapter/candidates.js';
+import { miningIntervalFor } from '../src/adapter/rates.js';
 import { installFakeGame } from './fixtures.js';
 
 /**

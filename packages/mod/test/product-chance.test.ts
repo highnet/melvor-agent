@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { productChanceFor } from '../src/adapter/candidates.js';
+import { productChanceFor } from '../src/adapter/rates.js';
 
 /**
  * A failed action costs the time and the inputs and yields nothing.

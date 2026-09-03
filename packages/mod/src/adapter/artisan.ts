@@ -1,7 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
-import { affordableAlternative, affordableNonShardItem } from './candidates.js';
+import { affordableAlternative, affordableNonShardItem } from './affordability.js';
 import type { GatheringProjection } from './gathering.js';
 
 /**

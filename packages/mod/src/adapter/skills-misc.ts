@@ -1,7 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
-import { readConsumableItems } from './candidates.js';
+import { readConsumableItems } from './disposal.js';
 import type { GatheringProjection } from './gathering.js';
 import { noteSwallowed } from './safe.js';
 

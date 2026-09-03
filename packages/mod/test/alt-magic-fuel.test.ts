@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readSellCandidates } from '../src/adapter/candidates.js';
+import { readSellCandidates } from '../src/adapter/disposal.js';
 import { startGathering } from '../src/adapter/gathering.js';
 
 /**
