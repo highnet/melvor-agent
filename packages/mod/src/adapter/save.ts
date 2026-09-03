@@ -2,6 +2,7 @@ import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { THIEVING_ID, stopGathering } from './gathering.js';
 import { noteSwallowed } from './safe.js';
+import { restoreStashedValuables } from './valuables.js';
 
 /**
  * Produces the save-export string.
@@ -62,6 +63,19 @@ export function reloadGame(): ActionResult<{ reloading: boolean }> {
   // a damaging activity armed across it strictly indefensible.
   const stopped = stopDamagingActivity();
 
+  // And put the fight's stripped valuables back on before the save, for the
+  // same reason the stop happens before it: a reload is not a pause. The stash
+  // that would restore them lives in this page's memory and goes away with the
+  // page, while the save records the character wearing nothing in those slots
+  // — so a reload taken mid-fight would leave the operator's Thiever's Cape in
+  // the bank with nothing left that knows it belongs on the character.
+  //
+  // Nothing is lost either way, which is why this is tidiness rather than
+  // safety: stashed gear sits in the bank where the death penalty cannot reach
+  // it, and the next session's fill reflex would put it back unprompted. Doing
+  // it here means the save is of the character as the operator left it.
+  const restored = restoreStashedValuables(() => false);
+
   try {
     saveData();
   } catch (error) {
@@ -81,9 +95,13 @@ export function reloadGame(): ActionResult<{ reloading: boolean }> {
     ok: true,
     action: 'save.reloadGame',
     observed: { before: { reloading: false }, after: { reloading: true } },
-    detail: stopped
-      ? `stopped ${stopped} first, then saved and reloading; the mod will be re-read from disk`
-      : 'saved and reloading; the mod will be re-read from disk',
+    detail: [
+      stopped === null ? undefined : `stopped ${stopped} first`,
+      restored.ok ? 'put stripped valuables back on' : undefined,
+      'saved and reloading; the mod will be re-read from disk',
+    ]
+      .filter((part) => part !== undefined)
+      .join('; '),
   };
 }
 

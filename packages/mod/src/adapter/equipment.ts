@@ -935,6 +935,12 @@ export function readFoodReserve(minimumMeals = 40): {
  * — a Steel Platebody scored *higher* than what it replaced and left an archer
  * unable to land a shot — so it carries the margin by which it claims to win
  * and lets the caller decide how much to trust a stat sum.
+ *
+ * Says nothing about gear deliberately *set aside*. Valuables stripped for a
+ * fight (`valuables.stashValuablesForCombat`) leave an empty slot and sit in
+ * the bank, which is exactly the shape this reader offers — so the caller has
+ * to stand its fill reflex down while a restore is outstanding rather than ask
+ * this function to know why an item is not being worn. See `runReflexes`.
  */
 export function readGearUpgrades(): {
   emptySlot: { itemId: string; slotId: string; name: string; scopedModifiers: number }[];
