@@ -153,6 +153,19 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **Realised rates are never compared against advertised ones** *(3×)* — M.
       The one mechanism that would have caught every other rate bug on this list.
       Needs `skillId`/`recipeId` on `QualitySample`.
+- [ ] **What undoes a verified equip** — S. `equipment.equip` returns a truthful
+      `ok`: the adapter reads `player.equipment.equippedItems`, `act` fails any
+      call whose `changed` predicate does not hold, and the Steel Scimitar
+      genuinely was in the slot when it looked. One tick later the Staff of Air
+      is back and the bank count of scimitars has not moved. The snapshot reads
+      the same `equippedItems`, so the two cannot disagree at one instant, and
+      `equipRequirements` is already checked in the precondition. Not stated in
+      the typings. **The experiment:** equip, then read the slot on each of the
+      next few ticks to see how long it survives, and test whether an Alt Magic
+      `selectedSpell` or a selected attack spell forces a magic weapon back --
+      Just Learning was selected throughout. `StuckEquipWatch` stops the retry
+      after three reversions; it does not explain them.
+
 - [ ] **A spell's consumed item is chosen once and never revisited** — S. `startAltMagic`
       short-circuits its precondition on "already casting", so `chooseSelection`
       runs only at start. Observed today: the rune guard shipped and reloaded,
@@ -334,8 +347,15 @@ Township summary reported 0% health while the repair reflex correctly computed
       `mastery-scaling.test.ts` and `product-chance.test.ts` now import the real
       functions; an `installFakeGame` helper in `test/fixtures.ts` stubs the
       global for the one that reads `game.mining`.
-- [ ] **`candidates.ts` is five modules, and `agent.ts` is a 1,959-line god class
-      that no test imports** — M/L.
+- [x] **`candidates.ts` is five modules, and `agent.ts` is a 1,959-line god class
+      that no test imports** — M/L. `candidates.ts` went 2,919 -> 377 lines across
+      8 modules (`recipes`, `rates`, `pricing`, `affordability`,
+      `gather-candidates`, `disposal`, `blocked`); `agent.ts` gave up five
+      testable pieces (`death-watch`, `loop-stall`, `journal`, `metrics`,
+      `quality-window`) with 30 new tests driving them. No test assertion was
+      altered and a mechanical comment-line diff confirmed 0 comments lost.
+      Four seams were rejected with reasons -- extracting `runReflexes` would
+      have produced tests asserting "it called the reader".
 - [x] **~100 silent `catch {}` against one reporting helper** — S. `adapter/safe.ts`
       counts every guarded read by site; 122 catches across 23 files now name
       theirs, and the tally rides out on the report, the TUI and the MCP state
