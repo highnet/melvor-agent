@@ -171,9 +171,17 @@ export function gpValue(product: AnyItem): number {
   return sale.currency === game.gp ? sale.quantity : 0;
 }
 
-/** Names the input horizon when it is short enough to matter. */
-export function describeSustain(recipe: RecipeLike, intervalMs: number): string {
-  const minutes = sustainableMinutes(recipe, intervalMs);
+/**
+ * Names the input horizon when it is short enough to matter.
+ *
+ * Takes the horizon rather than computing it, so the caller can put the same
+ * number on the candidate itself. The sentence was the only place this figure
+ * reached anything, which made it readable by a planning session and invisible
+ * to the code that chooses unattended — and the stopgap picked a recipe whose
+ * inputs lasted one action while its own label said "run out almost
+ * immediately".
+ */
+export function describeSustain(minutes: number | null): string {
   if (minutes === null) return '';
   if (minutes >= SUSTAIN_NOTICE_MINUTES) return '';
 

@@ -83,8 +83,29 @@ export function chooseStopgap(
     };
   }
 
-  const sustained = candidates.filter((candidate) => candidate.kind === 'gather_resource');
-  if (sustained.length === 0) return null;
+  const startable = candidates.filter((candidate) => candidate.kind === 'gather_resource');
+  if (startable.length === 0) return null;
+
+  // "Sustained" has to mean the inputs last, not merely that the *kind* of
+  // action is the sort that runs. Unattended, this picked `Runecrafting: Smoke
+  // Rune` for a thirty-minute budget: the craft started, ran for three seconds,
+  // and was refused for missing materials -- twice, having done the identical
+  // thing with Alt Magic's Item Alchemy a minute earlier. Both candidates
+  // announced it in their own labels, "inputs run out almost immediately", and
+  // nothing here was reading that.
+  //
+  // `canAfford` was not the gap and filtering harder on it would not have
+  // helped: one action *was* affordable, which is the only question it asks.
+  // The horizon is the question a thirty-minute objective needs answered.
+  //
+  // A missing horizon is no limit rather than unknown -- gathering consumes
+  // nothing -- so this never empties a board that has a tree on it. If it does
+  // empty, the unfiltered pool is used anyway: a guard that leaves the agent
+  // with nothing to do has replaced a bad half hour with an idle one.
+  const lasting = startable.filter(
+    (candidate) => (candidate.sustainMinutes ?? Number.POSITIVE_INFINITY) >= STOPGAP_MINUTES,
+  );
+  const sustained = lasting.length > 0 ? lasting : startable;
 
   // Producers before consumers. The highest-XP action available is usually an
   // artisan one — Firemaking burns logs at 96,000 xp/h — and left unattended it

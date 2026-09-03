@@ -133,6 +133,60 @@ describe('stopgap', () => {
   it('returns null when there is nothing sustained to do', () => {
     expect(chooseStopgap([], FRESH, NOW)).toBeNull();
   });
+
+  it('skips the highest rate when its inputs do not reach the budget', () => {
+    // The live failure: unattended, this adopted `Runecrafting: Smoke Rune` for
+    // a thirty-minute budget, the craft started, and three seconds later it was
+    // refused for missing materials -- twice, a minute after doing the same with
+    // Alt Magic's Item Alchemy. Both labels said "inputs run out almost
+    // immediately" and nothing here read that. Affordability was never the gap:
+    // one action *was* affordable, which is all `canAfford` claims.
+    const smoke: Candidate = {
+      ...gather('melvorD:Runecrafting', 'melvorF:Smoke_Rune', 60_000),
+      gpPerHour: 9000,
+      sustainMinutes: 0.05,
+    };
+    const fishing: Candidate = {
+      ...gather('melvorD:Fishing', 'melvorD:Raw_Seahorse', 20_000),
+      gpPerHour: 37_440,
+    };
+
+    const objective = chooseStopgap([smoke, fishing], FRESH, NOW);
+
+    expect(objective?.params).toMatchObject({ recipeId: 'melvorD:Raw_Seahorse' });
+  });
+
+  it('keeps a recipe whose inputs outlast the budget', () => {
+    // The horizon is a filter on "this cannot fill half an hour", not a
+    // preference for gathering. Fifty-one minutes of essence is real work.
+    const runes: Candidate = {
+      ...gather('melvorD:Runecrafting', 'melvorF:Nature_Rune', 60_000),
+      gpPerHour: 10_800,
+      sustainMinutes: 51,
+    };
+    const fishing: Candidate = {
+      ...gather('melvorD:Fishing', 'melvorD:Raw_Seahorse', 20_000),
+      gpPerHour: 37_440,
+    };
+
+    const objective = chooseStopgap([runes, fishing], FRESH, NOW);
+
+    expect(objective?.params).toMatchObject({ recipeId: 'melvorF:Nature_Rune' });
+  });
+
+  it('uses a short-lived action rather than standing still when it is all there is', () => {
+    // The guard must not starve its own purpose. A stopgap that refuses
+    // everything has replaced a bad half hour with an idle one, and the action
+    // failure limit already ends a refused objective in fifteen seconds.
+    const smoke: Candidate = {
+      ...gather('melvorD:Runecrafting', 'melvorF:Smoke_Rune', 60_000),
+      sustainMinutes: 0.05,
+    };
+
+    expect(chooseStopgap([smoke], FRESH, NOW)?.params).toMatchObject({
+      recipeId: 'melvorF:Smoke_Rune',
+    });
+  });
 });
 
 describe('free actions', () => {

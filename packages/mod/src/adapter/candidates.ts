@@ -21,7 +21,7 @@ import {
   WOODCUTTING_ID,
 } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
-import { describeSustain, netProductGpFor } from './pricing.js';
+import { describeSustain, netProductGpFor, sustainableMinutes } from './pricing.js';
 import {
   MS_PER_HOUR,
   firstUsableInterval,
@@ -234,6 +234,11 @@ function genericSkillCandidates(): Candidate[] {
       const yielded = productYieldFor(skill, recipe, recipe.baseQuantity ?? 1);
       const netPerHour = actionsPerHour * netProductGpFor(skill, recipe, yielded);
 
+      // How long the banked inputs actually last, carried as a number and not
+      // only as a sentence. See `sustainMinutes` on the candidate schema: the
+      // stopgap has to make this choice with nobody reading the label.
+      const sustainMinutes = sustainableMinutes(recipe, interval);
+
       candidates.push({
         kind: 'gather_resource',
         params: { kind: 'gather_resource', skillId, recipeId: recipe.id },
@@ -243,9 +248,10 @@ function genericSkillCandidates(): Candidate[] {
               netPerHour > 0
                 ? ` — output worth ${Math.round(netPerHour).toLocaleString()} GP/h net of inputs, if sold`
                 : ''
-            }${describeSustain(recipe, interval)}${masteryNote(skill, recipe)}${veinDecayNote(skillId)}`,
+            }${describeSustain(sustainMinutes)}${masteryNote(skill, recipe)}${veinDecayNote(skillId)}`,
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
         gpPerHour: netPerHour > 0 ? netPerHour : undefined,
+        ...(sustainMinutes === null ? {} : { sustainMinutes }),
         // Alt Magic's alchemy pays currency; every other recipe here produces
         // an item whose value needs a sale to become GP.
         gpIsEarned: skillId === ALT_MAGIC_ID,

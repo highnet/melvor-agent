@@ -499,6 +499,22 @@ export const candidateSchema = z.object({
    * in words the whole time; the data had not.
    */
   gpIsEarned: z.boolean().optional(),
+  /**
+   * How long the banked inputs sustain this action, in minutes.
+   *
+   * Absent when the action consumes nothing identifiable — a gathering skill is
+   * limited by time, not by stock, and reporting a horizon there would be
+   * inventing one. Absent is therefore "no limit", not "unknown".
+   *
+   * The figure has been computed since the Gold Bar chain ran the smelter dry,
+   * and it only ever reached the label. So it was readable by a planning
+   * session and invisible to the code that chooses when no session answers:
+   * unattended, the stopgap adopted `Runecrafting: Smoke Rune` for a thirty
+   * minute budget, crafted for three seconds, and was refused for missing
+   * materials -- the same minute after doing it with Alt Magic's Item Alchemy.
+   * Both labels said "inputs run out almost immediately".
+   */
+  sustainMinutes: z.number().nonnegative().optional(),
   /** Requirements that are currently met. Candidates with unmet ones are not emitted. */
   requiresLevel: z.number().int().nonnegative().optional(),
   available: z.literal(true),
