@@ -531,3 +531,73 @@ The test found it: the first run of the new fixture failed eight ways with `the 
 could not be read`, which is the swallowed `ReferenceError` and nothing else. A convention
 followed in two files out of three is not a convention, and the file that skipped it was the
 one where the failure is silent. The sentinels are literals here now.
+## A getter that answers is not a getter that answered *your* question
+
+Alt Magic produced zero candidates at every level with every rune banked — not available,
+not blocked, no `adapterFailures` line, nothing thrown. Meanwhile `set_objective` on
+`melvorF:JustLearning` cast fine and took Magic 2 → 10 in six minutes. The capability was
+complete; the enumerator simply never emitted it.
+
+The filter was `genericSkillCandidates`' mastery gate:
+`isMasteryActionUnlocked(recipe) === false` → `continue`, silently. `AltMagic` overrides that
+method (`altMagic.d.ts:109`) together with `hasMastery` (`:102`),
+`computeTotalMasteryActions` (`:107`) and `updateTotalUnlockedMasteryActions` (`:108`) —
+the full set a skill overrides when it has *no mastery at all* — so its answer for a spell was
+never "this spell is locked". It answered, confidently, a question nobody had asked.
+
+Nothing threw, so `safe.ts` had nothing to count. The distinction already drawn here —
+"locked" vs "the lock could not be consulted" — has a third case, and it is the one with no
+exception attached: **the lock answered, and its answer means something else.**
+
+What settled it was the live report, by elimination rather than by patching suspects:
+
+- Magic was in `game.skills` (the snapshot lists it, with a mastery pool);
+- `readLockedActions` walks the same `actions.allObjects` and reported
+  "Magic: Bone Offering unlocks at level 18", so 26 spells really were enumerable;
+- `adapterFailures` named no site in `candidates.ts`, so nothing threw;
+- `canAfford` **cannot** refuse a spell — `AltMagic` declares no `getRecipeCosts` (only
+  `ArtisanSkill`, Cooking, Fletching and Summoning do), and an `AltMagicSpell` has no
+  `itemCosts`, so it fell through to `return true`.
+
+That leaves exactly one silent `continue`. Ruling a suspect out with a *typings* fact and a
+*live* fact is cheaper than fixing it and asking again whether anything changed — which is
+what the previous Alt Magic hunt did three times.
+
+Two things came out of it:
+
+- **The gate now asks whether the answer applies.** `hasMastery === false`, or a skill that
+  refuses every one of its own recipes (no skill ships with all actions locked), means the
+  mastery answer is not a lock — and the level requirement takes over, because for every
+  skill in that loop the mastery answer *was* the level check.
+- **A skill that empties itself now says so.** `candidates.noCandidates:<skillId>` names the
+  tally when the mastery or realm gate removed everything. Not for level or affordability:
+  `readLockedActions` and `readUnstockedSkills` already tell the planner those, and a
+  permanent line per idle skill is the noise that has twice evicted real diagnostics.
+
+## Alt Magic prices itself in runes, and nothing was reading them
+
+The same pass found the trap waiting on the other side. `canAfford` handles
+`getRecipeCosts`, a `log`, or `itemCosts`; an `AltMagicSpell` has none of them. It carries
+`runesRequired` (`spells.d.ts:27`), an optional combination-rune list `runesRequiredAlt`
+(`:28`) selected by `Player.useCombinationRunes` (`player.d.ts:122`), and `fixedItemCosts`
+(`altMagic.d.ts:72`). So every spell read as **free** — the exact condition under which the
+last Alt Magic hunt could not tell "withheld for want of a rune" from "withheld by a bug".
+
+Three costs deliberately not priced, each for a stated reason:
+
+- **The staff discount.** Equipping the matching staff lowers a spell's rune cost, to a floor
+  of one rune. `EquipmentItem.providedRunes` (`item.d.ts:267`), `Player.runesProvided`
+  (`player.d.ts:81`) and `computeRuneProvision` (`:156`) are the machinery, but *how* they
+  apply to an Alt Magic cast is **not stated anywhere in the typings**: `Player.getRuneCosts`
+  (`:163`) carries no documentation at all, and `AltMagic.getCurrentRecipeRuneCosts`
+  (`altMagic.d.ts:151`) prices only the *selected* spell, which is never set during
+  enumeration. So the unreduced cost stands. That can withhold a spell a staff would have
+  paid for — a missing candidate, the recoverable direction — rather than invent a discount,
+  which is how Crystal came to advertise ten times what it paid. Settle it by measurement if
+  it matters: equip the staff, read the candidate, cast, and watch the rune count.
+- **Rune preservation.** `runePreservationChance` (`altMagic.d.ts:127`) is a chance not to
+  consume, so it lowers the *average* cost over many casts. The question is whether one cast
+  can be paid for, and a chance cannot pay for it.
+- **The item a spell converts.** `specialCost` (`altMagic.d.ts:74`) is a selection, and the
+  executor's precondition already refuses when nothing eligible is banked. That refusal is
+  visible; the silence was not.
