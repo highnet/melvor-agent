@@ -1846,6 +1846,11 @@ export function readSellCandidates(): Candidate[] {
   // And never a rune an attack spell in reach actually needs. All 81 Mind Runes
   // were sold as spare change; they were half of every castable spell, and
   // Magic was unreachable for the rest of the session.
+  // And never a rune a reachable *Alt Magic* spell needs. The attack-spell
+  // guard reads `game.attackSpells`, no attack spell wants a Nature Rune, and
+  // Nature Rune is the input every castable Alt Magic spell has -- so the
+  // cheapest-item rule fed 49 casts of Just Learning a Nature Rune apiece on
+  // top of the one the spell already charged. See readAltMagicFuelIds.
   // And never a Mastery Token. They are not containers, so the open reader's
   // instanceof check never saw them, while this reader — filtering on nothing
   // of the sort — listed six Woodcutting tokens as a stack to liquidate. A
@@ -2387,8 +2392,8 @@ function describeNpcDrops(
  *
  * Every guard the sell list already applies is inherited by construction, since
  * this picks from `readSellCandidates`: task items, seeds, runes a castable
- * spell needs, mastery tokens, the last of a recipe ingredient and locked items
- * are all excluded. The *cheapest* surviving stack is chosen, because the point
+ * attack spell or a reachable Alt Magic spell needs, mastery tokens, the last of
+ * a recipe ingredient and locked items are all excluded. The *cheapest* surviving stack is chosen, because the point
  * is to free one slot at the smallest cost rather than to raise money.
  */
 export function readCheapestExpendableStack(): {
@@ -2496,8 +2501,9 @@ export function readUnstockedSkills(): {
  *
  * Both draw from the same `readSellCandidates` filter, which is what makes an
  * automatic sale defensible at all: task items, scarce ingredients, every
- * farming seed, spell runes, mastery tokens, bank-locked items, food while the
- * larder is thin, and ammunition are all already excluded by construction. The
+ * farming seed, attack-spell runes, the runes and fixed inputs a reachable Alt
+ * Magic spell needs, mastery tokens, bank-locked items, food while the larder
+ * is thin, and ammunition are all already excluded by construction. The
  * reflex inherits every one of those guards rather than restating them, so a
  * guard added for the planner's benefit protects the reflex too.
  */
@@ -2529,6 +2535,49 @@ export function readMostValuableExpendableStack(): {
 }
 
 /**
+ * Which question the guards are being asked.
+ *
+ * `'sell'` is "should this stack be offered to the shop"; `'consume'` is "may
+ * this stack be destroyed by an Alt Magic cast". Every scarcity guard answers
+ * both identically -- a seed, a token, a task item or a spell's own rune is no
+ * safer fed to a spell than sold -- so they stay one ordered list in one
+ * function rather than two that can drift. Exactly one clause differs, and it
+ * is marked where it appears.
+ */
+type DisposalPurpose = 'sell' | 'consume';
+
+/**
+ * Bank items an Alt Magic cast is allowed to destroy.
+ *
+ * The consumption-side twin of {@link readSellCandidates}, sharing its guard
+ * chain rather than restating it: both filter on `saleExclusionReason`, so a
+ * guard added for the shop protects the spell in the same commit.
+ *
+ * It exists because the two paths differ in exactly one respect. Selling an
+ * item worth 0 GP is pointless, so the sell list drops it; *burning* one is the
+ * whole idea, and that difference is what made this bug expensive. With every
+ * worthless stack filtered out, the cheapest thing Just Learning could see was a
+ * 1 GP Nature Rune -- the rune it spends -- while 4,770 unusable Arrow Shafts
+ * sat next to it costing nothing to lose.
+ *
+ * Returns items rather than `Candidate`s because the caller ranks and selects;
+ * a `Sell 4770x Arrow Shafts` label on a list nothing will sell was noise the
+ * previous shape carried only because it was borrowing the sell reader.
+ */
+export function readConsumableItems(): AnyItem[] {
+  try {
+    return [...game.bank.items.values()]
+      .filter((entry) => saleExclusionReason(entry.item, entry.quantity, 'consume') === null)
+      .map((entry) => entry.item);
+  } catch (error) {
+    noteSwallowed('candidates.readConsumableItems', error);
+    // An unreadable bank offers nothing, which refuses the cast. Refusing is
+    // the recoverable direction; destroying the wrong stack is not.
+    return [];
+  }
+}
+
+/**
  * Why a stack may not be sold, or null when it may.
  *
  * One function so the sell list and the diagnostic that explains it cannot
@@ -2539,7 +2588,11 @@ export function readMostValuableExpendableStack(): {
  * reason and a bad one identically, and the third time that costs an afternoon
  * it is cheaper to make it speak.
  */
-function saleExclusionReason(item: AnyItem, held = 0): string | null {
+function saleExclusionReason(
+  item: AnyItem,
+  held = 0,
+  purpose: DisposalPurpose = 'sell',
+): string | null {
   try {
     // Quantity, not identity. A future task wanting one Gold Bar should keep
     // one, not all 1,056 -- see readTaskWantedQuantities.
@@ -2550,19 +2603,131 @@ function saleExclusionReason(item: AnyItem, held = 0): string | null {
     if (readBarelyEnoughIngredientIds().has(item.id)) return 'it is the last of a recipe input';
     if (readAllSeedIds().has(item.id)) return 'it is a farming seed';
     if (readSpellRuneIds().has(item.id)) return 'a castable spell needs it';
+    if (readAltMagicFuelIds().has(item.id)) return 'an Alt Magic spell in reach needs it';
     if (readMasteryTokenIds().has(item.id)) return 'it is a mastery token';
     if (game.bank.lockedItems.has(item)) return 'it is locked in the bank';
     if (isAmmunition(item)) return 'it is ammunition';
     if (item instanceof FoodItem && readMealCount() < FOOD_SELL_FLOOR) {
       return `it is food and the larder is below ${FOOD_SELL_FLOOR} meals`;
     }
-    if (gpValue(item) <= 0) return 'it does not sell for GP';
+    // The only guard that is about the *sale* rather than about the item, and
+    // so the only one that does not carry over to consumption. A stack the shop
+    // will not pay for is pointless to list and perfect to burn: 4,770 Arrow
+    // Shafts sell for 0 GP each (dump: `melvorF:Arrow_Shafts`, sellsFor 0) and
+    // GOALS.md has them down as dead weight with no recipe that can use them.
+    // Applying it to both paths is what left Just Learning nothing worthless to
+    // eat and sent it to the cheapest thing that *did* have a price -- a Nature
+    // Rune at 1 GP, which is its own fuel.
+    if (purpose === 'sell' && gpValue(item) <= 0) return 'it does not sell for GP';
     return null;
   } catch (error) {
     noteSwallowed('candidates.saleExclusionReason', error);
     // Unreadable means unsellable: refusing to sell is the recoverable error.
     return 'its sell guards could not be evaluated';
   }
+}
+
+/**
+ * How far above the current Magic level a spell still counts as reachable.
+ *
+ * "Castable right now" is the rule `readSpellRuneIds` uses for attack spells,
+ * and it is too narrow here: the point of casting Just Learning at all is to
+ * stockpile toward Superheat II, which unlocks at Magic 25 (dump: `melvorF`
+ * `SuperheatII`, level 25) and needs a Nature Rune per cast like almost every
+ * spell below it. A rune sold at Magic 10 because the spell that wants it is at
+ * 25 has to be re-crafted before the milestone it was being saved for.
+ *
+ * A band rather than "every spell in the game", because a guard that reserves
+ * everything refuses everything: Superheat III (64), Item Alchemy III (76) and
+ * Superheat V (110) between them name every rune in the base game, and honouring
+ * those from Magic 1 would lock Air, Earth, Fire, Water, Spirit and Soul Runes
+ * for the rest of the run in exchange for nothing the character can do.
+ *
+ * 25 is the smallest band that reaches Superheat II from a fresh Magic 1, which
+ * is the case this exists for, and it is roughly a session's worth of levels
+ * rather than a lifetime's -- Just Learning took Magic 2 to 10 in six minutes.
+ * From Magic 1 it stops at Bone Offering (18) and Superheat II (25) and leaves
+ * the 40-and-up spells unreserved, which is the "60 levels away must not lock a
+ * rune forever" line drawn where it can be justified.
+ */
+const ALT_MAGIC_REACH_LEVELS = 25;
+
+/**
+ * Everything a reachable Alt Magic spell destroys on every cast.
+ *
+ * The hole this closes, measured live over 100 seconds of `Just Learning`:
+ *
+ * ```
+ * Air Rune -49   Nature Rune -98   Rune Essence +49
+ * ```
+ *
+ * 49 casts. One Nature and one Air went to the spell's rune cost, which is
+ * correct; the *second* Nature Rune per cast was the item the spell consumed,
+ * because `chooseSelection` picks the cheapest thing `readSellCandidates` will
+ * part with and a Nature Rune sells for 1. A Nature Rune costs a Rune Essence
+ * to craft, so the trade was 2 Nature + 1 Air in for 1 essence out -- a strict
+ * loss, paid in the one rune that every castable Alt Magic spell requires.
+ *
+ * `readSpellRuneIds` did not catch it: it walks `game.attackSpells`, and Nature
+ * Rune appears in no attack spell. The guard was never wrong about attack
+ * spells, it simply did not know Alt Magic prices itself in runes too. Note the
+ * hole is independent of which end of the ranking `chooseSelection` takes --
+ * before today it took the *dearest* item and would have burned Topaz or an
+ * Adamantite Bar instead.
+ *
+ * Reserved for the sell list *and* for consumption, because those are the same
+ * act: the reason this reader hangs off `saleExclusionReason` rather than
+ * standing beside it is that a spell must not be able to eat its own fuel while
+ * the shop is forbidden to sell it.
+ *
+ * Costs come from {@link spellCosts}, which is where the `runesRequired` /
+ * `runesRequiredAlt` pair (spells.d.ts:27-28, chosen by
+ * `Player.useCombinationRunes`, player.d.ts:122) is already resolved. That also
+ * folds in `fixedItemCosts` (altMagic.d.ts:72), deliberately: Rags to Riches II
+ * burns a Coal Ore per cast, and feeding a spell the last of what it needs to
+ * fire is the identical failure to feeding it its own runes. Separating the two
+ * would need an `instanceof RuneItem` (item.d.ts:489), and this file has been
+ * bitten three times by naming a game global that vitest does not define.
+ *
+ * `specialCost` (altMagic.d.ts:74) is *not* reserved, and must not be: it is the
+ * selection itself, so reserving it would refuse every cast.
+ */
+function readAltMagicFuelIds(): Set<string> {
+  const fuel = new Set<string>();
+
+  const magicLevel = safeNumber(
+    'candidates.altMagicFuelLevel',
+    () => game.skills.getObjectByID(ALT_MAGIC_ID)?.level,
+    0,
+  );
+  // A level that could not be read leaves the band at 0 + reach, which still
+  // covers Just Learning and Superheat II. Silently reserving nothing is the
+  // failure this whole function exists to stop.
+  const reach = magicLevel + ALT_MAGIC_REACH_LEVELS;
+
+  // `Game.altMagic` (game.d.ts:115) is an `AltMagic`, whose `actions` registry
+  // holds its `AltMagicSpell`s -- the same list `genericSkillCandidates` walks.
+  // Reached through `game.skills` rather than `game.altMagic` so that a save
+  // without the skill is a missing entry rather than a TypeError.
+  const spells = safeList('candidates.altMagicSpells', () => {
+    const magic = game.skills.getObjectByID(ALT_MAGIC_ID) as
+      | (AnySkill & { actions?: { allObjects: RecipeLike[] } })
+      | undefined;
+    return magic?.actions?.allObjects ?? [];
+  });
+
+  for (const spell of spells) {
+    try {
+      if (spell.level > reach) continue;
+      for (const cost of spellCosts(spell) ?? []) fuel.add(cost.item.id);
+    } catch (error) {
+      noteSwallowed('candidates.altMagicFuelCosts', error);
+      // One unreadable spell does not get to empty the guard; the rest of the
+      // book still reserves what it needs.
+    }
+  }
+
+  return fuel;
 }
 
 /**

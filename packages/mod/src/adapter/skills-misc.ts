@@ -1,7 +1,7 @@
 import type { ActionResult } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
-import { readSellCandidates } from './candidates.js';
+import { readConsumableItems } from './candidates.js';
 import type { GatheringProjection } from './gathering.js';
 import { noteSwallowed } from './safe.js';
 
@@ -519,12 +519,25 @@ type SelectionOutcome = { ok: true; selection: SpellSelection } | { ok: false; r
  * Everything else -- Item Alchemy and the conversion spells -- consumes a bank
  * item, and which item is right depends on what the spell pays; see below.
  *
- * The candidates are drawn through the sell guards rather than from the raw
- * bank. Consuming an item destroys it exactly as selling does, so the reasons
- * not to sell food, ammunition, seeds, spell runes, mastery tokens or anything
- * a Township task wants apply here unchanged. Reusing the filter means a guard
- * added for one path protects both, instead of the two drifting until the newer
- * one burns the larder.
+ * The candidates are drawn through the sell guards -- `readConsumableItems`,
+ * which shares `saleExclusionReason` with the sell list -- rather than from the
+ * raw bank. Consuming an item destroys it exactly as selling does, so the
+ * reasons not to sell food, ammunition, seeds, spell runes, mastery tokens or
+ * anything a Township task wants apply here unchanged. Sharing the guard chain
+ * means a guard added for one path protects both, instead of the two drifting
+ * until the newer one burns the larder. The single difference is the sale value
+ * itself: a stack worth 0 GP is not worth listing and is the *best* thing to
+ * burn, so it is offered here and not there.
+ *
+ * That reuse is load-bearing rather than tidy, and it took a live measurement to
+ * show it. For 100 seconds of `Just Learning` the bank moved Air Rune -49,
+ * Nature Rune -98, Rune Essence +49: 49 casts, each paying 1 Nature + 1 Air as
+ * the spell's rune cost and then destroying a *second* Nature Rune as the item
+ * it consumed, because a Nature Rune sells for 1 and nothing stopped it. The
+ * sell guards had a hole -- they knew about attack-spell runes and no attack
+ * spell wants a Nature Rune -- so this function inherited the hole verbatim.
+ * `readAltMagicFuelIds` in candidates.ts closes it on both paths at once, which
+ * is the whole reason the selection is not allowed its own item list.
  *
  * The refusal lives here, with the ranking, rather than in the caller: this is
  * the only place that knows which item would be destroyed and what it is worth,
@@ -568,19 +581,26 @@ function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
       return { ok: false, reason: `nothing ${spell.name} accepts is in the bank` };
     }
 
-    const offered: AnyItem[] = [];
-    for (const option of readSellCandidates()) {
-      const itemId = String((option.params as { itemId?: unknown }).itemId ?? '');
-      if (!eligible.has(itemId)) continue;
+    // A spell must not be fed its own product. Just Learning yields a Rune
+    // Essence, a Rune Essence sells for 0, and the consumable list deliberately
+    // admits worthless stacks -- so without this the spell can convert essence
+    // into essence indefinitely, paying a Nature and an Air Rune per cast for a
+    // net change of nothing. `produces` is `AltMagicProductionID | AnyItem`
+    // (altMagic.d.ts:75); the sentinels are numbers, so an object is an item.
+    const produced =
+      typeof spell.produces === 'object' ? (spell.produces as AnyItem).id : undefined;
 
-      const item = game.items.getObjectByID(itemId);
-      if (item !== undefined) offered.push(item);
+    const offered: AnyItem[] = [];
+    for (const item of readConsumableItems()) {
+      if (!eligible.has(item.id)) continue;
+      if (item.id === produced) continue;
+      offered.push(item);
     }
 
     if (offered.length === 0) {
       return {
         ok: false,
-        reason: `every item ${spell.name} accepts is withheld by a sell guard — food under the reserve, ammunition, seeds, runes a castable spell needs, mastery tokens, what a Township task wants, or a locked stack`,
+        reason: `every item ${spell.name} accepts is withheld by a sell guard — food under the reserve, ammunition, seeds, runes a castable attack spell or a reachable Alt Magic spell needs, mastery tokens, what a Township task wants, or a locked stack`,
       };
     }
 

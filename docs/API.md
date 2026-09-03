@@ -1288,8 +1288,8 @@ or stop playing".
 
 Every guard the sell list already applies is inherited by construction, since
 this picks from `readSellCandidates`: task items, seeds, runes a castable
-spell needs, mastery tokens, the last of a recipe ingredient and locked items
-are all excluded. The *cheapest* surviving stack is chosen, because the point
+attack spell or a reachable Alt Magic spell needs, mastery tokens, the last of
+a recipe ingredient and locked items are all excluded. The *cheapest* surviving stack is chosen, because the point
 is to free one slot at the smallest cost rather than to raise money.
 
 ```ts
@@ -1999,8 +1999,9 @@ possible. This one exists to *earn*, so it takes the stack worth the most.
 
 Both draw from the same `readSellCandidates` filter, which is what makes an
 automatic sale defensible at all: task items, scarce ingredients, every
-farming seed, spell runes, mastery tokens, bank-locked items, food while the
-larder is thin, and ammunition are all already excluded by construction. The
+farming seed, attack-spell runes, the runes and fixed inputs a reachable Alt
+Magic spell needs, mastery tokens, bank-locked items, food while the larder
+is thin, and ammunition are all already excluded by construction. The
 reflex inherits every one of those guards rather than restating them, so a
 guard added for the planner's benefit protects the reflex too.
 

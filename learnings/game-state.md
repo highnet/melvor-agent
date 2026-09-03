@@ -601,3 +601,59 @@ Three costs deliberately not priced, each for a stated reason:
 - **The item a spell converts.** `specialCost` (`altMagic.d.ts:74`) is a selection, and the
   executor's precondition already refuses when nothing eligible is banked. That refusal is
   visible; the silence was not.
+
+## Alt Magic was eating its own fuel, and the sell guard could not see it
+
+Measured live over 100 seconds of `Just Learning`:
+
+```
+Air Rune  -49        Nature Rune  -98        Rune Essence  +49
+```
+
+49 casts. One Nature and one Air paid the spell's rune cost, which is correct. The *second*
+Nature Rune per cast was the item the spell consumed. A Nature Rune is crafted from a Rune
+Essence, so the trade was 2 Nature + 1 Air in for 1 essence out - a strict loss, paid in the
+one rune that **every castable Alt Magic spell requires** (dump: 24 of 26 spells list
+`melvorF:Nature_Rune`, including every Superheat below level 95).
+
+The guard that should have caught it, `readSpellRuneIds`, walks `game.attackSpells`. No attack
+spell wants a Nature Rune, so the rune passed every guard in `saleExclusionReason` and
+`chooseSelection` took it as the cheapest item on offer. The hole is **independent of ranking
+direction**: the previous dearest-first rule would have burned a Topaz or an Adamantite Bar
+instead. Either ranking is wrong while the guard has the hole, so the fix is the guard.
+
+Three things came out of it.
+
+**"Reachable" is a band, not "castable now".** `readAltMagicFuelIds` reserves what any spell at
+or below `Magic level + 25` consumes per cast, costed through the existing `spellCosts`
+(`runesRequired`, `spells.d.ts:27`; `runesRequiredAlt`, `:28`, chosen by
+`Player.useCombinationRunes`, `player.d.ts:122`; plus `fixedItemCosts`, `altMagic.d.ts:72`).
+Castable-now is too narrow, because the point of casting Just Learning at all is to stockpile
+toward Superheat II at Magic 25 - a Nature Rune sold at Magic 10 has to be re-crafted before the
+milestone it was being saved for. Everything is too wide: Superheat III (64), Item Alchemy III
+(76) and Superheat V (110) between them name every rune in the base game, and honouring those
+from Magic 1 locks Air, Earth, Fire, Water, Spirit and Soul for the whole run in exchange for
+nothing the character can do. 25 is the smallest band that reaches Superheat II from a fresh
+Magic 1, and roughly a session's worth of levels - Just Learning took Magic 2 to 10 in six
+minutes.
+
+**Consuming and selling are the same act, with exactly one difference.** They share
+`saleExclusionReason`, now taking a `'sell' | 'consume'` purpose, and only one clause differs:
+`gpValue(item) <= 0`. A stack the shop will not pay for is pointless to *list* and perfect to
+*burn* - and applying that clause to both paths is what made this bug expensive. **Arrow Shafts
+sell for 0 GP, not 1** (dump: `melvorF:Arrow_Shafts`, `sellsFor: 0`; GOALS.md has 4,770 of them
+as dead weight with no recipe that can use them), so they were filtered out of the offer list
+entirely, and the cheapest thing Just Learning could still see was a 1 GP Nature Rune. The live
+trace proves it independently: `chooseCheapestItem` breaks ties by taking the first item in id
+order, `melvorF:Arrow_Shafts` sorts before `melvorF:Nature_Rune`, so had the shafts been offered
+at a tied price they would have won. They were not offered.
+
+**A spell must not be fed its own product.** Opening worthless stacks to consumption re-opens a
+loop the value filter had been closing by accident: Just Learning produces a Rune Essence, a
+Rune Essence sells for 0, and essence-in/essence-out is a net change of nothing for two runes a
+cast that still reads as progress on the XP counter. `produces` is `AltMagicProductionID |
+AnyItem` (`altMagic.d.ts:75`); the sentinels are numbers, so an object is the produced item and
+its id is excluded from the offer list.
+
+`specialCost` (`altMagic.d.ts:74`) is deliberately *not* reserved by any of this - it is the
+selection itself, and reserving it would refuse every cast.
