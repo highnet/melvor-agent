@@ -40,6 +40,26 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **A fight is offered at full price while the selected attack spell cannot be
+      cast** — M. Every combat goal has been blocked all evening and nothing in
+      the candidate list says so. Both Fight Leech objectives were abandoned with
+      `Wind Strike is selected but the bank cannot pay for it (needs 1x Mind
+      Rune)` -- a Staff of Air is equipped, a Magic attack spell is selected, and
+      the bank holds zero Mind Runes. Meanwhile `221. Fight Leech ... 200 HP
+      (defence 10), ~84 kills/h, ~16,744 damage/h` is listed as available with
+      full pricing, and a grep of the whole candidate text for "Wind Strike" or
+      "Mind Rune" returns nothing.
+      The executor's refusal is correct and legible; the *candidate* is the lie.
+      Recipes already do this properly -- `Magic: Superheat II — Earth Rune from
+      Runecrafting: Earth Rune — needs Earth Rune 1/3` blocks with a stated
+      reason **and names the producer**. A fight should do the same: block it,
+      say which spell is selected, which rune is missing, and which Runecrafting
+      recipe makes it. Note the fix is not to change the selected spell -- that
+      is the operator's, and today's `withBuyQuantity` / `withTownBiome` work
+      established that the operator's UI selections are their state.
+      Five goals depend on this: `ranged-20`, `defence-20`, `hp-40`, `prayer-20`,
+      `first-dungeon`.
+
 - [x] **`reflex.repairTownship` never succeeds and never stops** — S. Fired once
       a minute, indefinitely, always warning `state unchanged after call:
       {"buildingId":"melvorF:Miners_Pit","biomeId":"melvorF:Mountains","count":1,
