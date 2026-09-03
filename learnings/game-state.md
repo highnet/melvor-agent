@@ -1540,3 +1540,67 @@ Worth recording because the opposite is intuitive — the food UI sits with the
 equipment UI — and because *a count in the bank is a claim, not an observation*
 already established that the number that matters is the equipped one. It is the
 equipped one, and there is exactly one of it.
+
+## The combat triangle: the game states the shape, the source states the direction
+
+`CombatManager.combatTriangle` (combatManager.d.ts:100) has existed all run and
+nothing read it. The typings give the shape and none of the numbers:
+`CombatTriangle` is `{ damageModifier, reductionModifier }`, each an
+`AttackTypeObject<AttackTypeObject<number>>` (combatTriangle.d.ts:6-13), and the
+values live in a static, `CombatTriangleSet.normalSetData`
+(combatTriangle.d.ts:30), whose contents no `.d.ts` records.
+
+The dangerous gap was not the values, which can be read live. It was the
+**orientation**: `damageModifier[a][b]` reads equally well in either direction,
+and a triangle applied backwards is not slightly wrong, it is advice that is
+exactly inverted on every fight and looks confident. The shipped v1.3.1 source
+settles it in one line — from the nw.js cache, `Character.applyTriangleToDamage`:
+
+    damage *= this.manager.combatTriangle.damageModifier[this.attackType][target.attackType];
+
+and the resistance path reads `reductionModifier[this.attackType][this.target.attackType]`.
+First index is the attacker's own type, for both tables.
+
+Three things that make hardcoding the numbers wrong, any one of them sufficient:
+
+- The gamemode picks one of three tables — `Standard`, `Hardcore`,
+  `InvertedHardcore` (combatTriangle.d.ts:1,25-27) via `Gamemode.combatTriangleType`
+  (gamemode.d.ts:100) — and the inverted one reverses the whole triangle.
+- An **area** can override the set outright. `CombatArea.combatTriangleSet`
+  (combatAreas.d.ts:343) is what the getter prefers over
+  `game.normalCombatTriangleSet` (game.d.ts:20), and the shipped data really does
+  carry a `Reversed` set. `usesStandardCombatTriangle` (combatAreas.d.ts:337) is
+  the game's own answer to "are the usual rules on here".
+- The typings declare `combatTriangleSet` non-optional while the shipped getter
+  still guards it with `?? this.game.normalCombatTriangleSet`. The game does not
+  trust its own type; neither should we.
+
+One trap in reusing the getter rather than mirroring it: `CombatManager.combatTriangle`
+reads `this.selectedArea`, the area the player is *currently in*. Candidates are
+enumerated when no area is selected, so asking it about a prospective fight in a
+triangle-overriding area returns the default table with no error at all. The
+area has to be passed in, not inferred from where the character is standing.
+
+Finally, `Monster.attackType` is `AttackType | 'random'` (monsters.d.ts:106) and
+the tables have three columns, not four. Five monsters in the shipped data are
+random and three of them are currently on this character's candidate list, so
+"there is no cell to look up" is a live case rather than a defensive one.
+
+## A synergy that could be proposed and never assembled
+
+`readSynergyCandidates` offers one half of a familiar pair at a time, which is
+right. The slot it named was hardcoded to `melvorD:Summon1`, which meant the
+second half was offered into the slot the first half had just been put in. Both
+`equip_item` calls returned ok, both equipped the correct tablet, and the two
+were never worn simultaneously — the only state in which a synergy applies
+anything.
+
+All 53 familiars list both `Summon1` and `Summon2` in `validSlots`
+(item.d.ts:245), so the second slot was available the whole time. Nothing about
+`Summon2` was ever read anywhere in the mod.
+
+The shape is the one this repo keeps finding: two locally correct operations
+composing into a cycle, with every individual call verifiable and the composite
+invisible. It is the Steel Scimitar / Staff of Air swap loop again, and the tell
+is the same — **when a feature's payoff requires two actions, the test is
+whether the second one can survive the first.**
