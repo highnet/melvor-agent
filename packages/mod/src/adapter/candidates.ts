@@ -162,18 +162,46 @@ function genericSkillCandidates(): Candidate[] {
       // level requirement takes over, because for every skill in this loop the
       // mastery answer *is* the level check, and dropping it without a
       // replacement would offer level-70 spells at Magic 10.
+      const realmOpen = isRecipeRealmUnlocked(recipe);
+      const levelMet = requirement.level <= currentLevelFor(skill, requirement.abyssal);
+
       if (masteryUnlocked !== null) {
         if (!masteryUnlocked.has(recipe)) {
-          dropped.mastery += 1;
+          // The gate decides; these three counters only explain its decision.
+          //
+          // `isMasteryActionUnlocked` was the *only* thing consulted here, so
+          // every refusal it made was filed as "mastery-locked" and
+          // `level-locked` could never be anything but zero. Live, after the
+          // mastery-gate fix landed: Firemaking 32 with 33 logs reported "29
+          // mastery-locked, 0 level-locked" while 17 of those logs are Teak and
+          // above and 12 are Abyssal-realm. Herblore 1 reported 71
+          // mastery-locked against 70 recipes above level 1. The recipes were
+          // right and the heading was wrong -- and a heading that says "mastery"
+          // sends the planner hunting for mastery XP when the answer is a level
+          // or a realm it cannot enter, which is the same misdirection that cost
+          // a day on Alt Magic.
+          //
+          // Realm and level are checked *here* rather than made gates of their
+          // own because the typings state the shape of
+          // `isMasteryActionUnlocked` (skill.d.ts:806) and not what it returns.
+          // Making our reading the gate would risk dropping a recipe the game
+          // would have allowed -- a modifier that lowers a level requirement is
+          // invisible to `recipe.level` -- so the game's answer still decides
+          // and ours only names the checkable fact behind it. Mastery is the
+          // residual: what the gate refused that neither realm nor level
+          // explains.
+          if (!realmOpen) dropped.realm += 1;
+          else if (!levelMet) dropped.level += 1;
+          else dropped.mastery += 1;
           continue;
         }
-      } else if (requirement.level > currentLevelFor(skill, requirement.abyssal)) {
+      } else if (!levelMet) {
         dropped.level += 1;
         continue;
       }
 
       try {
-        if (!isRecipeRealmUnlocked(recipe)) {
+        if (!realmOpen) {
           dropped.realm += 1;
           continue;
         }
@@ -251,6 +279,13 @@ function genericSkillCandidates(): Candidate[] {
  * The mastery gate and the realm gate have no such channel, and between them
  * they can empty a whole skill. That is the shape Alt Magic had: 26 spells in,
  * nothing out, nowhere.
+ *
+ * Which makes the *attribution* load-bearing rather than cosmetic. This line
+ * fires precisely when `mastery` or `realm` is non-zero, so a level block
+ * misfiled as mastery both names the wrong cause and keeps the line alive on a
+ * skill whose story `readLockedActions` was already telling correctly. See the
+ * classification in the loop above: `mastery` here is the residual, the
+ * refusals neither the realm nor the level requirement accounts for.
  */
 function reportSilentSkill(
   skillId: string,

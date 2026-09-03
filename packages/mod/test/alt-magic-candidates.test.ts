@@ -210,9 +210,18 @@ describe('a skill that vanishes entirely says so', () => {
     // refuses the rest -- while the one it admits cannot be paid for. Before
     // this line the outcome was no candidate, no blocked entry, no failure
     // line, and a planner concluding the skill does not exist.
+    //
+    // Magic 25 rather than the fixture's 10, so that Bone Offering (18) is a
+    // recipe the character has the level for and the gate refuses anyway. That
+    // is what "mastery-locked" has to mean for this line to be worth printing:
+    // the refusals left over once the realm and the level requirement have each
+    // accounted for their own. At Magic 10 the same fixture is a level block
+    // wearing a mastery label, which is the misattribution this file now guards
+    // against two tests further down.
     installAltMagic(
       { 'melvorD:Air_Rune': 0, 'melvorD:Nature_Rune': 0 },
       {
+        level: 25,
         hasMastery: true,
         isMasteryActionUnlocked: (action: { id: string }) => action.id === 'melvorF:JustLearning',
       },

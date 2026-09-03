@@ -7,7 +7,14 @@ import { readSeedShortfalls } from './farming.js';
 import { STARTABLE_SKILL_IDS } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
 import { MS_PER_HOUR, firstUsableInterval, resolveInterval } from './rates.js';
-import { type RecipeLike, readMasteryGate, safeRecipes } from './recipes.js';
+import {
+  type RecipeLike,
+  currentLevelFor,
+  isRecipeRealmUnlocked,
+  readMasteryGate,
+  recipeRequirement,
+  safeRecipes,
+} from './recipes.js';
 import { noteSwallowed } from './safe.js';
 import { readShopGoals } from './shop.js';
 
@@ -249,16 +256,32 @@ export function readLockedActions(): {
 
     // The next one up only: a list of everything still locked would bury the
     // one that is actually close.
-    let nearest: RecipeLike | null = null;
+    //
+    // Realm-locked recipes are excluded, and the requirement is read off the
+    // track the recipe is actually gated on. Both matter for the same reason
+    // the candidate tally had to stop calling everything mastery-locked: a
+    // level here reads as "grind and it opens", and for Into the Abyss content
+    // that is false twice over. Every Harvesting vein carries `level: 0` and an
+    // `abyssalLevel` (dump: Twisted Vein, abyssal 11), so the standard pair says
+    // "already unlocked" while the Abyssal realm reports `unlocked: false` with
+    // "Complete Into the Abyss x1" outstanding -- no amount of Harvesting XP
+    // reaches it. See recipeRequirement for the two-track split.
+    let nearest: { recipe: RecipeLike; level: number; abyssal: boolean } | null = null;
     for (const recipe of recipes) {
-      if (recipe.level <= skill.level) continue;
-      if (nearest === null || recipe.level < nearest.level) nearest = recipe;
+      if (!isRecipeRealmUnlocked(recipe)) continue;
+
+      const requirement = recipeRequirement(recipe);
+      if (requirement.level <= currentLevelFor(skill, requirement.abyssal)) continue;
+      if (nearest === null || requirement.level < nearest.level) {
+        nearest = { recipe, level: requirement.level, abyssal: requirement.abyssal };
+      }
     }
 
     if (nearest === null) continue;
 
+    const track = nearest.abyssal ? 'Abyssal level' : 'level';
     locked.push({
-      label: `${skill.name}: ${nearest.name} unlocks at level ${nearest.level} (currently ${skill.level})`,
+      label: `${skill.name}: ${nearest.recipe.name} unlocks at ${track} ${nearest.level} (currently ${currentLevelFor(skill, nearest.abyssal)})`,
       xpPerHour: 0,
       missing: [],
     });
@@ -389,14 +412,28 @@ export function readUnstockedSkills(): {
       const recipes = safeRecipes(withActions);
       if (recipes === null) continue;
 
-      // The best recipe the level allows. If one exists, the block is
-      // materials rather than progression, and that is the whole point.
-      const affordable = recipes.filter((recipe) => (recipe.level ?? 0) <= skill.level);
-      const best = affordable[0];
+      // The best recipe the level allows, in a realm the character can enter.
+      // If one exists, the block is materials rather than progression, and that
+      // is the whole point.
+      //
+      // Both filters were wrong for Into the Abyss content, and wrong in the
+      // direction that invents work. Every Harvesting vein reads `level: 0` on
+      // the standard track and carries its real requirement on `abyssalLevel`,
+      // so this named Abyssal Vein as "unlocked at level 0" and told the planner
+      // to go buy materials for a skill whose seven veins are *all* in realms
+      // reporting `unlocked: false` -- and which consume no materials at all.
+      // A shopping list for a realm you cannot enter is exactly the misdirection
+      // the candidate tally was mislabelling in the same breath.
+      const reachable = recipes.filter((recipe) => {
+        if (!isRecipeRealmUnlocked(recipe)) return false;
+        const requirement = recipeRequirement(recipe);
+        return requirement.level <= currentLevelFor(skill, requirement.abyssal);
+      });
+      const best = reachable[0];
       if (best === undefined) continue;
 
       out.push({
-        label: `${skill.name} has no candidates because nothing it can make is in stock, not because it is unavailable — ${best.name} is unlocked at level ${best.level ?? 0} and needs materials bought or gathered.`,
+        label: `${skill.name} has no candidates because nothing it can make is in stock, not because it is unavailable — ${best.name} is unlocked at level ${recipeRequirement(best).level} and needs materials bought or gathered.`,
         xpPerHour: 0,
         missing: [],
       });
