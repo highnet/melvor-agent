@@ -68,6 +68,30 @@ function activeRecipesFor(skillId: string): string[] {
     // `selectedSpell` rather than `activeSpell` (:122): the latter is a bare
     // getter with no `?`, so it is the one that throws when nothing is chosen,
     // which is the state this is read in most often.
+    // Combat reports itself as `melvorD:Combat`, which is not a skill id at
+    // all -- `game.skills.getObjectByID('melvorD:Combat')` is undefined -- so
+    // without this it fell to the artisan `default` below, read no
+    // `activeRecipe`, and returned []. The caller documents [] as "cannot
+    // tell" and treats it as "not the one I want", so the policy tier
+    // disengaged and re-engaged the same monster forever: the live log read
+    // `combat.engage ok` / `combat.disengage ok` alternating on the 3s policy
+    // clock, indefinitely, while the character took damage and gained nothing.
+    //
+    // This is the identical defect that made Alt Magic uncastable, in the
+    // identical function. That one was a skill the switch did not name; this
+    // one is not a skill at all. The lesson the first fix did not draw is that
+    // `activeAction.id` is whatever the *game* calls the running thing, and the
+    // skill registry is not the index for it.
+    //
+    // `selectedMonster` (combatManager.d.ts:107) is documented "Currently
+    // selected monster. undefined if none is selected", which is exactly the
+    // question being asked, and it is what `combat.engage` sets via
+    // `selectMonster` (:570 in combat.ts).
+    case 'melvorD:Combat': {
+      const monster = safeValue('active.combatMonster', () => game.combat.selectedMonster);
+      return monster === undefined ? [] : [monster.id];
+    }
+
     case 'melvorD:Magic': {
       const spell = safeValue('active.altMagicSpell', () => game.altMagic.selectedSpell);
       return spell === undefined ? [] : [spell.id];

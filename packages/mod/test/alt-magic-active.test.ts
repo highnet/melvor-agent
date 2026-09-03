@@ -38,3 +38,45 @@ describe('readActiveRecipeIds for Alt Magic', () => {
     expect(readActiveRecipeIds()).toEqual([]);
   });
 });
+
+/**
+ * Combat, whose `activeAction.id` is not a skill id at all.
+ *
+ * The live failure: `combat.engage ok` and `combat.disengage ok` alternating
+ * on the 3s policy clock, indefinitely, while the character took damage and
+ * gained nothing. `melvorD:Combat` matched no case, fell to the artisan
+ * default, looked up a skill that does not exist, and returned [] -- which the
+ * caller reads as "not the one I want" and restarts.
+ */
+describe('readActiveRecipeIds for combat', () => {
+  it('names the selected monster', () => {
+    installFakeGame({
+      activeAction: { id: 'melvorD:Combat' },
+      combat: { selectedMonster: { id: 'melvorD:Leech' } },
+    });
+
+    expect(readActiveRecipeIds()).toEqual(['melvorD:Leech']);
+  });
+
+  it('reports nothing when no monster is selected', () => {
+    installFakeGame({
+      activeAction: { id: 'melvorD:Combat' },
+      combat: { selectedMonster: undefined },
+    });
+
+    expect(readActiveRecipeIds()).toEqual([]);
+  });
+
+  it('does not throw when the selection getter refuses', () => {
+    installFakeGame({
+      activeAction: { id: 'melvorD:Combat' },
+      combat: {
+        get selectedMonster(): { id: string } {
+          throw new Error('no monster is selected');
+        },
+      },
+    });
+
+    expect(readActiveRecipeIds()).toEqual([]);
+  });
+});
