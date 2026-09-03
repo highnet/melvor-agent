@@ -40,6 +40,33 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **The agent wears valuables into fights that give it nothing, and death
+      takes one** — M. `Player.applyDeathPenalty()` (player.d.ts:410) is
+      documented verbatim as *"Removes an item from the player's equipment on
+      death"*. This character has died **55 times**. It is currently wearing a
+      **Thiever's Cape** (3,900 GP, a Thieving reward and not a shop item, so
+      losing it is not a purchase away) and a **Jeweled Necklace** (5,000 GP),
+      neither of which contributes anything to a fight, plus **Bronze Arrows** in
+      the quiver that a Staff of Air cannot fire.
+      This is the forbidden category, not a tuning matter: the standing rule is
+      the agent may die but may not take irreversible actions, and losing an
+      unbuyable item to a random roll is exactly that. Worse, `fillEmptySlots`
+      *adds* to the exposure -- an empty slot is filled with whatever scores
+      best, which is how the necklace got on in the first place ("A Jeweled
+      Necklace sat in the bank with an empty neck slot ... the choosing was
+      not").
+      The fix is to strip what does not earn its place before a fight and put it
+      back after -- the `withTownBiome` / `withBuyQuantity` shape, applied to
+      equipment. Note the adjacent work that already exists: `readGearUpgrades`
+      now knows about style switches, `dominatesEquipmentStats` compares stats
+      per key, and `readUnusableCombatStyles` already describes ammunition the
+      equipped weapon cannot fire. What is missing is the idea that a slot can be
+      worth *emptying*.
+      Care needed in two places: the Summon slot and the Barrier Gem may be
+      consumed or contribute in ways the stat comparison does not see, and the
+      operator's own selections are their state -- so this should strip what
+      demonstrably contributes nothing, not everything it cannot score.
+
 - [x] **A fight is offered at full price while the selected attack spell cannot be
       cast** — M. Every combat goal has been blocked all evening and nothing in
       the candidate list says so. Both Fight Leech objectives were abandoned with
