@@ -68,6 +68,23 @@ function candidate(
       note,
     xpPerHour: actionsPerHour * requirement.xp * xpMultiplier,
     gpPerHour: salePerHour,
+    // What this action actually banks, per hour, from the terms already
+    // computed above. Built here rather than re-derived by whoever needs it so
+    // it cannot disagree with the rate on the label: `yielded` already carries
+    // mastery, the doubling expectation and the chance the action lands at all,
+    // and `actionsPerHour` is the same interval the XP figure divides by.
+    //
+    // Thieving has no `product` -- it pays `currencyDrops` -- so it emits none,
+    // which is right: there is no stock a Thieving objective could be run to.
+    ...(recipe.product === undefined
+      ? {}
+      : {
+          produces: {
+            itemId: recipe.product.id,
+            name: recipe.product.name,
+            perHour: actionsPerHour * yielded,
+          },
+        }),
     requiresLevel: requirement.level,
     available: true,
   };

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-222 exports.
+227 exports.
 
 ## `act`
 
@@ -143,6 +143,30 @@ the first into the second would claim the game said something it did not.
 
 ```ts
 ammoTypeName: (value: number | undefined) => string
+```
+
+## `annotateStockDemand`
+
+`function`
+
+Puts each demand on the candidate that would produce it.
+
+This is the join the blocked list was already describing in prose and could
+not hand to anything: `describeProducers` names the producing recipe in a
+label, and a label is not a candidate index. A candidate carries `produces`,
+a demand carries an item, and matching the two is the whole mechanism.
+
+Every matching candidate is annotated, not just the best one. Which producer
+to run is a planning decision -- Runecrafting has several rune recipes and
+the character may be level-gated out of the fastest -- and narrowing the list
+here would be choosing on the caller's behalf.
+
+Returns new candidates rather than mutating: the enumeration is cached for
+the panel, and annotating in place would leave last pass's suggestions on it
+after the shortfall was filled.
+
+```ts
+annotateStockDemand: (candidates: readonly Candidate[], demands: ReadonlyMap<string, StockDemand>) => Candidate[]
 ```
 
 ## `ARTISAN_SKILL_IDS`
@@ -563,6 +587,31 @@ state the cap of three maps per dig site there while `getMaxMaps`
 createDigSiteMap: (digSiteId: string, isSuspended: () => boolean) => ActionResult<{ maps: number; charges: number; }>
 ```
 
+## `demandFromShortfall`
+
+`function`
+
+Turns one blocked recipe's shortfall into a stock figure.
+
+The scale is the whole difficulty. A blocked recipe's `need` is *one craft's
+worth* -- three Earth Runes for a Superheat cast -- and "craft until you have
+3" is an objective that ends in seconds, which is the no-op shape the plan
+tool already refuses. Some multiple is wanted, and inventing one would put a
+guess exactly where this repo keeps finding measurements should be.
+
+So the multiple is read off the consumer rather than chosen: **one hour of
+the consumer at its own actions-per-hour**. The hour is not arbitrary either
+-- `expectedDurationMin` is capped at 60 by both planning tools and
+`abortMinutes` defaults to 60, so an hour is the largest span an objective is
+expected to cover, and "enough for the thing that wants it to run one full
+objective" is the smallest figure that is not immediately spent.
+
+What is already banked counts toward it, because the target is absolute.
+
+```ts
+demandFromShortfall: (consumerLabel: string, missing: { itemId: string; name: string; need: number; have: number; }, actionsPerHour: number) => StockDemand | null
+```
+
 ## `disengageCombat`
 
 `function`
@@ -899,6 +948,22 @@ What spending the pool claims to change.
 
 ```ts
 MasteryProjection: any
+```
+
+## `mergeDemands`
+
+`function`
+
+Collapses many demands for the same item into the one that covers them all.
+
+The largest, and its own reasoning kept verbatim. Summing would be wrong:
+two consumers wanting an hour of Earth Runes each are not run at the same
+time, so the larger already covers the smaller -- the same argument
+`readTaskWantedQuantities` makes for taking the largest single ask rather
+than the sum of every task in the game.
+
+```ts
+mergeDemands: (demands: readonly StockDemand[]) => Map<string, StockDemand>
 ```
 
 ## `MINING_ID`
@@ -1292,7 +1357,7 @@ choosing by index safe. These are context for the planner: read them, then
 pick a real candidate that produces the missing input.
 
 ```ts
-readBlockedOpportunities: () => { label: string; xpPerHour: number; severity?: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+readBlockedOpportunities: () => { label: string; xpPerHour: number; severity?: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; demands?: StockDemand[]; }[]
 ```
 
 ## `readBoneCandidates`
@@ -2547,6 +2612,26 @@ task is not an action: it is a reason to choose among the actions there are.
 readTaskOpportunities: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
+## `readTaskStockDemands`
+
+`function`
+
+What the town's unfinished tasks are asking for.
+
+The one demand source that needs no scaling at all: a task states its own
+quantity, and `readTaskWantedQuantities` already keeps the largest single ask
+per item because tasks are completed one at a time. That figure is exactly an
+`item_qty_at_least` target -- the goal is a bank count -- so it is passed
+through untouched.
+
+Items already covered are dropped rather than reported as satisfied: a
+suggestion to produce something the bank already holds enough of is the
+no-op the plan tool would refuse anyway.
+
+```ts
+readTaskStockDemands: (bankQty: (itemId: string) => number) => StockDemand[]
+```
+
 ## `readTaskWantedItemIds`
 
 `function`
@@ -3201,6 +3286,38 @@ startPassiveCooking: (categoryId: string, isSuspended: () => boolean) => ActionR
 
 ```ts
 StateSnapshot: any
+```
+
+## `StockDemand`
+
+`interface`
+
+How much of an item something else is short of, and why.
+
+Every goal and every plan step this run has ever set was level-shaped, and
+not because the alternative was missing: `parseCondition` reads
+`item <id> >= <n>`, `set_objective` and `set_plan` both take
+`untilItemId`/`untilQuantity`, and `item_qty_at_least` has been in the
+contract, in `criteria.ts` and in the panel from the start. Nothing could
+ever *say* a number, so the shape may as well not have existed -- and a plan
+went out reading "craft Mind Runes to Runecrafting 49", a level target for a
+stock problem, which would have stopped at whatever rune count level 49
+happened to land on.
+
+The numbers were never missing either. `missingInputs` returns
+`{ itemId, need, have }`, `readTaskWantedQuantities` returns a map of item to
+quantity, and the blocked list already prints `Magic: Superheat II — Earth
+Rune from Runecrafting: Earth Rune — needs Earth Rune 1/3` -- a producer, an
+item and a number, which is a complete stock objective in prose and
+unreadable by any code. This is that sentence as data.
+
+A demand is deliberately a **suggestion**, carried to the planner on the
+candidate that would satisfy it. This module does not choose targets; see
+`rungFor` in the planner for the standing argument that a tool reports and
+the caller decides.
+
+```ts
+StockDemand: any
 ```
 
 ## `stopCombatEvent`

@@ -128,6 +128,13 @@ export {
 } from './blocked.js';
 export { readGatherCandidates, readShopObjectiveCandidates } from './candidates.js';
 export {
+  type StockDemand,
+  annotateStockDemand,
+  demandFromShortfall,
+  mergeDemands,
+  readTaskStockDemands,
+} from './stock-demand.js';
+export {
   type ExpendableStack,
   readCheapestExpendableStack,
   readMostValuableExpendableStack,

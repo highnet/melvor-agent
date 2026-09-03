@@ -171,7 +171,7 @@ describe('yield and XP scale with mastery', () => {
     name: 'Yew Tree',
     level: 60,
     baseExperience: 175,
-    product: { id: 'melvorD:Yew_Logs' },
+    product: { id: 'melvorD:Yew_Logs', name: 'Yew Logs' },
   };
 
   it('uses the game-modified product quantity', () => {
@@ -284,7 +284,7 @@ describe('yield is an expectation, not a sample', () => {
     name: 'Gold Bar',
     level: 40,
     baseExperience: 20,
-    product: { id: 'melvorD:Gold_Bar' },
+    product: { id: 'melvorD:Gold_Bar', name: 'Gold Bar' },
   };
 
   /**

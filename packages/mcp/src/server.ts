@@ -43,7 +43,7 @@ server.registerTool(
   {
     title: 'List candidate objectives',
     description:
-      'Everything the agent has proven it can do right now, with measured XP/hr and GP/hr, plus a second list of higher-value options it is BLOCKED from doing and what input each is missing. Choose by index from the first list only — but read the second, because the best move is often to produce an input for something better.',
+      'Everything the agent has proven it can do right now, with measured XP/hr and GP/hr, plus a second list of higher-value options it is BLOCKED from doing and what input each is missing. Choose by index from the first list only — but read the second, because the best move is often to produce an input for something better. A candidate that produces something a known consumer is short of carries a STOCK SHORTFALL line with an item id and a quantity: that pair goes straight into set_objective or set_plan as untilItemId/untilQuantity, and is the reason to give that step a stock target rather than a level.',
     inputSchema: {},
   },
   (args) => callTool('list_candidates', args),
@@ -54,7 +54,7 @@ server.registerTool(
   {
     title: 'Set the agent objective',
     description:
-      'Choose a candidate by index from list_candidates and give it a target and a time budget. The index is the only way to specify what to do — skill and recipe ids are taken from the candidate itself, so they cannot be mistyped or invented.',
+      'Choose a candidate by index from list_candidates and give it a target and a time budget. The index is the only way to specify what to do — skill and recipe ids are taken from the candidate itself, so they cannot be mistyped or invented. A target comes in two shapes and the objective should carry whichever matches what it is for: targetLevel for training, or untilItemId + untilQuantity for producing a count. Training toward a level goal wants a level; producing an input that something else consumes wants a stock target, because a level target either stops short of the count or runs hours past it. They are not exclusive — crafting runes trains Runecrafting and produces runes — so name the thing you actually want. Both are sized against the budget before being accepted, and a target beyond what the rate or the banked inputs can reach is lowered with a note saying so.',
     inputSchema: {
       candidateIndex: z
         .number()
@@ -69,20 +69,22 @@ server.registerTool(
         .min(1)
         .max(120)
         .describe(
-          'Skill level to reach. Pick something reachable in the budget, not a distant round number.',
+          'Skill level to reach — the training shape. Pick something reachable in the budget, not a distant round number. Ignored when untilItemId is given, and ignored for one-shot actions like buying or equipping.',
         ),
       untilItemId: z
         .string()
         .optional()
         .describe(
-          'Optional. Finish when the bank holds untilQuantity of this item, instead of at a level. Township tasks ask for stock — "give 250 Air Rune", "give 100 Iron Arrows" — and a level target either stops short of the count or runs hours past it.',
+          'Optional — the producing shape, and the right one whenever the point of the objective is a count rather than a level. Finish when the bank holds untilQuantity of this item. Township tasks ask for stock ("give 250 Air Rune"), a recipe blocked on an input asks for stock, and combat casting a spell asks for enough runes to keep casting — a level target for any of those either stops short of the count or runs hours past it. A candidate that would fill a known shortfall carries a STOCK SHORTFALL line in list_candidates naming the item and a quantity derived from the consumer, which can be passed straight here.',
         ),
       untilQuantity: z
         .number()
         .int()
         .min(1)
         .optional()
-        .describe('Optional. How many of untilItemId to end with. Requires untilItemId.'),
+        .describe(
+          'Optional. How many of untilItemId the bank should hold at the end — an absolute count, not how many more to make. Requires untilItemId. Checked against what this candidate can actually produce in the budget from the inputs banked, and lowered with a note if it cannot get there.',
+        ),
       abortMinutes: z
         .number()
         .int()
@@ -110,7 +112,7 @@ server.registerTool(
   {
     title: 'Set a multi-step plan',
     description:
-      'Hand the agent a sequence of 2 to 8 objectives to work through unattended, each starting when the one before finishes or times out. Use this instead of set_objective whenever the next few hours are foreseeable — a single objective means the agent needs you present at every transition, and when you are not there it falls back to the dumbest action that keeps it moving. Later steps are chosen against the candidates available now, so re-plan if the character changes shape.',
+      'Hand the agent a sequence of 2 to 8 objectives to work through unattended, each starting when the one before finishes or times out. Use this instead of set_objective whenever the next few hours are foreseeable — a single objective means the agent needs you present at every transition, and when you are not there it falls back to the dumbest action that keeps it moving. Later steps are chosen against the candidates available now, so re-plan if the character changes shape. Each step carries a target in one of two shapes: targetLevel for training, or untilItemId + untilQuantity for producing a count. A production chain needs the second — "mine 200 Gold Ore, then smelt" is unsayable with levels — and a step producing an input that something else consumes should almost always use it.',
     inputSchema: {
       steps: z
         .array(
@@ -121,7 +123,9 @@ server.registerTool(
               .int()
               .min(1)
               .max(120)
-              .describe('Skill level to reach. Ignored for one-shot steps like buying or selling.'),
+              .describe(
+                'Skill level to reach — the training shape. Ignored when untilItemId is given, and ignored for one-shot steps like buying or selling.',
+              ),
             abortMinutes: z
               .number()
               .int()
@@ -133,14 +137,16 @@ server.registerTool(
               .string()
               .optional()
               .describe(
-                'Optional. Finish when the bank holds untilQuantity of this item, instead of at a level. This is what makes a production chain sayable: "mine 200 Gold Ore, then smelt" cannot be expressed with a level target, which either stops short of the count the next step needs or runs hours past it.',
+                'Optional — the producing shape. Finish when the bank holds untilQuantity of this item. This is what makes a production chain sayable: "mine 200 Gold Ore, then smelt" cannot be expressed with a level target, which either stops short of the count the next step needs or runs hours past it. A candidate that would fill a known shortfall carries a STOCK SHORTFALL line in list_candidates with the item and a quantity to pass here.',
               ),
             untilQuantity: z
               .number()
               .int()
               .min(1)
               .optional()
-              .describe('Optional. How many of untilItemId to end with. Requires untilItemId.'),
+              .describe(
+                'Optional. How many of untilItemId the bank should hold at the end — an absolute count, not how many more to make. Requires untilItemId. Checked against what this candidate can actually produce in the budget from the inputs banked, and lowered with a note if it cannot get there.',
+              ),
           }),
         )
         .min(2)

@@ -47,8 +47,18 @@ export interface RecipeLike {
   baseAbyssalExperience?: number;
   /** MasteryAction extends RealmedObject (mastery2.d.ts:11, realms.d.ts:46). */
   realm?: { id: string; isUnlocked: boolean };
-  /** Present on SingleProductArtisanSkillRecipe and the gathering recipes. */
-  product?: object;
+  /**
+   * Present on SingleProductArtisanSkillRecipe and the gathering recipes.
+   *
+   * Narrowed from `object` to the two fields every caller here reads off it.
+   * `SingleProductRecipe.product` (skill.d.ts:1024) and
+   * `SingleProductArtisanSkillRecipe.product` (artisanSkill.d.ts:131) are both
+   * `AnyItem`, so an id and a name are always there -- and while this was
+   * `object`, naming the item a recipe produces meant a cast at every site,
+   * which is how the join between "something is short of Earth Runes" and
+   * "this candidate makes Earth Runes" stayed a sentence.
+   */
+  product?: { id: string; name: string };
   baseQuantity?: number;
   /** ArtisanSkillRecipe.itemCosts (artisanSkill.d.ts:82); absent on gathering. */
   itemCosts?: { item: AnyItem; quantity: number }[];

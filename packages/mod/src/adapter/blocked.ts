@@ -18,6 +18,7 @@ import {
 } from './recipes.js';
 import { noteSwallowed } from './safe.js';
 import { readShopGoals } from './shop.js';
+import { type StockDemand, demandFromShortfall } from './stock-demand.js';
 
 /**
  * Everything the planner needs that is deliberately *not* a candidate.
@@ -65,6 +66,15 @@ export function readBlockedOpportunities(): {
    */
   severity?: BlockedSeverity;
   missing: { itemId: string; name: string; need: number; have: number }[];
+  /**
+   * The same shortfall as a stock figure, for the candidate that produces it.
+   *
+   * Absent on every entry that is a fact rather than a shortfall -- a level
+   * requirement, a refusal notice -- and absent on a shortfall whose consumer
+   * will not price its own interval, because a demand with no rate behind it
+   * would be a number nobody derived. See {@link StockDemand}.
+   */
+  demands?: StockDemand[];
 }[] {
   const blocked: ReturnType<typeof readBlockedOpportunities> = [];
 
@@ -172,6 +182,24 @@ export function readBlockedOpportunities(): {
         const missing = missingInputs(recipe);
         if (missing.length === 0) continue;
 
+        // The same shortfall as a number, sized against this recipe's own rate.
+        //
+        // Computed here because this is the only place the consumer's
+        // actions-per-hour and its per-action need are both in scope, and the
+        // scale of a stock target is entirely a fact about the consumer -- see
+        // `demandFromShortfall` for why an hour of it is the unit. Recomputing
+        // it later would mean walking every recipe of every skill a second time
+        // per report, and re-deriving an interval that has already been
+        // resolved once here with a fallback chain three deep.
+        const demands = missing.flatMap((entry) => {
+          const demand = demandFromShortfall(
+            `${skill.name}: ${recipe.name}`,
+            entry,
+            actionsPerHour,
+          );
+          return demand === null ? [] : [demand];
+        });
+
         blocked.push({
           // Names what produces each missing input, where anything does.
           //
@@ -184,6 +212,7 @@ export function readBlockedOpportunities(): {
           label: `${skill.name}: ${recipe.name}${describeProducers(missing)}`,
           xpPerHour: actionsPerHour * recipe.baseExperience,
           missing,
+          ...(demands.length === 0 ? {} : { demands }),
         });
       } catch (error) {
         noteSwallowed('candidates.readBlockedOpportunities', error);
