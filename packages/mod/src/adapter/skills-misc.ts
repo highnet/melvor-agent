@@ -315,11 +315,13 @@ function startAltMagic(
   // half the cost of a cast, and a projection naming only the spell reports a
   // fuel swap as "nothing changed". Carrying it is what lets `act` prove a
   // re-selection landed instead of taking the caller's word for it.
-  const project = (): GatheringProjection =>
-    projectFrom(skill, [
+  const project = (): GatheringProjection => {
+    const selection = liveSelectionId(spell);
+    return projectFrom(skill, [
       ...(skill.selectedSpell === undefined ? [] : [skill.selectedSpell.id]),
-      ...(liveSelectionId(spell) === null ? [] : [liveSelectionId(spell) as string]),
+      ...(selection === null ? [] : [selection]),
     ]);
+  };
 
   // Set by the precondition when the only reason this call is allowed through
   // is that the running cast's fuel has gone stale; `changed` then has to prove
