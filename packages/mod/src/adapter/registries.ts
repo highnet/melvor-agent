@@ -1,4 +1,6 @@
 import type { KnowledgeDump } from '@melvor-agent/knowledge';
+import { ammoTypeName } from './equipment.js';
+import { describeRequirements } from './requirements.js';
 import {
   noteSwallowed,
   recordFallback,
@@ -6,6 +8,7 @@ import {
   safeList,
   safeNumber,
   safeText,
+  safeValue,
 } from './safe.js';
 import { gpCostOf } from './shop.js';
 
@@ -77,37 +80,6 @@ export function capSection<T>(
  */
 const ITEM_TABLE_LIMIT = 5000;
 
-/**
- * Describes a requirement list without pretending to know every shape.
- *
- * Flattening an unrecognised requirement to its bare type name is what made
- * the Abyssal realm question unanswerable from the dump: `DungeonCompletion`
- * says a dungeon gates the content but not *which* dungeon, which is the only
- * part anyone needs. So the two shapes that actually gate progression are
- * spelled out, `isMet` is recorded so a satisfied gate is visibly satisfied,
- * and anything else still appears by type rather than being dropped.
- */
-function safeRequirementTypes(read: () => readonly AnyRequirement[]): string[] {
-  try {
-    return read().map((requirement) => {
-      const met = safeBoolean('registries.requirementIsMet', () => requirement.isMet(), false)
-        ? ' (met)'
-        : '';
-
-      if (requirement.type === 'SkillLevel') {
-        return `${requirement.skill.name} ${requirement.level}${met}`;
-      }
-      if (requirement.type === 'DungeonCompletion') {
-        return `Complete ${requirement.dungeon.name} x${requirement.count}${met}`;
-      }
-      return `${requirement.type}${met}`;
-    });
-  } catch (error) {
-    noteSwallowed('registries.safeRequirementTypes', error);
-    return [];
-  }
-}
-
 export function dumpRegistries(): KnowledgeDump {
   /**
    * Cuts made while building this dump.
@@ -144,7 +116,7 @@ export function dumpRegistries(): KnowledgeDump {
       id: realm.id,
       name: realm.name,
       unlocked: safeBoolean('registries.realmIsUnlocked', () => realm.isUnlocked, false),
-      requirements: safeRequirementTypes(() => realm.unlockRequirements),
+      requirements: describeRequirements(() => realm.unlockRequirements),
     })),
     skills: game.skills.allObjects.map((skill) => ({
       id: skill.id,
@@ -613,7 +585,7 @@ export function dumpRegistries(): KnowledgeDump {
         () => game.shop.isPurchaseAtBuyLimit(purchase),
         false,
       ),
-      requirements: safeRequirementTypes(() => purchase.purchaseRequirements),
+      requirements: describeRequirements(() => purchase.purchaseRequirements),
       // What the purchase actually does, in the game's own words.
       //
       // Without it the dump can price an upgrade and say nothing about whether
@@ -652,6 +624,44 @@ export function dumpRegistries(): KnowledgeDump {
         'registries.31',
         () => (item instanceof FoodItem ? item.healsFor : 0),
         0,
+      ),
+    })),
+    // What stops a piece of gear being worn, and what a weapon fires.
+    //
+    // The flat item table above answers "what is it worth" and nothing else, so
+    // a basic compatibility question could not be asked offline at all. The
+    // character holds 1,620 Adamant Arrows, 344 Rune Arrows and three tiers of
+    // crossbow with a Ranged goal stuck at 3/20, and this repo could not say
+    // whether a crossbow fires an arrow, which slot either goes in, or what
+    // level any of it needs. The answer had to be guessed, and a guess written
+    // down reads as a fact — the mistake the Abyssal realm entry already cost.
+    //
+    // A separate section rather than six more fields on `items`, because these
+    // are meaningless on the 1,800-odd items that are not equipment and
+    // repeating empty arrays across 3,748 rows is how a reference stops being
+    // readable. `game.items.equipment` (namespaceRegistry.d.ts:116) is the
+    // game's own subset, so the split costs nothing to compute.
+    equipment: game.items.equipment.allObjects.map((item) => ({
+      id: item.id,
+      name: item.name,
+      // `attackType` is on WeaponItem alone (item.d.ts:305); armour and
+      // ammunition have none, and empty says that rather than guessing melee.
+      attackType: safeText('registries.equipmentAttackType', () =>
+        item instanceof WeaponItem ? item.attackType : '',
+      ),
+      // item.d.ts:245. First element is the slot the game defaults to, and the
+      // order is preserved because `readEquipCandidates` equips `validSlots[0]`.
+      validSlots: safeList('registries.equipmentSlots', () =>
+        item.validSlots.map((slot) => slot.id),
+      ),
+      // item.d.ts:251. The field `readEquipCandidates` already gates on and
+      // then discards — see requirements.ts for what that cost.
+      equipRequirements: describeRequirements(() => item.equipRequirements),
+      ammoType: ammoTypeName(safeValue('registries.ammoType', () => item.ammoType)),
+      ammoTypeRequired: ammoTypeName(
+        safeValue('registries.ammoTypeRequired', () =>
+          item instanceof WeaponItem ? item.ammoTypeRequired : undefined,
+        ),
       ),
     })),
     // Last, and it has to stay last: see the declaration above.

@@ -881,3 +881,68 @@ level-90 monster, and the scale is what tells a planner whether the answer is be
 smaller target. That ordering is only safe because the two paths share nothing, and the pricing
 result deliberately carries no field a caller could spread into an available candidate. A test
 asserts its exact key set, so adding one fails the suite rather than the character.
+### The reason a `continue` throws away
+
+`ranged-20` read 3/20 for a whole run. The bank held three tiers of crossbow and 2,134 arrows,
+and the entire equip candidate list was one line: `Equip Steel Scimitar`. Nothing anywhere said
+why, and the only way left to learn which level refused a crossbow was to reach it.
+
+The cause is one line in `readEquipCandidates`:
+
+```ts
+if (!game.checkRequirements(item.equipRequirements, false)) continue;
+```
+
+Correct as a gate -- offering gear the character cannot wear spends an objective discovering a
+level the game already knew -- and the requirement it just evaluated is discarded on the same
+line. The style filters below it are not the culprit and could not have been: a crossbow against
+a Staff of Air sets `switchesStyle`, which skips both `penalisesAttackStyle` and the stat sum.
+
+**A filter's predicate is a diagnostic, and dropping it is a choice.** Every `continue` in a
+reader that answers "what can I do" silently produces the other half of the question -- "and why
+not the rest" -- for free, and throws it away. `readBlockedOpportunities` is where that half
+belongs; it already exists for exactly this and had no equipment entry at all.
+
+### Ammunition compatibility is two questions, and stack counts answer neither
+
+The second half of the same wall. A crossbow's `ammoTypeRequired` is `Bolts`; every arrow in that
+bank is `Arrows` (`AmmoTypeID`, enums.d.ts:2983-2991). So "1,620 Adamant Arrows" reads as
+*stocked* to everything that counts items and is worth nothing to a crossbow. And ammunition
+carries `equipRequirements` like any other equipment (item.d.ts:251), so a stack of the right
+*class* can still be unloadable.
+
+`readRefillableAmmo` matched the class and not the requirement, which would have handed the
+quiver reflex a stack `equipItem` refuses on the identical check -- retries spent on something
+that can never load, in a fight, which is where that reflex runs.
+
+### None of this could be asked offline, and that was the real gap
+
+`data/dump.json` recorded items as `{id, name, category, type, sellsFor, healsFor}`. Not
+`validSlots`, not `equipRequirements`, not `ammoType`. So "does a crossbow fire an arrow" -- the
+most basic compatibility question in the game -- had no offline answer, and the honest options
+were to guess or to stop. There is now an `equipment` section, scoped to `game.items.equipment`
+rather than smeared across 3,748 item rows.
+
+**A dump that prices everything and constrains nothing.** Every section added to date answers
+*what a thing is worth*; the first question that was about *whether a thing is usable* found
+nothing there at all.
+
+### Reachable and unexplained is not the same as blocked
+
+The tempting conclusion was that Ranged is unobtainable and the goal should say so. It is not.
+From the dump alone: Normal Shortbow is Fletching 1 from an unstrung bow (Fletching 1, one Normal
+Log) plus a Bowstring -- one is banked, the shop sells more at 24 GP with no requirement. Bronze
+Arrows are Fletching 1 from Bronze Arrowtips (Smithing 1, one Bronze Bar) and Headless Arrows
+(15 Arrow Shafts, 4,322 banked; 15 Feathers, 8 GP in the shop). Woodcutting 60, Smithing 55,
+Mining 62, Fletching 22. Every input is held, mined, or costs under 100 GP.
+
+`GoalStatus`'s `blocked` means one thing and should keep meaning it: a goal named in another
+goal's `requires:` that is measurable and unmet (goals.ts:435). Marking this one blocked would
+also drop it out of `goalsAdvancedBy`, so every fight would stop being tagged as advancing
+Ranged -- a goal made *less* legible by the mechanism meant to explain it.
+
+**The failure was never that the goal was unreachable. It was that the route was never said out
+loud.** Those want different fixes, and the second one is a blocked-opportunity line, not a goal
+state. Inferring reachability inside `goals.ts` would put a guessed route where the file does
+snapshot arithmetic -- which is precisely what an invented `requires: magic-ranged-20` already
+cost the Abyssal goal.

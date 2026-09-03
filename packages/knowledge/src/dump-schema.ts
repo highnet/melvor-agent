@@ -564,6 +564,43 @@ export const knowledgeDumpSchema = z.object({
   ),
 
   /**
+   * Equipment, and what stops it being worn.
+   *
+   * `items` above is scalar-only and prices things; it cannot answer whether a
+   * crossbow fires an arrow. That gap cost a whole combat style: the character
+   * banked 1,620 Adamant Arrows, 344 Rune Arrows and three tiers of crossbow
+   * while its Ranged goal sat at 3/20, and nothing offline could say which
+   * level any of it needed, which slot it went in, or whether the ammunition
+   * and the weapons matched at all. The question was answered by guessing, and
+   * a guess written down reads as a fact.
+   *
+   * Its own section rather than fields on `items` because these are empty on
+   * the ~1,800 items that are not equipment, and `game.items.equipment` is the
+   * game's own subset — so scoping costs nothing and keeps the item table the
+   * flat scalar row it is documented to be.
+   *
+   * Required, not `.default()`ed, per the note at the top of this file: one
+   * required section is what makes every stale dump regenerate rather than load
+   * with the field it was added for silently empty.
+   */
+  equipment: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      /** `melee`, `ranged` or `magic` on a weapon; empty on everything else. */
+      attackType: z.string(),
+      /** Slot ids. First is the slot the game defaults to, and order matters. */
+      validSlots: z.array(z.string()),
+      /** Rendered the way shop and realm requirements are, `(met)` included. */
+      equipRequirements: z.array(z.string()),
+      /** The ammunition class this item *is*. Empty unless it is ammunition. */
+      ammoType: z.string(),
+      /** The class this weapon *fires*. Empty unless it needs ammunition. */
+      ammoTypeRequired: z.string(),
+    }),
+  ),
+
+  /**
    * Sections that were cut, and by how much.
    *
    * Three sections used to be sliced with no record of it, which is how this

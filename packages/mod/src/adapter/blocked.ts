@@ -2,7 +2,7 @@ import type { BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { readActiveRecipeIds } from './active.js';
 import { canAfford, missingInputs } from './affordability.js';
 import { readGatherCandidates } from './candidates.js';
-import { readFoodReserve } from './equipment.js';
+import { readFoodReserve, readUnusableCombatStyles } from './equipment.js';
 import { readSeedShortfalls } from './farming.js';
 import { STARTABLE_SKILL_IDS } from './gathering.js';
 import { readSlayerBlockedReason } from './management.js';
@@ -82,6 +82,14 @@ export function readBlockedOpportunities(): {
   // Food is what sustains everything that damages the character, and running
   // out is how an unattended run stops without failing.
   blocked.push(...readFoodReserve());
+
+  // And why a whole combat style is unavailable. `readEquipCandidates` gates on
+  // `game.checkRequirements` and drops the reason, so a bank holding three
+  // tiers of crossbow and 2,134 arrows produced exactly one equip candidate --
+  // a scimitar -- and no line anywhere saying what refused the rest. A goal
+  // reading "Ranged 3/20" for a run that cannot equip a ranged weapon is the
+  // silence this list exists to end.
+  blocked.push(...readUnusableCombatStyles());
 
   // And a better recipe in the skill already running. An objective pins a
   // recipe, not a skill, so the agent levels past better options without ever

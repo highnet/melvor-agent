@@ -93,6 +93,8 @@ export {
   type ModifierGear,
   type EquipProjection,
   readRefillableAmmo,
+  readUnusableCombatStyles,
+  ammoTypeName,
 } from './equipment.js';
 export {
   newSlayerTask,
