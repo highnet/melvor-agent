@@ -153,7 +153,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **Realised rates are never compared against advertised ones** *(3×)* — M.
       The one mechanism that would have caught every other rate bug on this list.
       Needs `skillId`/`recipeId` on `QualitySample`.
-- [ ] **Monster fights are the only candidates carrying no rate at all** — M.
+- [x] **Monster fights are the only candidates carrying no rate at all** — M.
       Thieving prices itself completely: "hits up to 3.2 (2% of current HP) —
       6,766 xp/h — 4.00 levels/h — 72,490 gp/h". A fight carries drops and goal
       tags only, so all ~60 sort identically and the planner cannot tell a

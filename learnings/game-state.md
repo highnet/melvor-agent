@@ -822,3 +822,62 @@ in `blocked.ts` compared the standard pair only:
 Both now skip realm-locked recipes and read the requirement through `recipeRequirement` /
 `currentLevelFor`. The general shape: **a requirement read off the wrong track defaults to 0, and
 0 reads as an invitation** -- the third time this file has paid for that.
+
+## Combat XP has no coefficient in the typings, and it did not need one
+
+Fights were the only candidates carrying no rate at all, and the obvious reason is that combat
+does not look priceable: `Player.rewardXPAndPetsForDamage(damage)` (`player.d.ts:435`) is the
+*only* statement anywhere in `gameTypes/` about how combat pays, and it names the input without
+naming the rate. There is no XP-per-damage constant on `CombatSkill`, on `AttackStyle`, or on
+`Player`. `AttackStyle.experienceGain` (`attackStyle.d.ts:11-14`) gives the split between skills
+and not the size.
+
+The useful move was not to find the constant or to invent it, but to notice it does not matter.
+It is the same for every fight, so **damage per hour orders fights exactly as XP per hour would**.
+What the missing constant costs is the *cross-skill* comparison -- a fight against Thieving --
+and saying so out loud is cheaper than a fabricated number that makes that comparison look sound.
+
+Three things were readable and settled the rest:
+
+- **`Player.getMonsterSpawnTime()`** (`player.d.ts:134`), the modifier-aware dead air between
+  kills, with `baseSpawnInterval` (`player.d.ts:131`) behind it. This is the whole discriminator.
+  Without it, damage per hour is just the character's DPS and *identical for every monster in the
+  game* -- the fights would have sorted identically for a second reason after being fixed for the
+  first. The mining respawn again: price the part that costs, not only the part that produces.
+- **`DropTable.getAverageDropValue()`** (`utils.d.ts:545`), documented as an average, sitting
+  beside `getDrop()` and `getRawDrop()` (`541`, `543`), documented as rolls. After
+  `modifyPrimaryProductQuantity` the reflex is to distrust every quantity getter; the actual
+  lesson is narrower and better -- **read the doc comment for the word "average" or "rolls"**,
+  because Melvor does label them, and here it had already provided the un-rolled accessor.
+- **`Monster.levels.Hitpoints`** times `numberMultiplier` (`main.d.ts:16`). Not stated anywhere,
+  so measured: the live character reads Hitpoints 15 against a 150 bar. What made measurement
+  *sufficient* rather than merely convenient is that the multiplier is one global, so being wrong
+  about it scales every monster equally and reorders nothing -- and ordering is all a candidate
+  list is for. A test pins that, so the argument is not left in a comment.
+
+What stays unreadable is the hit chance against a specific monster: the `Enemy` probe that would
+answer it returns NaN outside combat, which is a fact this repo already paid for. So every attack
+is assumed to land, which overstates hardest against high-Defence monsters -- and the monster's
+Defence level rides in the candidate label rather than the caveat sitting only in a doc comment.
+**Put the axis an estimate is optimistic along next to the estimate**, where the reader deciding
+on it will actually see it.
+
+Real output, from `data/dump.json` against the live character (max hit 24, 3s interval, 3s spawn):
+
+| monster      | HP  | kills/h | damage/h | note |
+|--------------|-----|---------|----------|------|
+| Chicken      |  30 |     400 |   12,000 | most bones/h, so most Prayer |
+| Golbin       |  50 |     277 |   13,846 | |
+| Steel Knight | 150 |     109 |   16,364 | |
+| Hill Giant   | 350 |      49 |   17,260 | most damage/h, so most Attack and HP |
+
+Note that the two useful orderings are *opposite*, and both are correct: a planner chasing
+`prayer-20` wants the Chicken and one chasing `hp-40` wants the Giant. A single "which fight is
+best" number could not have said both, which is the argument against collapsing this into one.
+
+Finally: pricing runs **before** the survivability gate is consulted, so a refused fight can say
+how big it was as well as why -- "could be one-shot" reads identically for a Chicken and for a
+level-90 monster, and the scale is what tells a planner whether the answer is better gear or a
+smaller target. That ordering is only safe because the two paths share nothing, and the pricing
+result deliberately carries no field a caller could spread into an available candidate. A test
+asserts its exact key set, so adding one fails the suite rather than the character.
