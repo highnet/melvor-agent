@@ -40,24 +40,27 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
-- [ ] **`reflex.repairTownship` never succeeds and never stops** — S. Fires once a
-      minute, indefinitely, always warning `state unchanged after call:
+- [x] **`reflex.repairTownship` never succeeds and never stops** — S. Fired once
+      a minute, indefinitely, always warning `state unchanged after call:
       {"buildingId":"melvorF:Miners_Pit","biomeId":"melvorF:Mountains","count":1,
-      "efficiency":85} -> {identical}`. 17 times in one observation window, and
-      it has been in every log read today. Not an affordability problem:
-      `readRepairableBuildings` already filters on `township.canAffordRepair`
-      (township.ts) before offering anything.
-      **Lead, not a conclusion:** `repairBuilding(building, render?)`
-      (township.d.ts:723) takes only the building, while efficiency is measured
-      per biome via `biome.getBuildingEfficiency(building)` (:44) and there is a
-      separate `getBuildingEfficiencyInBiome` (:494). A building present in
-      several biomes could be repaired in one and measured in another. Settle it
-      by measurement.
-      Whatever the cause, this is the fourth loop of the same shape today
-      (Agility stop/run, Alt Magic cast/stop, equip/revert, and this): an action
-      that reports and retries forever while the world does not move. The
-      `StuckEquipWatch` pattern -- bound the retry, report the transition once,
-      name what did not change -- applies if the root cause proves unreachable.
+      "efficiency":85} -> {identical}`. Root cause found and fixed, not bounded.
+      `Township.repairBuilding(building, render?)` (township.d.ts:723) is the
+      game's own button callback and reads `currentTownBiome` (:423) for the
+      biome, opening with `if (biome === undefined) return;`. The agent never
+      opens the town page, so that early return was *every* repair it ever made:
+      nothing spent, nothing changed, nothing thrown. `canAffordRepair(building,
+      biome)` (:691) does take the biome, and kept truthfully answering yes
+      about a biome the repair would never look at -- so the offer stayed valid
+      and the reflex retried forever. The biome lead in this entry was half
+      right: the biome is the problem, but it is dropped on the way in rather
+      than crossed on the way out.
+      `buildTownshipBuilding` had already met this with `buildBuilding` and
+      solved it; that scoping is now a shared `withTownBiome` helper both paths
+      use. `repairAllBuildings` was never affected -- it iterates every biome
+      itself.
+      Settled without an eval channel by reading the shipped game: the Steam
+      build loads `steam.melvoridle.com`, and the brotli-compressed township
+      bundle sits in the nw.js HTTP cache. See `learnings/mod-api.md`.
 
 - [x] **The sell reflex ate the food chain** — S. Live log, three consecutive
       lines: `cooking.cook ok`, `reflex.liquidateSurplus fired`,

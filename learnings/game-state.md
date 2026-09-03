@@ -1045,3 +1045,45 @@ that did not land instead of reporting `ok`.
 Worth stating plainly because it is the reusable half: **"is this cheap enough to do every tick"
 was the wrong question.** The precondition already walked the whole offered list on every call
 and threw the answer away. The fix was not to add a check, it was to stop discarding one.
+
+## A button callback takes its real argument from the screen, and the screen is empty
+
+`Township.repairBuilding(building, render?)` (township.d.ts:723) takes a building and no biome.
+It is a *button callback*, so the biome comes from `currentTownBiome` (:423) — the game's own
+source opens the method with `if (biome === undefined) return;`. The agent never opens the town
+page, so that early return was every repair it ever made. Once a minute, all day:
+
+```
+reflex.repairTownship: state unchanged after call:
+{"buildingId":"melvorF:Miners_Pit","biomeId":"melvorF:Mountains","count":1,"efficiency":85}
+ -> {identical}
+```
+
+Nothing spent, nothing changed, nothing thrown, and the game emitted no notification a mod could
+see. `act`'s before/after diff was the only thing in the system that noticed at all.
+
+Three things worth keeping.
+
+**The affordability check was the alibi.** `canAffordRepair(building, biome)` (:691) *does* take
+the biome, and answered truthfully — about a biome the repair would never look at. So the reader
+kept offering the building, the reflex kept picking it, and every layer above the failure was
+behaving correctly. Two functions on the same object, one taking the biome and one reading it
+from the page, is the whole bug; the signatures give no hint that they disagree.
+
+**We had already met this and forgotten.** `buildBuilding` has exactly the same shape, and
+`buildTownshipBuilding` had been setting and restoring `currentTownBiome` around it, with a
+comment, for months. Repair was written next to it and did not inherit the lesson. It is now one
+`withTownBiome` helper both call, so the next such method is a one-line change rather than a
+rediscovery.
+
+**Check the sibling before writing a guard.** `repairAllBuildings` (:492) iterates `this.biomes`
+itself and was never affected, and `repairAllBuildingsInCurrentBiome` (:488) has the same early
+return as the single-building path. The three differ precisely in how they get a biome. A
+"Repair All" that quietly worked while single repair quietly did not is the sort of thing that
+makes a measurement look non-deterministic.
+
+The generalisation, and it is the same one the equip loop produced: **when a call reports success
+or silence and the world does not move, ask what the method reads that it does not take.** For a
+UI-driven engine that is nearly always a selection — the open page, the selected biome, the
+selected spell, the selected item — and it is nearly always absent for an agent that never
+clicks. `learnings/mod-api.md` has how to read the shipped source to settle it in ten seconds.

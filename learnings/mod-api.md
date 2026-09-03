@@ -209,3 +209,45 @@ plain browser where Node is absent.
 Related: `localhost` and `127.0.0.1` are not interchangeable in a packaged
 Chromium — name resolution, IPv6 vs IPv4, and PNA classification can each
 differ, and every failure looks identical. Try both.
+
+## The shipped game source is on disk, and it settles what the typings cannot
+
+Four loops of the same shape were found in one day, and every one of them ended
+in the same place: the typings say what a method *takes*, never what it *reads*.
+`repairBuilding(building, render?)` (township.d.ts:723) looks total. It is not —
+it reads `currentTownBiome` and returns when nothing is selected. No signature
+can express that, and no amount of staring at a `.d.ts` will.
+
+The game's own JavaScript answers it in ten seconds, and it is already on this
+machine. The Steam build is an nw.js shell that loads the real game over HTTPS,
+so there is no game JS under `package.nw` — but there is in the nw.js HTTP cache:
+
+```
+%LOCALAPPDATA%\Melvor Idle\User Data\Default\Cache\Cache_Data
+```
+
+Entries are **brotli**, so a plain `grep` over that directory finds nothing and
+looks like proof the source is not there. It is; decompress first. `data_0`..
+`data_3` are locked while the game runs — skip them, the payloads are `f_*`:
+
+```python
+import os, brotli
+d = os.path.expandvars(r"%LOCALAPPDATA%\Melvor Idle\User Data\Default\Cache\Cache_Data")
+for name in os.listdir(d):
+    try: raw = open(os.path.join(d, name), 'rb').read()
+    except OSError: continue          # data_* are held open by the running game
+    try: body = brotli.decompress(raw)
+    except Exception: continue
+    if b'repairBuilding' in body: print(name, len(body))
+```
+
+That found `township.js` — readable, unminified v1.3.1 source, ~200KB — and the
+bug was the first line of the method. Confirming from the same file that
+`repairAllBuildings` iterates `this.biomes` itself, so the batch path was never
+affected, took another ten seconds; guessing at that would have cost an hour and
+a wrong guard.
+
+Read-only, and it is the *shipped* build rather than a published repo, so it
+matches the version the agent is actually running (`gameVersion` stamps which).
+Reach for it whenever the question is "what does this method read that it does
+not take" — which is most of the questions that produce a silent no-op.
