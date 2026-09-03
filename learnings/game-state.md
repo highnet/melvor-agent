@@ -1087,3 +1087,121 @@ or silence and the world does not move, ask what the method reads that it does n
 UI-driven engine that is nearly always a selection — the open page, the selected biome, the
 selected spell, the selected item — and it is nearly always absent for an agent that never
 clicks. `learnings/mod-api.md` has how to read the shipped source to settle it in ten seconds.
+
+## Half the loops of this shape never fail — they succeed, over and over, from the same place
+
+Building the generic detector for the four loops started from a stated premise: that every one
+of them produced a truthful `no_state_change` on its first call, and that a ledger in `act`
+keyed on `(name, JSON(before))` would bound all four. `data/logs/*.jsonl` says that is true of
+two of them and false of two.
+
+The two that fail as expected:
+
+```
+altMagic.cast failed (no_state_change) [5/5]  ×5 in 15s, then abandoned and re-planned
+reflex.repairTownship: state unchanged after call: {...,"efficiency":85} -> {identical}  ×389
+```
+
+The two that do not fail at all:
+
+```
+equipment.equip ok — itemId "melvorF:Staff_of_Air" -> "melvorD:Steel_Scimitar"   every ~3s, 40min
+agility.run ok — {"active":false,...} -> {"active":true,...}                     every 6s, zero XP
+```
+
+Both `ok` readings are *correct*. The weapon really was swapped; Agility really did start. What
+neither reading can say is that the same thing will be needed again in three seconds. The tell is
+in the evidence already being recorded and nowhere else: **the `before` is byte-identical on every
+pass**, so the change lands and something puts it back. Work being redone looks exactly like work
+being done, one call at a time.
+
+So the detector is two ledgers rather than one, both in `act`, both keyed on `(name,
+JSON(before))`, both reporting once on the transition:
+
+- a run of `no_state_change` against an unmoved projection — five, matching
+  `ACTION_FAILURE_LIMIT`, because a higher threshold could never be reached by an objective tier
+  that abandons at five;
+- a run of `ok` from an identical starting state — five inside sixty seconds. The window is the
+  whole discriminator: a building degrading and being repaired again from the same efficiency is
+  correct and arrives minutes apart, while two tiers fighting over one equipment slot repeat in
+  seconds.
+
+Three things worth keeping.
+
+**The premise was checkable and nobody had checked it.** The claim "all four produced a
+no_state_change" had been made from memory of what the failures looked like, and four `grep`s of
+the day's logs settled it. `grep -oh '"action":"[a-z.]*","reason":"no_state_change"' *.jsonl |
+sort | uniq -c` also turned up a fifth instance nobody had ever investigated —
+`reflex.refillFood`, 232 identical no-change warnings — which is the same bug in a reflex that
+had been dismissed as noisy.
+
+**A key that never repeats is a detector that never fires.** Most projections are stable ids and
+counts, but `equipment.eatFood` carries live hitpoints, `combat.loot` the pending drop count, and
+the mastery projection pool XP. A loop in one of those moves its key every tick and would have
+disabled the detector silently — the same class of bug as the one being caught. It is covered by
+a second, much looser counter: consecutive no-change for the action whatever the projection,
+reported at forty, on the grounds that a moving projection is weaker evidence and deserves a
+higher bar rather than none.
+
+**Report, do not refuse.** A legitimately retried action — waiting on a respawn, a cooldown, a
+tick boundary — produces the identical shape, and an adapter that starts declining real work is
+worse than one that is noisy. `StuckEquipWatch` keeps the one refusal, because it knows something
+`act` does not and must not: which item the *reflex* asked for. The adapter's evidence must not
+depend on which tier issued the call.
+
+## The audit that follows from it: what every button callback reads that it does not take
+
+Every `perform` in the adapter was checked against the shipped v1.3.1 source where the nw.js
+cache holds it (`learnings/mod-api.md` has the how), and against the typings elsewhere. The
+question is always the same: what does this method read that it does not take?
+
+**Verified clean against the shipped source** — every one takes everything it needs:
+`Bank.processItemSale`, `buryItemOnClick`, `processItemOpen`, `claimItemOnClick`,
+`upgradeItemOnClick`, `toggleItemLock`; `Player.equipFood`, `changeEquipmentSet`, `togglePrayer`,
+`setAttackStyle`, `selectAttackSpell`, `toggleCurse`, `toggleAurora`; `CombatManager.selectMonster`,
+`selectDungeon`, `startEvent`; `Cartography.startAutoSurvey`, `startMakingPaper`,
+`createNewMapForDigSite`; `Township.increaseHealth`; `Game.selectRandomLevelCapIncrease`.
+
+One nuance rather than a bug: `Player.equipFood` and `Player.eatFood` both work on
+`this.food.currentSlot`, i.e. `EquippedFood.selectedSlot` (equippedFood.d.ts:5) — a UI selection.
+They are consistent with each other and with the adapter's projection, so the agent equips and
+eats from the same slot whichever one is selected. `EquippedFood.equip` itself is not in the
+readable half of the cache, so "equip targets the selected slot" is inference from `eatFood`'s
+source, not proof.
+
+**One new finding, fixed.** `Township.buildBuilding(building)` (township.d.ts:722) reads *two*
+selections, not one. The biome was already known. The second is the quantity:
+
+```js
+const upgradeQty = this.upgradeQty > 0 ? this.upgradeQty : this.getMaxAffordableBuildingQty(building, biome);
+const qtyToBuild = Math.min(this.getBuildingCountRemainingForLevelUp(building, biome), upgradeQty);
+```
+
+`upgradeQty` (township.d.ts:439) is the town page's 1 / 5 / MAX dropdown, and MAX is stored as
+`-1`. It defaults to 1, so nothing has gone wrong yet — but a human clicking MAX once would turn
+every later agent build into "spend everything affordable", which is precisely the outcome
+`BUILD_RESERVE_MULTIPLE` exists to prevent and cannot see coming: the reserve proves the town can
+afford four and the call then buys as many as it likes. Now pinned to 1 and restored, the shape
+`withTownBiome` established. `shop.buyItemOnClick` had already cost a real objective for the same
+reason — an objective that bought one of twenty-five shards and reported success.
+
+**Three remedies, and which to reach for.** Scope-and-restore (`withTownBiome`,
+`withBuildQuantity`, `shop.buyQuantity`) when the selection is a mechanical detail the agent knows
+the right value for. Set-then-act (`selectRecipeOnClick` before `createButtonOnClick`,
+`onRockClick` before `start`) when the selection is the thing being chosen. Refuse
+(`cooking.passive`, whose precondition declines when `selectedRecipes.get(category)` is absent)
+when the selection is a real choice nothing should make on the player's behalf. All three are in
+use; the failure mode is reaching for none of them.
+
+**Unverified, listed rather than guessed.** The nw.js cache decompresses to 17 files (~2.9 MB) —
+Bank, Player, CombatManager, Cartography, Township, Game and the skill base classes. Everything
+else lives in `data_0`..`data_3`, which are held open by the running game. So these were checked
+against the typings and the adapter's own call sequence only: `Agility.buildObstacle`, Archaeology
+(`startDigging`, `setMapAsActive`, `setToolAsActive`), Farming (`unlockPlotOnClick`, `harvestPlot`,
+`plantPlot`, `compostPlot`), Cooking (`startPassiveCooking`, `onCollectStockpileClick`),
+`Astrology.studyConstellationOnClick`, `Thieving.startThieving`, `ArtisanSkill.createButtonOnClick`,
+Alt Magic's selection callbacks, `PotionManager.usePotion`, `SlayerTask.selectTask`,
+`SkillTree.unlockNode`, `Shop.buyItemOnClick`, `CombatLoot.lootAll`, the Township task and trader
+conversions, and the raid callbacks. Each either passes everything explicitly or has the adapter
+set the selection immediately before the call — structurally protected, not proven. The way to
+settle any of them is to close the game once and decompress the cache again.

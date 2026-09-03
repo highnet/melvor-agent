@@ -383,6 +383,39 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Observability
 
+- [x] **Nothing counted a repeated failure, so four loops each cost a day** — M.
+      `act` now keeps two ledgers, both keyed on `(name, JSON(before))` and both
+      reporting once on the transition: a run of `no_state_change` against an
+      unmoved projection (five, matching `ACTION_FAILURE_LIMIT`), and a run of
+      `ok` from an identical starting state (five inside sixty seconds), which
+      is the shape the equip and Agility loops actually had — they never failed.
+      A third counter, at forty, covers a projection that moves every tick and
+      would otherwise disable the detector silently. Reports, never refuses:
+      a legitimately retried action looks the same, and an adapter that declines
+      real work is worse than one that is noisy. Written up in
+      `learnings/game-state.md`.
+- [ ] **The stuck ledgers do not ride out on the report** — S. Their finding is
+      appended to the `ActionResult` detail, which both tiers log, so it reaches
+      `data/logs/*.jsonl` — but the policy tier puts the detail in the structured
+      payload rather than the message, so a `STUCK` line is greppable and not
+      visible on the panel. `readAdapterFailures()` already ships a counted list
+      of guarded-read failures to the report; a stuck action belongs in the same
+      place, under a site name that says so rather than "guarded read failed at".
+- [ ] **`shop.buyItemOnClick` leaves `buyQuantity` where the agent set it** — S.
+      The adapter sets `game.shop.buyQuantity = quantity` and never restores it,
+      so a human's next shop click buys whatever the agent last asked for. Same
+      argument as `withTownBiome` and `withBuildQuantity`, which both restore;
+      the shop path predates the helper shape. Not a correctness bug for the
+      agent, only a surprise for the operator.
+- [ ] **Two thirds of the button-callback audit could not be finished** — M. The
+      nw.js cache only decompresses to 17 files while the game runs (Bank,
+      Player, CombatManager, Cartography, Township, Game, skill bases); Cooking,
+      Farming, Agility, Archaeology, Thieving, Astrology, Alt Magic, Potions,
+      Slayer and the shop live in the block files the running game holds open.
+      Those `perform` calls are structurally protected — each passes everything
+      explicitly, or the adapter sets the selection immediately before — but not
+      proven. Re-dump the cache once with the game closed and finish the sweep;
+      `learnings/game-state.md` lists exactly which methods are outstanding.
 - [x] **`get_recent_activity` reads the last report, not the durable log** *(2×)* —
       S. Records *are* written to `data/logs/*.jsonl` and never read back, which
       is why every post-mortem in this session hit "Log is empty".

@@ -251,3 +251,37 @@ Read-only, and it is the *shipped* build rather than a published repo, so it
 matches the version the agent is actually running (`gameVersion` stamps which).
 Reach for it whenever the question is "what does this method read that it does
 not take" — which is most of the questions that produce a silent no-op.
+
+## Node decompresses that cache with no dependencies, and it holds less than you hope
+
+The recipe above uses Python's `brotli`. Node needs nothing installed —
+`zlib.brotliDecompressSync` is built in, which matters when the question is "what does this
+method read" and the answer should cost thirty seconds:
+
+```js
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { brotliDecompressSync } from 'node:zlib';
+import { join } from 'node:path';
+
+const dir = join(process.env.LOCALAPPDATA, 'Melvor Idle', 'User Data', 'Default', 'Cache', 'Cache_Data');
+for (const name of readdirSync(dir)) {
+  let body;
+  try { body = brotliDecompressSync(readFileSync(join(dir, name))); } catch { continue; }
+  writeFileSync(join(out, `${name}.js`), body);
+}
+```
+
+The important half is what comes back. With the game running, 17 entries decompress to ~2.9 MB:
+Bank, Player, CombatManager, Cartography, Township, Game, and the `Skill` / `GatheringSkill` /
+`CraftingSkill` base classes. Cooking, Farming, Agility, Archaeology, Thieving, Astrology, Alt
+Magic, Potions, Slayer and the shop are **not there** — they are small enough to live inside the
+block files `data_0`..`data_3`, which are held open by the running game and cannot be read.
+
+So an audit that spans the whole adapter cannot be finished from a running game, and the failure
+mode is quiet: `grep` finds nothing and reads as "this method has no such early return" rather
+than "this file is not in the readable half". Check that the class you are looking for is present
+before concluding anything from its absence:
+
+```sh
+grep -l "class Cooking" *.js || echo "not in the readable half — close the game and re-dump"
+```
