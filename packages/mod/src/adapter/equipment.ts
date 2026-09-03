@@ -345,6 +345,34 @@ export function readEquipCandidates(): Candidate[] {
 }
 
 /**
+ * The one equipment stat where a larger number is worse.
+ *
+ * `attackSpeed` is an `EquipStatKey` (character.d.ts:445-446) and sits in every
+ * weapon's `equipmentStats` (item.d.ts:253) alongside the bonuses, but it is
+ * milliseconds *between* swings: 2,400 beats 3,000. It is also two to three
+ * orders of magnitude larger than anything else an item carries — attack and
+ * defence bonuses are single- and double-digit — so a blind sum does not merely
+ * lean on it, it *is* it. For two weapons `statScore` was the ratio of their
+ * attack intervals and essentially nothing else, ranked backwards, which makes
+ * the slowest weapon in the bank the best one in the bank, permanently.
+ *
+ * That is not a hypothetical. It is half of the equip loop of 2026-09-03: an
+ * `equip_item` objective put a Steel Scimitar (2,400ms) into the weapon slot
+ * every policy tick and the gear reflex put a Staff of Air (3,000ms, and the
+ * live snapshot's `attackInterval` confirms it) back on the next reflex tick,
+ * 3,000/2,400 = 1.25 clearing the reflex's 1.2 margin in one direction and
+ * failing it in the other. Both calls were verified `ok`; forty action slots a
+ * minute went into the swap for forty minutes.
+ *
+ * Excluded rather than negated. Negating it would let it dominate in the other
+ * direction and rank gear by speed alone, which is the same defect mirrored;
+ * `statScore` is documented as crude, and the honest minimum is that it stops
+ * counting a cost as a benefit. Where a key-by-key comparison is made instead,
+ * the key is compared in its own direction — see {@link dominatesEquipmentStats}.
+ */
+const LOWER_IS_BETTER_STAT = 'attackSpeed';
+
+/**
  * A single comparable number for a piece of gear.
  *
  * Crude on purpose. A real comparison depends on combat style, damage type and
@@ -354,7 +382,9 @@ export function readEquipCandidates(): Candidate[] {
  */
 function statScore(item: EquipmentItem): number {
   const stats = item.equipmentStats;
-  return stats.reduce((sum, stat) => sum + (typeof stat.value === 'number' ? stat.value : 0), 0);
+  return stats
+    .filter((stat) => stat.key !== LOWER_IS_BETTER_STAT)
+    .reduce((sum, stat) => sum + (typeof stat.value === 'number' ? stat.value : 0), 0);
 }
 
 /** The minimum a modifier-bearing item must show to be worth naming here. */
@@ -408,6 +438,13 @@ export function bearsModifiers(item: {
  * cannot do that: if a single stat is lower the answer is no, whatever the
  * total says. Missing keys count as zero, so a stat only the candidate has must
  * still be non-negative.
+ *
+ * `attackSpeed` is compared the other way round, because it is the one key
+ * where a larger number is worse: see {@link LOWER_IS_BETTER_STAT}. Comparing
+ * it like the rest would say a slower weapon dominates a faster one, which is
+ * how the sum next door came to rank every weapon by how long it takes to
+ * swing. A missing key is zero on both sides, so an item with no attack speed
+ * at all — an amulet, a skilling outfit — is unaffected either way.
  */
 export function dominatesEquipmentStats(
   candidate: readonly { key: string; value: number }[],
@@ -420,7 +457,9 @@ export function dominatesEquipmentStats(
 
   const keys = new Set([...candidate, ...worn].map((stat) => stat.key));
   for (const key of keys) {
-    if (statValue(candidate, key) < statValue(worn, key)) return false;
+    const mine = statValue(candidate, key);
+    const theirs = statValue(worn, key);
+    if (key === LOWER_IS_BETTER_STAT ? mine > theirs : mine < theirs) return false;
   }
   return true;
 }
@@ -923,6 +962,9 @@ export function readGearUpgrades(): {
     if (penalisesAttackStyle(item.equipmentStats, player.attackType)) continue;
 
     if (current.itemId === null) {
+      // An empty slot is left alone by the rule below on purpose. Arming an
+      // unarmed character is not a change of strategy, and the doc above says
+      // why: there is nothing on the other side of the trade.
       emptySlot.push({
         itemId: item.id,
         slotId: slot.id,
@@ -931,6 +973,25 @@ export function readGearUpgrades(): {
       });
       continue;
     }
+
+    // A weapon of a different attack type is a *style switch*, not an upgrade,
+    // and the reflex tier must not make that call. `readEquipCandidates` says
+    // so already and offers such a weapon to the planner labelled "a strategy
+    // choice rather than an upgrade" -- this reader, which feeds a reflex that
+    // acts without asking, had no notion of one at all, and that is the other
+    // half of the equip loop of 2026-09-03. An `equip_item` objective put a
+    // Steel Scimitar into the weapon slot every policy tick (3,000ms,
+    // agent.ts:220) and this list handed the reflex the displaced Staff of Air
+    // back as an upgrade on the next reflex tick (1,000ms, :231). Both tiers
+    // were doing exactly what they were told; nothing in the game reverted
+    // anything, and the adapter's `ok` was truthful on every one of the forty
+    // calls a minute. The bank counts never moved because each weapon was
+    // removed and returned inside the same second.
+    //
+    // Excluding it settles the loop in both directions: with the staff worn the
+    // scimitar is not offered either, so the planner's choice -- whichever way
+    // it went -- is the one that stands.
+    if (item instanceof WeaponItem && item.attackType !== player.attackType) continue;
 
     const worn = game.items.equipment.getObjectByID(current.itemId);
     if (worn === undefined) continue;

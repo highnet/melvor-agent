@@ -780,7 +780,13 @@ export class Agent {
       if (!wasStuck && this.stuckEquip.isStuck(attempted.itemId)) {
         this.log.error(
           'policy',
-          `equipping ${attempted.itemId} into ${attempted.slotId} verified and was then undone three times running (slot now holds ${worn ?? 'nothing'}); the game is reverting it for a reason nothing reports, so it will not be retried`,
+          // Names the suspects rather than blaming the game. The first version
+          // of this line said "the game is reverting it", and it was wrong: the
+          // loop it was written for was this agent's own objective tier and
+          // reflex tier equipping different weapons into one slot on different
+          // clocks. Whatever took the slot back is worth looking for before it
+          // is assumed.
+          `equipping ${attempted.itemId} into ${attempted.slotId} verified and was then undone three times running (slot now holds ${worn ?? 'nothing'}); something is taking the slot back between ticks — check whether the running objective wants a different item there before suspecting the game — so it will not be retried`,
         );
       }
     }

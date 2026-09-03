@@ -789,21 +789,22 @@ export function fillEmptySlots(
     /**
      * Equips that reported success and did not stick, so must not be retried.
      *
-     * Observed live: `reflex.upgradeGear` equipped a Steel Scimitar over a
-     * Staff of Air roughly every 1.5 seconds for minutes on end. Every call
-     * returned `ok` with a real before/after diff -- the adapter's own read of
-     * `player.equipment.equippedItems` genuinely showed the scimitar after the
-     * call -- and yet the next tick read the staff again, and the bank count of
-     * scimitars never moved. Something reverts the slot between the call and
-     * the following tick, unlogged, and nothing in the typings says what.
+     * Observed live on 2026-09-03: a Steel Scimitar and a Staff of Air traded
+     * the weapon slot for forty minutes, roughly forty equips a minute, every
+     * one of them a verified `ok`. The cause turned out to be here rather than
+     * in the game: an `equip_item` objective wanted the scimitar and this
+     * reader offered the displaced staff straight back as an upgrade, because
+     * it had no notion of a style switch and because `statScore` counted attack
+     * speed as a benefit. Both are fixed in `readGearUpgrades`, so this list no
+     * longer contains the other tier's weapon.
      *
-     * That cause is still open. This does not paper over it: it converts an
-     * unbounded loop that reads as success into one reported refusal, which is
-     * the difference between an agent that looks busy and an agent that says
-     * what is wrong. The action slot was being spent forty times a minute on a
-     * swap the game was undoing, and no tier above the adapter could see it --
-     * the same shape as the Alt Magic cast/stop loop and the Agility
-     * stop/run loop before it.
+     * The watch is kept regardless. Two tiers wanting different things in one
+     * slot is a shape, not an incident -- the game's own
+     * `Player.checkEquipmentRequirements` can take a slot back too -- and no
+     * tier above the adapter can see it, because every individual call is
+     * honestly `ok`. This converts an unbounded loop that reads as success into
+     * one reported refusal, the same shape as the Alt Magic cast/stop loop and
+     * the Agility stop/run loop before it.
      */
     stuckEquipIds: readonly string[];
   },

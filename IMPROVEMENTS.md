@@ -177,27 +177,46 @@ Township summary reported 0% health while the repair reflex correctly computed
       equip requirements and ammo types, and whether a goal whose equipment is
       unobtainable should say so rather than sitting at 15% forever.
 
-- [ ] **What undoes a verified equip** — S. `equipment.equip` returns a truthful
-      `ok`: the adapter reads `player.equipment.equippedItems`, `act` fails any
-      call whose `changed` predicate does not hold, and the Steel Scimitar
-      genuinely was in the slot when it looked. One tick later the Staff of Air
-      is back and the bank count of scimitars has not moved. The snapshot reads
-      the same `equippedItems`, so the two cannot disagree at one instant, and
-      `equipRequirements` is already checked in the precondition. Not stated in
-      the typings. **The experiment:** equip, then read the slot on each of the
-      next few ticks to see how long it survives, and test whether an Alt Magic
-      `selectedSpell` or a selected attack spell forces a magic weapon back --
-      Just Learning was selected throughout. `StuckEquipWatch` stops the retry
-      after three reversions; it does not explain them.
+- [x] **What undoes a verified equip** — S. Nothing in the game does. Two tiers
+      of this agent were equipping different weapons into one slot on different
+      clocks, and the log said so plainly once it was read for *periods* rather
+      than for content. `equipment.equip ok — Staff_of_Air -> Steel_Scimitar`
+      recurs at 2,986–3,002ms, which is `POLICY_INTERVAL_MS` and not the
+      1,000ms reflex throttle; only the objective executor writes an `adapter`
+      line, the reflex tier writes `reflex.X fired` and nothing else; every
+      adapter line reads `before: Staff_of_Air`; and the journal holds the
+      objective doing the asking (`equip_item`, Steel Scimitar, `successWhen:
+      []`, aborted on its 3-minute budget). The swapping stops within half a
+      second of that objective being replaced. So the record's attribution was
+      the wrong way round — `reflex.upgradeGear` was putting the *staff* back,
+      and its log line names no item.
+      Two defects let it: `readGearUpgrades` had no notion of a **style
+      switch**, which `readEquipCandidates` has had all along and hands to the
+      planner labelled "a strategy choice rather than an upgrade"; and
+      `statScore` summed **`attackSpeed`** as a benefit — milliseconds per
+      swing, where lower is better, at 2,400–3,000 against single-digit
+      bonuses, so for two weapons the score *was* the attack interval, ranked
+      backwards. 3,000/2,400 = 1.24 clears the reflex's 1.2 margin one way and
+      fails it the other, which is exactly the one-sided swap observed. Both
+      fixed; `attackSpeed` is now compared in its own direction by
+      `dominatesEquipmentStats` too. `StuckEquipWatch` is neither wrong nor
+      unnecessary — it bounded the loop and the shape recurs, the game's own
+      `checkEquipmentRequirements` included — but its comments asserted a cause
+      that was false and its operator message blamed the game; both corrected.
+      It was never live-confirmed and still has not been.
 
-- [ ] **A spell's consumed item is chosen once and never revisited** — S. `startAltMagic`
-      short-circuits its precondition on "already casting", so `chooseSelection`
-      runs only at start. Observed today: the rune guard shipped and reloaded,
-      and the agent kept eating Nature Runes anyway because the selection saved
-      before the fix survived in `selectedConversionItem`. Only a stop/start
-      cleared it. The same staleness bites when the chosen stack runs out or
-      becomes guarded mid-objective, which Arrow Shafts will do in about three
-      hours at 1,800 casts/h.
+- [x] **A spell's consumed item is chosen once and never revisited** — S. Fixed.
+      `chooseSelection` now also answers whether the game's *live* selection is
+      still admissible, and the "already casting" short-circuit is conditional
+      on that answer. Deliberately re-selects on **staleness, not preference**:
+      gone from the bank, newly covered by a sell guard, or absent altogether —
+      never merely "something cheaper appeared", which would churn the fuel on
+      every tie broken differently and disturb a running cast for nothing. It
+      costs no extra work, which is the whole argument for doing it every call:
+      the precondition already walked the offered list on every call and threw
+      the answer away. The projection now carries the selection alongside the
+      spell so `act` can prove a refresh landed — `selectItemOnClick` is a UI
+      callback whose behaviour against a running cast the typings do not state.
 
 - [x] **Whether `getDoublingChance` is already inside
       `modifyPrimaryProductQuantity`** — S. Not stated in the typings. Settle it

@@ -1,22 +1,38 @@
 /**
  * Remembers equips that report success and do not take effect.
  *
- * The failure this exists for, measured live: `reflex.upgradeGear` equipped a
- * Steel Scimitar over a Staff of Air about every 1.5 seconds, indefinitely.
- * Every call returned `ok` with a genuine before/after diff, because the
- * adapter's read of `player.equipment.equippedItems` really did show the
- * scimitar immediately after the call. By the next tick the staff was back and
- * the bank's scimitar count had not moved. Something undoes the slot between
- * the call and the following tick without logging anything, and the typings do
- * not say what.
+ * The failure this exists for, measured live on 2026-09-03: a Steel Scimitar
+ * and a Staff of Air traded the weapon slot for forty minutes, roughly forty
+ * equips a minute, every one of them a verified `ok` with a genuine before/after
+ * diff. Both readings were true; what nothing above the adapter could see was
+ * that the *next* look would undo it.
  *
- * `ActionResult` cannot catch this on its own. Its contract is that a verified
- * `ok` carries real evidence of a change, and it did -- the change was real and
- * then it was reverted. Detecting that needs a second look on a later tick,
- * which is what this does and why it lives above the adapter.
+ * The cause was found afterwards and is written up in `learnings/game-state.md`.
+ * It is worth naming here because the first note in this file guessed wrong:
+ * nothing in the game reverted anything. Two tiers of this agent were equipping
+ * different weapons into the same slot on different clocks -- an `equip_item`
+ * objective on the 3,000ms policy tick and `reflex.upgradeGear` on the 1,000ms
+ * reflex tick -- and the reflex's half left no adapter line in the log, so the
+ * loop read as one action being undone by the game. Both halves are fixed in
+ * `equipment.ts`: the gear reader no longer offers a *style switch* as an
+ * upgrade for a reflex to act on, and `statScore` no longer counts attack speed
+ * as a benefit.
  *
- * Deliberately not a fix for the reversion, whose cause is still unknown. It
- * turns an unbounded loop that reads as success into one reported refusal.
+ * This is kept anyway, and not as a memorial. `ActionResult` cannot detect a
+ * confirmed-then-reverted equip on its own -- its contract is that a verified
+ * `ok` carries real evidence of a change, and it did; the change was real and
+ * then it was taken back. Catching that needs a second look on a later tick,
+ * which is what this does and why it lives above the adapter. Any future
+ * disagreement of the same shape -- another tier, or the game's own
+ * `Player.checkEquipmentRequirements` (player.d.ts:139), which unequips gear
+ * whose requirements stop being met -- lands here as one reported refusal
+ * rather than as an unbounded loop that reads as success.
+ *
+ * What it can say is bounded by what it is told. `lastEquipAttempt` is set only
+ * on the reflex's own equips, so the item it names is the one the *reflex* put
+ * on, which in the 2026-09-03 loop was the staff and not the scimitar. It
+ * reports that an equip did not hold; it does not attribute the cause, and the
+ * message must not either.
  */
 export class StuckEquipWatch {
   /** Items whose equip was confirmed and then undone, and the tally so far. */
