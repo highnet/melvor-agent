@@ -56,6 +56,34 @@ function hpFloorFor(combat: { autoEatThreshold: number }, foodRemaining: number)
 const FOOD_FLOOR = 5;
 
 /**
+ * The fraction of max HP a fight may be *started* at.
+ *
+ * There was no such floor, and the gap killed the character twice in eight
+ * minutes. From the log, deaths 56 and 57, each three lines in the same second:
+ *
+ *     23:11:32 error   character died (1 since last check); clearing the objective
+ *     23:11:32 planner plan advanced (1 left): Fight Sweaty Monster
+ *     23:11:32 adapter combat.engage ok — inCombat false -> true
+ *
+ * Death cleared the objective, the plan advanced to the next fight, and the
+ * executor engaged again *in the same second*, on a corpse's worth of health.
+ * The disengage floor below cannot help: it only runs `if (combat.inCombat)`,
+ * and this is the tick before that becomes true.
+ *
+ * Deliberately higher than the disengage floor, and that asymmetry is the whole
+ * point. Leaving a fight is an emergency judged on what is left; entering one is
+ * a choice, and the honest bar for choosing is "healthy", not "not yet dying".
+ * Hysteresis also stops a character hovering at the disengage floor from
+ * re-entering the moment it ticks a point above it, which is the shape of every
+ * other loop found today.
+ *
+ * Auto Eat does not make this unnecessary. It fires *during* a fight at its own
+ * threshold; it does nothing about starting one already below that threshold,
+ * which is exactly the state a death leaves behind.
+ */
+const ENGAGE_HP_FRACTION = 0.8;
+
+/**
  * Executes a `fight_monster` objective.
  *
  * This tier decides *whether to keep fighting*. It never decides whether a fight
@@ -145,6 +173,20 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
       kind: 'act',
       actions: [{ type: 'run_dungeon', dungeonId: params.dungeonId }],
       reason: `entering dungeon ${params.dungeonId}`,
+    };
+  }
+
+  // Health is checked here rather than beside the disengage floor above,
+  // because that branch is guarded by `if (combat.inCombat)` and this is the
+  // tick before it. Idle rather than act: HP regenerates on its own out of
+  // combat and the reflex tier eats, so waiting is what fixes this, and an
+  // objective that reported failure here would be abandoned and replanned into
+  // another fight at the same health.
+  if (hpFraction < ENGAGE_HP_FRACTION) {
+    return {
+      kind: 'idle',
+      reason: 'waiting_for_game',
+      detail: `HP ${(hpFraction * 100).toFixed(0)}% is below the ${ENGAGE_HP_FRACTION * 100}% needed to start a fight; waiting`,
     };
   }
 
