@@ -199,8 +199,10 @@ import {
   unlockAffordablePlots,
 } from './combat-reflex.js';
 import { DeathWatch } from './death-watch.js';
+import { JournalBuffer } from './journal.js';
 import type { Logger } from './logger.js';
 import { LoopStallWatch } from './loop-stall.js';
+import { type ObjectiveMetrics, objectiveDeltas, objectiveMetrics, snapshotGp } from './metrics.js';
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
@@ -258,8 +260,6 @@ const SUSPEND_TIMEOUT_MS = 600_000;
  * tick for over ten minutes without escalating.
  */
 const ACTION_FAILURE_LIMIT = 5;
-
-const GP_CURRENCY_ID = 'melvorD:GP';
 
 /**
  * Triggers the planner request schema accepts.
@@ -387,10 +387,10 @@ export class Agent {
   private stateBeforeSuspend: RunState | null = null;
 
   /** Objectives finished since the last report, shipped and then cleared. */
-  private pendingJournal: JournalEntry[] = [];
+  private readonly journal = new JournalBuffer();
 
   /** Metrics captured when the current objective began, for measured deltas. */
-  private objectiveStartMetrics: { totalLevel: number; gp: number; deaths: number } | null = null;
+  private objectiveStartMetrics: ObjectiveMetrics | null = null;
 
   /** Consecutive snapshot validation failures; reset by any success. */
   private snapshotFailures = 0;
@@ -931,7 +931,7 @@ export class Agent {
       // interval is worth more the earlier it is bought.
       buyTrivialUpgrades(
         {
-          gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+          gp: snapshotGp(snapshot),
           upgrades: readCheapPermanentUpgrades(),
         },
         (purchaseId) => buyShopPurchase(purchaseId, 1, isSuspended),
@@ -2084,7 +2084,7 @@ export class Agent {
       at: snapshot.capturedAt,
       totalLevel: snapshot.totalLevel,
       completionPercent: snapshot.completionPercent,
-      gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
+      gp: snapshotGp(snapshot),
       // What produced the progress, so a realised rate can be compared against
       // the rate the candidate advertised. Without it a sample records that
       // progress happened and not what caused it.
@@ -2107,7 +2107,7 @@ export class Agent {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return;
 
-    const gp = snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
+    const gp = snapshotGp(snapshot);
     // Deliberately *not* completionPercent, which was in this marker and is why
     // the detector never fired on a dead objective. Township ticks in the
     // background and nudges completion on its own, so a fight producing
@@ -2178,15 +2178,11 @@ export class Agent {
   }
 
   /** Metrics an objective's cost is measured against. Null when unreadable. */
-  private captureMetrics(): { totalLevel: number; gp: number; deaths: number } | null {
+  private captureMetrics(): ObjectiveMetrics | null {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return null;
 
-    return {
-      totalLevel: snapshot.totalLevel,
-      gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
-      deaths: this.deaths.deathsSinceStart,
-    };
+    return objectiveMetrics(snapshot, this.deaths.deathsSinceStart);
   }
 
   /**
@@ -2215,18 +2211,12 @@ export class Agent {
     this.objectiveStartMetrics = null;
     if (started === null) return;
 
-    const gp = snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0;
-
-    this.pendingJournal.push({
+    this.journal.record({
       objective,
       startedAt: this.objectiveStartedAt,
       endedAt: Date.now(),
       outcome,
-      deltas: {
-        totalLevel: snapshot.totalLevel - started.totalLevel,
-        gp: gp - started.gp,
-        deaths: Math.max(0, this.deaths.deathsSinceStart - started.deaths),
-      },
+      deltas: objectiveDeltas(started, objectiveMetrics(snapshot, this.deaths.deathsSinceStart)),
       note,
     });
   }
@@ -2239,8 +2229,7 @@ export class Agent {
    */
   private async pushReport(options: { stateOnly?: boolean } = {}): Promise<void> {
     const logs = this.log.drain();
-    const journalEntries = this.pendingJournal;
-    this.pendingJournal = [];
+    const journalEntries = this.journal.drain();
     const quiet = options.stateOnly === true || this.state === 'killed';
 
     const reply = await this.transport.report({
@@ -2278,7 +2267,7 @@ export class Agent {
       this.log.requeue(logs);
       // Entries survive a failed send for the same reason logs do: an outcome
       // that is never recorded is one the planner will propose again.
-      this.pendingJournal = [...journalEntries, ...this.pendingJournal];
+      this.journal.requeue(journalEntries);
       return;
     }
 
