@@ -40,7 +40,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
-- [ ] **A fight is offered at full price while the selected attack spell cannot be
+- [x] **A fight is offered at full price while the selected attack spell cannot be
       cast** — M. Every combat goal has been blocked all evening and nothing in
       the candidate list says so. Both Fight Leech objectives were abandoned with
       `Wind Strike is selected but the bank cannot pay for it (needs 1x Mind
@@ -59,6 +59,26 @@ Township summary reported 0% health while the repair reflex correctly computed
       established that the operator's UI selections are their state.
       Five goals depend on this: `ranged-20`, `defence-20`, `hp-40`, `prayer-20`,
       `first-dungeon`.
+      Fixed by making the executor's own precondition a reader.
+      `cannotAttackRefusal` becomes the exported `readCannotAttackReason`,
+      returning the refusal *and* the shortfall as items; `readUnfightableCombat`
+      turns that into one high-severity blocked line naming the spell, the rune
+      and the Runecrafting recipe that makes it, and `combatEnumeration`
+      withholds every fight, dungeon and combat event behind it. One line and
+      not two hundred: the blocked window is twelve, and the live report already
+      carried seventy low-severity fight lines competing for it.
+      Two further refusals were wrong, both settled by reading the shipped
+      `Player.attack` out of the nw.js cache rather than guessing. The magic cost
+      is `getRuneCosts` (player.d.ts:163), not raw `runesRequired` — it subtracts
+      the runes the equipped staff provides, which is why the refusal named one
+      rune while 253 of the other sat in the bank. And ranged ammunition is a
+      *type* comparison, not a count: counting quantity let 981 Bronze Arrows arm
+      a crossbow that fires bolts, and refused a Slingshot for a quiver the game
+      never looks at. `startCombatEvent` had no such precondition at all and now
+      has one.
+      The guard cannot starve its own precondition, and that was checked: runes,
+      ammunition and a different weapon are a Runecrafting candidate, the quiver
+      reflex and an equip candidate respectively — not one of them a fight.
 
 - [x] **`reflex.repairTownship` never succeeds and never stops** — S. Fired once
       a minute, indefinitely, always warning `state unchanged after call:

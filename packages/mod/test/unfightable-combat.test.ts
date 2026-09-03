@@ -70,8 +70,20 @@ const EMPTY_EQUIPMENT: FakeItem = { id: 'melvorD:Empty_Equipment', name: '' };
 interface Stance {
   attackType: string;
   weapon?: FakeWeaponItem;
-  /** The selected attack spell, and what the game bills for casting it. */
-  spell?: { name: string; costs: { item: FakeItem; quantity: number }[] };
+  /**
+   * The selected attack spell: what it *lists*, and what the game *bills*.
+   *
+   * Two fields on purpose. `runesRequired` is the printed cost and `costs` is
+   * what `Player.getRuneCosts` hands back after the equipped staff's provided
+   * runes are subtracted, and they differ for every staff in the game. A fake
+   * carrying one number could not tell the two readings apart, so reverting to
+   * the raw field would leave every test here green.
+   */
+  spell?: {
+    name: string;
+    runesRequired: { item: FakeItem; quantity: number }[];
+    costs: { item: FakeItem; quantity: number }[];
+  };
   quiver?: { item: FakeItem; quantity: number };
   /** Bank stock, by item id. */
   banked?: Record<string, number>;
@@ -127,6 +139,23 @@ function installStance(stance: Stance): void {
   );
 }
 
+/**
+ * Wind Strike as the character is actually holding it.
+ *
+ * The spell lists an Air Rune and a Mind Rune. The equipped Staff of Air
+ * provides the Air Rune, so `Player.getRuneCosts` bills only the Mind Rune --
+ * which is why the evening's refusal said `needs 1x Mind Rune` and not `needs
+ * 1x Air Rune, 1x Mind Rune` despite the bank holding 253 of the former.
+ */
+const WIND_STRIKE = {
+  name: 'Wind Strike',
+  runesRequired: [
+    { item: AIR_RUNE, quantity: 1 },
+    { item: MIND_RUNE, quantity: 1 },
+  ],
+  costs: [{ item: MIND_RUNE, quantity: 1 }],
+};
+
 /** Runecrafting as the character actually has it: the recipe that makes the rune. */
 const RUNECRAFTING = {
   'melvorD:Runecrafting': [
@@ -143,7 +172,7 @@ describe('a magic fight the bank cannot pay for', () => {
     installStance({
       attackType: 'magic',
       weapon: STAFF_OF_AIR,
-      spell: { name: 'Wind Strike', costs: [{ item: MIND_RUNE, quantity: 1 }] },
+      spell: WIND_STRIKE,
       banked: { 'melvorD:Air_Rune': 253 },
       recipes: RUNECRAFTING,
     });
@@ -171,7 +200,7 @@ describe('a magic fight the bank cannot pay for', () => {
     installStance({
       attackType: 'magic',
       weapon: STAFF_OF_AIR,
-      spell: { name: 'Wind Strike', costs: [{ item: MIND_RUNE, quantity: 1 }] },
+      spell: WIND_STRIKE,
       recipes: RUNECRAFTING,
     });
 
@@ -187,7 +216,7 @@ describe('a magic fight the bank cannot pay for', () => {
     installStance({
       attackType: 'magic',
       weapon: STAFF_OF_AIR,
-      spell: { name: 'Wind Strike', costs: [{ item: MIND_RUNE, quantity: 1 }] },
+      spell: WIND_STRIKE,
     });
 
     expect(readUnfightableCombat(221)[0]?.severity).toBe('high');
@@ -200,7 +229,7 @@ describe('a magic fight the bank cannot pay for', () => {
     installStance({
       attackType: 'magic',
       weapon: STAFF_OF_AIR,
-      spell: { name: 'Wind Strike', costs: [{ item: MIND_RUNE, quantity: 1 }] },
+      spell: WIND_STRIKE,
       banked: { 'melvorD:Mind_Rune': 523 },
       recipes: RUNECRAFTING,
     });
@@ -217,8 +246,10 @@ describe('a magic fight the bank cannot pay for', () => {
     installStance({
       attackType: 'magic',
       weapon: STAFF_OF_AIR,
-      // What the game bills once the staff is accounted for: no Air Rune.
-      spell: { name: 'Wind Strike', costs: [{ item: MIND_RUNE, quantity: 1 }] },
+      spell: WIND_STRIKE,
+      // Ten Mind Runes and not one Air Rune: payable on the bill, unpayable on
+      // the printed list. This is the assertion that fails the moment the
+      // reader goes back to `spell.runesRequired`.
       banked: { 'melvorD:Mind_Rune': 10, 'melvorD:Air_Rune': 0 },
     });
 
@@ -302,7 +333,11 @@ describe('when nothing produces the missing item', () => {
     installStance({
       attackType: 'magic',
       weapon: STAFF_OF_AIR,
-      spell: { name: 'Water Strike', costs: [{ item: AIR_RUNE, quantity: 1 }] },
+      spell: {
+        name: 'Water Strike',
+        runesRequired: [{ item: AIR_RUNE, quantity: 1 }],
+        costs: [{ item: AIR_RUNE, quantity: 1 }],
+      },
       recipes: {},
     });
 

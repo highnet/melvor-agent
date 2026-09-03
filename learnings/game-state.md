@@ -1251,3 +1251,57 @@ Three copies, and deliberately not one helper. `buyQuantity` and `upgradeQty` ar
 `currentTownBiome` is optional and must be restored to *absent* rather than to `undefined`, because
 the game reads an absent biome as "viewing all biomes". A single abstraction would have to carry
 that distinction into all three call sites to save five lines at each of them.
+
+## An executor precondition the candidate list cannot ask is a lie with a price on it
+
+Every combat goal stalled for an evening. Both Fight Leech objectives died on
+`Wind Strike is selected but the bank cannot pay for it (needs 1x Mind Rune)` while the
+candidate list carried `221. Fight Leech (Wet Forest, combat level 20) — 200 HP (defence 10),
+~84 kills/h, ~16,744 damage/h` as fully available, and a grep of the whole candidate text for
+"Wind Strike" or "Mind Rune" returned nothing. The refusal was correct, legible and useless: it
+arrives *after* the planner has spent its choice.
+
+The shape is not "a missing check". `combat.engage` had a precondition — the private
+`cannotAttackRefusal` — that no enumerator could ask, so a fact good enough to abandon an
+objective on was not good enough to be visible when the objective was picked. **A precondition
+worth refusing on is worth exporting**, because the two answers must come from one function or
+they diverge, and they diverge in the expensive direction every time: the game refuses, and
+nothing said it would.
+
+What made the repair cheap was prior art one list over. `Magic: Superheat II — Earth Rune from
+Runecrafting: Earth Rune` blocks *and names the producer*, and the same join turns "needs 1x
+Mind Rune" into a move. So the fights are withheld and one high-severity line explains them —
+one line, not two hundred, because the blocked window is twelve and two hundred copies would
+truncate every other diagnostic away. That is the same budget the food-reserve countdown was
+once lost to.
+
+Three details worth keeping, all read out of the shipped v1.3.1 build (`Player.attack` in the
+nw.js HTTP cache; `learnings/mod-api.md` has the brotli recipe) rather than guessed:
+
+- **`getRuneCosts` is the bill; `runesRequired` is the sticker price.** `Player.getRuneCosts`
+  (player.d.ts:163) swaps in `runesRequiredAlt` when combination runes are on and subtracts
+  `runesProvided`, the runes the equipped staff supplies free, flooring each rune at 1. Wind
+  Strike lists an Air Rune *and* a Mind Rune; with a Staff of Air the character owes only the
+  Mind Rune — which is exactly why the refusal named one rune while the bank held 253 of the
+  other. Pricing off the raw list would withhold every fight for a rune nobody owes.
+- **Ranged ammunition is a type check, not a count.** The game reads
+  `if (weapon.ammoTypeRequired === 4) break;` and then
+  `if (weapon.ammoTypeRequired !== quiver.ammoType) onRangedAttackFailure(quiver)`, and that
+  handler distinguishes `TOASTS_NO_AMMO` from `TOASTS_WRONG_AMMO`. Counting quantity alone let
+  981 Bronze Arrows arm a crossbow that fires bolts — a full quiver and zero damage — and
+  refused a Slingshot, one of the four ranged weapons in the dump (`AmmoTypeID.None`) that need
+  no ammunition at all. A guard that withholds every fight must not invent the last one.
+- **Golbin Raid is the exception, and not an oversight.** The raid arms the character with
+  `golbinRaidStartingWeapon`, so its candidates stay offered when nothing else can fight.
+
+The same reading found a refusal that was simply absent: `startCombatEvent` checked food and
+never checked whether a punch could land, so the one entry into the hardest content in the game
+would happily begin a run the character cannot damage anything in — standing in a boss area
+taking hits with no way to return them, which is the idle stall plus the health it costs.
+
+The guard was checked against the question this project keeps paying to relearn — what
+replenishes the thing the guard protects, and can the guard block it? What restores the ability
+to attack is runes, ammunition or a different weapon: a Runecrafting candidate, the quiver
+reflex, an equip candidate. None of them is a fight, so unlike the bank-slot cap this guard
+cannot starve its own precondition. That was verified rather than assumed, and it is the reason
+withholding is safe here and would not have been for food.
