@@ -1462,6 +1462,36 @@ two — or where one is simply missing — they will disagree, and disagreement
 between a start rule and a stop rule does not surface as a wrong answer. It
 surfaces as an infinite loop in which every individual decision is correct.
 
+### Why it was one cause and not two
+
+The loop survived a fix to the floor's *value* and that looked like evidence of
+a second cause. It is not. Lowering the floor from a flat 50% to the auto
+eater's trigger less 5% was correct and changed nothing structural, and the
+character had by then already been driven to the new floor by the loop the old
+one started.
+
+The mechanism that pins it is that **the thrash prevents its own recovery.**
+Auto Eat fires inside `Character.damage`, so it only ever fires when the
+character is hit. Three seconds of combat is about one spawn timer, so the
+thrash cycles without the enemy landing much — HP neither falls nor is healed,
+and out of combat it regenerates far too slowly to matter. HP was 38 of 150 when
+the character was pulled out: 25.3%, sitting on the 25% floor to a decimal
+place. A hit landing inside one three-second window pushes it under and the
+policy leaves; a rare auto-eat pushes it over and the fight holds for a minute
+or two before grinding back down. That is exactly the mixture of 3.0s cycles and
+occasional long holds in the log, and it is the same loop under both floor
+values.
+
+So the character was pinned at the floor *by* the guard meant to protect it, and
+neither of the two conditions the guard names could change while the guard was
+firing. A stop rule with no matching start rule does not merely fail to
+terminate; it can hold the state that triggers it perfectly still.
+
+The bill for that: death 56, and the Jeweled Necklace destroyed. Each cycle
+re-entered a fight the character had not recovered from, and re-armed the death
+penalty on gear the strip had been written to protect — see the next section for
+how the restore put it back on.
+
 The corollary for the fix: refusing to *start* is a wait, not a refusal. Out of
 combat both floors mend themselves — hitpoints regenerate, `refillFood` and
 `cookWhenFoodLow` restock the slot — so standing still gives them the chance the

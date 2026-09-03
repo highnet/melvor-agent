@@ -233,6 +233,19 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Critical — correctness or safety, do next
 
+- [ ] **A level-only screen ranks equal to a proven one** — M. Not built,
+      deliberately: scoped by the operator, and noted here so the scoping has
+      the evidence. The fight that killed the character (death 56, Sweaty
+      Monster: combat level 27, defence 24, the hardest target on the board) was
+      passed by `combat screen passed` with the words *"Screened on levels only,
+      not proven survivable"* and two `uncertainties` entries printed beside it.
+      The caveat informed and did not bind: nothing downstream reads
+      `uncertainties`, so a target the screen cannot vouch for sorts identically
+      to one the full gate proved. This is *a number computed for a sentence is
+      invisible to the code* in its most expensive form. The fix is ranking, not
+      refusal — **the aim is choosing better targets, not fighting less**; making
+      the agent avoid damage was tried earlier the same day and was the wrong
+      lesson.
 - [ ] **`upgradeGear` re-equips the same item forever** — S. The sixth loop of
       this class, found while chasing the fight thrash and left alone to keep
       that fix reviewable. On 2026-09-03 at 15:58 the log holds 89 identical
