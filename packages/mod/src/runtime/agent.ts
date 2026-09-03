@@ -200,6 +200,7 @@ import {
 } from './combat-reflex.js';
 import { DeathWatch } from './death-watch.js';
 import type { Logger } from './logger.js';
+import { LoopStallWatch } from './loop-stall.js';
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
@@ -216,8 +217,6 @@ const POLICY_INTERVAL_MS = 3000;
  * acting blind.
  */
 const SNAPSHOT_FAILURES_BEFORE_BLOCK = 5;
-
-const LOOP_STALL_MS = 15_000;
 
 const REFLEX_THROTTLE_MS = 1000;
 /**
@@ -396,14 +395,14 @@ export class Agent {
   /** Consecutive snapshot validation failures; reset by any success. */
   private snapshotFailures = 0;
 
-  /** Tick count at the previous policy tick, for the liveness comparison. */
-  private lastSeenTickCount = 0;
-
-  /** When the loop was first seen not to tick, or null while it is healthy. */
-  private loopStalledSince: number | null = null;
-
-  /** Whether the current stall has already been reported. */
-  private loopStalledReported = false;
+  /**
+   * Whether the loop is still ticking, compared from the policy timer.
+   *
+   * Holds the previous tick count, when the loop was first seen not to tick,
+   * and whether the current stall has already been reported. See
+   * {@link LoopStallWatch}.
+   */
+  private readonly loopStall = new LoopStallWatch();
   private quality: QualitySample[] = [];
   /**
    * When a reflex that changed nothing may complain again, keyed by name and
@@ -1444,37 +1443,18 @@ export class Agent {
    * can fix from inside; what it can do is stop claiming to be fine.
    */
   private detectDeadLoop(): void {
-    const ticked = this.tickCount !== this.lastSeenTickCount;
-    this.lastSeenTickCount = this.tickCount;
+    const event = this.loopStall.observe(this.tickCount, this.state === 'running', Date.now());
+    if (event === null) return;
 
-    if (ticked) {
-      this.loopStalledReported = false;
-      if (this.loopStalledSince !== null) {
-        this.log.info('runtime', 'game loop is ticking again');
-        this.loopStalledSince = null;
-      }
+    if (event.kind === 'resumed') {
+      this.log.info('runtime', 'game loop is ticking again');
       return;
     }
 
-    if (this.state !== 'running') return;
-
-    const now = Date.now();
-    if (this.loopStalledSince === null) {
-      this.loopStalledSince = now;
-      return;
-    }
-
-    // Reported once per stall, not once per tick: an alarm that repeats every
-    // three seconds fills the log queue and evicts the diagnostics that would
-    // explain it.
-    if (this.loopStalledReported) return;
-    if (now - this.loopStalledSince < LOOP_STALL_MS) return;
-
-    this.loopStalledReported = true;
     this.log.error(
       'runtime',
       `game loop has not ticked for ${Math.round(
-        (now - this.loopStalledSince) / 1000,
+        event.stalledMs / 1000,
       )}s; reflexes are not running, so eating and the starvation stop are both inactive`,
     );
   }
