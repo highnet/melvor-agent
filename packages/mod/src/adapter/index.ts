@@ -118,10 +118,9 @@ export {
 export {
   readBlockedOpportunities,
   readLockedActions,
-  readGatherCandidates,
   readShopGoalNotice,
-  readShopObjectiveCandidates,
-} from './candidates.js';
+} from './blocked.js';
+export { readGatherCandidates, readShopObjectiveCandidates } from './candidates.js';
 export {
   readCheapestExpendableStack,
   readMostValuableExpendableStack,
