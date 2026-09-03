@@ -186,6 +186,45 @@ export function assessSurvivability(inputs: CombatGateInputs): CombatGateVerdict
 }
 
 /**
+ * How much of this gate's own allowance a fight consumes, where 1 is refusal.
+ *
+ * Both terms are already in {@link CombatGateVerdict.workings} and were carried
+ * only "so a dry run is inspectable" — a number computed for a sentence. This
+ * is what makes them bind: `assessSurvivability` answers a yes/no, and a board
+ * of sixty fights that all answer yes needs to know which of them answered
+ * narrowly.
+ *
+ * The maximum of the two conditions the gate actually enforces, because a fight
+ * is only as safe as its worst margin:
+ *
+ * - the one-shot ratio, `effectiveEnemyMaxHit / oneShotCeiling`;
+ * - the sustain ratio, incoming damage against healing throughput with the same
+ *   {@link HEALING_MARGIN} the refusal uses, so the two agree by construction
+ *   rather than by a second constant.
+ *
+ * The food-stock condition is deliberately not in it. Running short of food is
+ * a fact about the pantry, not about the monster, and it changes the moment
+ * `refillFood` fires — ranking a Chicken below a Hill Giant because the slot
+ * happened to be low would be an ordering that flips on something unrelated to
+ * either target.
+ *
+ * @returns A share of the allowance; 0 when nothing could be measured, which
+ *   only happens on a verdict that already refuses as `unmeasurable`.
+ */
+export function survivabilityPressure(verdict: CombatGateVerdict): number {
+  const { workings } = verdict;
+
+  const oneShot =
+    workings.oneShotCeiling > 0 ? workings.effectiveEnemyMaxHit / workings.oneShotCeiling : 0;
+  const sustain =
+    workings.healingThroughput > 0
+      ? (workings.incomingDps * HEALING_MARGIN) / workings.healingThroughput
+      : 0;
+
+  return Math.max(0, oneShot, sustain);
+}
+
+/**
  * Normalises a value the game may express as either a fraction or a percent.
  *
  * The auto-eat getters are documented only by name, and whether
@@ -382,6 +421,30 @@ export function screenByCombatSkillLevels(
       ? `${inputs.targetName}: hardest attacker ${hardest?.name ?? 'unknown'} at combat skill level ${monsterOffensiveLevel}, within the ceiling of ${ceiling.toFixed(1)}. Screened on levels only, not proven survivable`
       : refusals.map((refusal) => refusal.detail).join('; '),
   };
+}
+
+/**
+ * How much of the screen's own allowance a fight consumes, where 1 is refusal.
+ *
+ * `monsterOffensiveLevel / ceiling` — the exact comparison the `outmatched`
+ * refusal makes, so 1 is its refusal line and not a threshold invented for the
+ * ordering. It is the number that separates a Chicken (offensive level 1)
+ * from a Sweaty Monster on a board where *every* fight passed the screen, which
+ * is the board that produced deaths 56 and 57: a pass told the planner nothing
+ * about which passes were narrow.
+ *
+ * The counterpart of {@link survivabilityPressure} and on the same 0..1 scale
+ * by the same construction, but a coarser instrument: this screen models no
+ * equipment, special attack, passive or combat-triangle effect, exactly as its
+ * own {@link CombatLevelScreenVerdict.uncertainties} says. That is why a
+ * candidate priced from this must record its basis as level-screened and rank
+ * below a measured one of the same danger band — see `orderDamagingCandidates`
+ * in `@melvor-agent/shared`, which is where that doubt finally costs something.
+ */
+export function levelScreenPressure(verdict: CombatLevelScreenVerdict): number {
+  const { workings } = verdict;
+  if (!(workings.ceiling > 0)) return 0;
+  return Math.max(0, workings.monsterOffensiveLevel / workings.ceiling);
 }
 
 /**

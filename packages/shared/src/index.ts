@@ -3,6 +3,7 @@ export * from './arm-gate.js';
 export * from './blocked.js';
 export * from './combat-gate.js';
 export * from './criteria.js';
+export * from './damage-risk.js';
 export * from './journal.js';
 export * from './objective.js';
 export * from './observed-delta.js';

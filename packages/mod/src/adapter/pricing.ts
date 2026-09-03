@@ -257,8 +257,13 @@ export interface KillValue {
    * table, so it is neither rolled nor discounted by `lootChance` -- a monster
    * that has bones drops them every kill. Named rather than only counted,
    * because `prayer-20` is an open goal and nothing else advances it.
+   *
+   * `itemId` is `NamespacedObject.id` (namespaceRegistry.d.ts:27) and is here so
+   * a fight can fill in the candidate's `produces`. Without it the bones a kill
+   * yields were a phrase in a label, and a stock objective for them — "fight
+   * until 500 Bones" — had no id to name.
    */
-  bones: { name: string; quantity: number } | null;
+  bones: { itemId: string; name: string; quantity: number } | null;
 }
 
 /**
@@ -286,7 +291,10 @@ export function killValueFor(monster: Monster): KillValue {
     gpPerKill: currencyPerKill(monster),
     lootGpPerKill:
       lootValuePerKill(monster) + (bones === undefined ? 0 : gpValue(bones.item) * bones.quantity),
-    bones: bones === undefined ? null : { name: bones.item.name, quantity: bones.quantity },
+    bones:
+      bones === undefined
+        ? null
+        : { itemId: bones.item.id, name: bones.item.name, quantity: bones.quantity },
   };
 }
 
