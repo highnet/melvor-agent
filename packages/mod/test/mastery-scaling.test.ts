@@ -5,7 +5,7 @@ import {
   masteryNote,
   productYieldFor,
   xpMultiplierFor,
-} from '../src/adapter/candidates.js';
+} from '../src/adapter/rates.js';
 import type { RecipeLike } from '../src/adapter/recipes.js';
 
 /**
