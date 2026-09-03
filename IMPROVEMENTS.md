@@ -394,19 +394,29 @@ Township summary reported 0% health while the repair reflex correctly computed
       a legitimately retried action looks the same, and an adapter that declines
       real work is worse than one that is noisy. Written up in
       `learnings/game-state.md`.
-- [ ] **The stuck ledgers do not ride out on the report** — S. Their finding is
-      appended to the `ActionResult` detail, which both tiers log, so it reaches
+- [x] **The stuck ledgers do not ride out on the report** — S. Their finding was
+      appended to the `ActionResult` detail, which both tiers log, so it reached
       `data/logs/*.jsonl` — but the policy tier puts the detail in the structured
-      payload rather than the message, so a `STUCK` line is greppable and not
-      visible on the panel. `readAdapterFailures()` already ships a counted list
-      of guarded-read failures to the report; a stuck action belongs in the same
-      place, under a site name that says so rather than "guarded read failed at".
-- [ ] **`shop.buyItemOnClick` leaves `buyQuantity` where the agent set it** — S.
-      The adapter sets `game.shop.buyQuantity = quantity` and never restores it,
-      so a human's next shop click buys whatever the agent last asked for. Same
-      argument as `withTownBiome` and `withBuildQuantity`, which both restore;
-      the shop path predates the helper shape. Not a correctness bug for the
-      agent, only a surprise for the operator.
+      payload rather than the message, so a `STUCK` line was greppable and
+      visible nowhere a person looks. Findings now ride out on
+      `readAdapterFailures()`, the counted list that already reaches the panel
+      and the state summary, marked `kind: 'stuck'` so they get their own
+      sentence: "guarded read failed at" would send a reader hunting a renamed
+      getter for a loop. They rank ahead of the reads unconditionally rather
+      than by count — the summary prints five, the live game already carries
+      six read sites at 655 apiece, so a loop ordered by count would never be
+      printed at all. The counter increments only on the ledgers' own
+      once-per-transition report, so it counts stuck runs and never stuck
+      passes. Written up in `learnings/game-state.md`.
+- [x] **`shop.buyItemOnClick` leaves `buyQuantity` where the agent set it** — S.
+      `withBuyQuantity` in `shop.ts` now sets it, buys inside a `try`, and
+      restores it in the `finally`, the shape `withTownBiome` and
+      `withBuildQuantity` already use. Deliberately a third small copy rather
+      than a shared helper: `buyQuantity` (shop.d.ts:232) is a plain number,
+      while `currentTownBiome` is optional and has to be restored to *absent*
+      rather than to `undefined`, so one abstraction over all three would have
+      to carry that distinction into every call site to save five lines each.
+      Not a correctness bug for the agent, only a surprise for the operator.
 - [ ] **Two thirds of the button-callback audit could not be finished** — M. The
       nw.js cache only decompresses to 17 files while the game runs (Bank,
       Player, CombatManager, Cartography, Township, Game, skill bases); Cooking,

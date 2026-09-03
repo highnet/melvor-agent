@@ -1205,3 +1205,49 @@ Alt Magic's selection callbacks, `PotionManager.usePotion`, `SlayerTask.selectTa
 conversions, and the raid callbacks. Each either passes everything explicitly or has the adapter
 set the selection immediately before the call — structurally protected, not proven. The way to
 settle any of them is to close the game once and decompress the cache again.
+
+## A detector whose output has to be grepped for has not been read yet
+
+The stuck ledgers above were built the day four separate loops were each found by hand, hours in.
+Their finding went one place: the `ActionResult` detail. Both tiers log that, so it reached
+`data/logs/*.jsonl` — and the policy tier puts the detail in the *structured payload* rather than
+the message, so `STUCK` was greppable and appeared on no panel and in no state summary. The
+detector that exists because nobody sees a loop had shipped its answer somewhere nobody looks.
+
+Findings now ride out on `readAdapterFailures()`, the counted list that already reaches the TUI
+and `get_agent_state` — it is how `rockGemChance` and `numberMultiplier` were both noticed —
+marked `kind: 'stuck'`. Three things were decided there, and each is a rule worth keeping:
+
+- **A different claim needs a different sentence.** A guarded read that fell back means a renamed
+  accessor; a stuck action means the agent has spent hours achieving nothing. Rendering both under
+  "guarded read failed at" would send the reader hunting a getter for a loop.
+- **Ranking by count is ranking by how chatty a failure is.** The summary prints five. The live
+  game carries six read sites at 655 apiece right now — `candidates.rockGemChance`, four
+  `noCandidates:` sites and a `yieldShape` — so a stuck action ordered by count would have been
+  the seventh entry and printed never. Stuck ranks first unconditionally. That truncation had
+  already hidden real failures earlier the same day.
+- **A counter must inherit the once-ness of what it counts.** The ledgers report on the
+  transition, so the report's count is stuck *runs* — five identical failures, a success, five
+  more is two — and not stuck passes. This project has twice had a real diagnostic buried by a
+  line that fired every tick, and a per-pass counter would have been that line with extra steps.
+
+The general shape: **surfacing is part of the detector, not a follow-up to it.** A finding that
+travels only to a log will be read after the next day-long loop, not before it.
+
+## The operator's selections are their state, including the ones the agent has to touch
+
+`Shop.buyItemOnClick(purchase, confirmed)` (shop.d.ts:261) takes no quantity: it buys
+`shop.buyQuantity` (shop.d.ts:232), the shop page's own selector, whose update callback is
+`updateBuyQuantity` (:263). The adapter had to set it — before that, "buy 25 shards" bought one and
+the objective reported success — and then left it set, so the operator's next click bought
+twenty-five of something they wanted one of.
+
+The reading that matters is not "a bug", because nothing the agent does is wrong: it sets the field
+on every purchase. It is that a UI-driven API makes the agent a second pair of hands on one set of
+controls, and the surprise lands on the person who did not press anything. Every set-then-act in
+this adapter therefore restores: `withTownBiome`, `withBuildQuantity`, `withBuyQuantity`.
+
+Three copies, and deliberately not one helper. `buyQuantity` and `upgradeQty` are plain numbers;
+`currentTownBiome` is optional and must be restored to *absent* rather than to `undefined`, because
+the game reads an absent biome as "viewing all biomes". A single abstraction would have to carry
+that distinction into all three call sites to save five lines at each of them.
