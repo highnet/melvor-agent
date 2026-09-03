@@ -162,9 +162,18 @@ Township summary reported 0% health while the repair reflex correctly computed
       becomes guarded mid-objective, which Arrow Shafts will do in about three
       hours at 1,800 casts/h.
 
-- [ ] **Whether `getDoublingChance` is already inside
+- [x] **Whether `getDoublingChance` is already inside
       `modifyPrimaryProductQuantity`** — S. Not stated in the typings. Settle it
-      by measurement, never by reasoning.
+      by measurement, never by reasoning. **It is** — and the measurement found
+      the worse half of it: `modifyPrimaryProductQuantity` *rolls* the doubling,
+      so it is a sample rather than a getter, and pricing an hour off one call
+      made every rate a coin flip. 73 polled reports, live: Gold Bar alternated
+      between exactly 212,400 and exactly 468,000 GP/h with `xp/h` fixed at
+      36,000 throughout. That is the same finding as the 2x swing observed
+      across Smithing and Mining forty minutes apart — two independent flips
+      landing together, not a global modifier expiring. `productYieldFor` now
+      takes the expectation (min of 8 samples × `getDoublingChance`, mean of the
+      samples when that getter refuses). See `learnings/game-state.md`.
 
 ## Planning
 
