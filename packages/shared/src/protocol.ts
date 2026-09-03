@@ -111,6 +111,16 @@ export const adapterFailureSchema = z.object({
   site: z.string(),
   count: z.number().int().nonnegative(),
   lastError: z.string(),
+  /**
+   * `'stuck'` when this is an action loop rather than a guarded read.
+   *
+   * The stuck ledgers in `adapter/act.ts` ride out on this same list, because
+   * it is the one counted diagnostic that already reaches the panel and the
+   * state summary; their site is an action name (`reflex.repairTownship`) and
+   * their count is stuck *runs*, not passes. Absent on a read — so an older
+   * mod, which sends none of these, still validates against a newer service.
+   */
+  kind: z.literal('stuck').optional(),
 });
 export type AdapterFailure = z.infer<typeof adapterFailureSchema>;
 

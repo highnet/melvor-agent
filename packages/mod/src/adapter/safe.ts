@@ -29,9 +29,28 @@ export interface AdapterFailure {
   count: number;
   /** The last error's message, for telling a rename from a transient state. */
   lastError: string;
+  /**
+   * Present only on a stuck action, absent on a guarded read.
+   *
+   * Absent rather than `'read'` so an older mod's reports still validate
+   * unchanged, and so the two are impossible to confuse at the renderer: a
+   * stuck action is not a read that fell back, and describing it as one under
+   * "guarded read failed at" would send a reader looking for a renamed getter.
+   */
+  kind?: 'stuck';
 }
 
 const failures = new Map<string, AdapterFailure>();
+
+/**
+ * Stuck actions, counted separately from guarded reads.
+ *
+ * Its own map for two reasons. Keys are action names (`reflex.repairTownship`)
+ * rather than read sites, so a name that happens to match a read site stays two
+ * entries rather than one entry flipping kind; and the two are ranked
+ * independently — see {@link readAdapterFailures}.
+ */
+const stuckActions = new Map<string, AdapterFailure>();
 
 /**
  * Warned-about sites, so the log is not flooded.
@@ -61,20 +80,65 @@ function record(site: string, error: unknown): void {
 }
 
 /**
- * Every site that has failed, worst first.
+ * Every site that has failed, stuck actions first and then worst reads first.
  *
  * Cumulative for the run rather than drained per report, because the question
  * an operator asks at 8am is "what has been failing all night", and a counter
  * that resets every three seconds cannot answer it.
+ *
+ * Stuck actions rank ahead of reads unconditionally, and not by count. They are
+ * far rarer — one entry per detected loop, never one per pass — and far more
+ * serious: a read that fell back leaves a rate looking optimistic, while a
+ * stuck action means the agent has spent hours achieving nothing. The list is
+ * truncated on display (`mcp-tools.ts` renders five), and that truncation has
+ * already hidden real failures behind noisier sites, so the ordering is what
+ * keeps a loop from queueing behind five chatty getters.
  */
 export function readAdapterFailures(): AdapterFailure[] {
-  return [...failures.values()].sort((a, b) => b.count - a.count);
+  const byCount = (a: AdapterFailure, b: AdapterFailure): number => b.count - a.count;
+  return [...[...stuckActions.values()].sort(byCount), ...[...failures.values()].sort(byCount)];
 }
 
 /** Test seam; the agent never resets these. */
 export function resetAdapterFailures(): void {
   failures.clear();
+  stuckActions.clear();
   warned.clear();
+}
+
+/**
+ * Counts an action the ledgers in `act.ts` have found stuck.
+ *
+ * The detector's finding was only ever appended to the `ActionResult` detail.
+ * Both tiers log that, so it reached `data/logs/*.jsonl` — but the policy tier
+ * puts the detail in the structured payload rather than the message, so a
+ * `STUCK` line was greppable and invisible on the panel and in the state
+ * summary. That is the failure the detector exists to catch, one level up:
+ * every one of the four loops it was built from ran for hours precisely because
+ * nothing surfaced them where a person looks.
+ *
+ * This is a counter and not a log line, deliberately. `record` above warns once
+ * per site because these reads run every tick; the stuck ledgers already report
+ * once per transition and own their own `console.warn`, so warning again here
+ * would double every line.
+ *
+ * The count is therefore the number of distinct stuck *runs* — five identical
+ * failures, then a success, then five more is two — which is the number worth
+ * reading. Cumulative like the reads, so an action that came unstuck an hour
+ * ago is still named; the alternative is a report that can only describe the
+ * last three seconds.
+ *
+ * @param action - The action's stable name, e.g. `reflex.repairTownship`.
+ * @param why - The ledger's finding, verbatim.
+ */
+export function recordStuck(action: string, why: string): void {
+  const existing = stuckActions.get(action);
+  if (existing === undefined) {
+    stuckActions.set(action, { site: action, count: 1, lastError: why, kind: 'stuck' });
+    return;
+  }
+  existing.count += 1;
+  existing.lastError = why;
 }
 
 /**

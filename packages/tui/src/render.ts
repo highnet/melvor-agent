@@ -113,7 +113,26 @@ function renderStatus(dashboard: Dashboard, width: number): string[] {
   // takes a candidate off the list or drops a rate to its nominal fallback and
   // otherwise looks exactly like a healthy run. The worst site alone is enough
   // to say "go look"; the full list rides out on the report.
-  const failures = report?.adapterFailures ?? [];
+  const all = report?.adapterFailures ?? [];
+
+  // A stuck action gets its own line above the reads, and never shares theirs.
+  //
+  // It is the more serious of the two — the agent repeating one call for hours
+  // against a world that does not move — and it arrives on the same list only
+  // because that list is the counted diagnostic that already reaches the panel.
+  // Labelling it "adapter reads failing" would describe a loop as a renamed
+  // getter. One line whatever the count, because the ledger reports once per
+  // run and the panel has four rows to spend.
+  const stuck = all.filter((entry) => entry.kind === 'stuck');
+  const worstStuck = stuck[0];
+  if (worstStuck !== undefined) {
+    const others = stuck.length > 1 ? ` (+${stuck.length - 1} more)` : '';
+    lines.push(
+      ` ${C.yellow}action stuck: ${truncate(`${worstStuck.site} ×${worstStuck.count}`, width - 30)}${others}${C.reset}`,
+    );
+  }
+
+  const failures = all.filter((entry) => entry.kind !== 'stuck');
   const worst = failures[0];
   if (worst !== undefined) {
     const others = failures.length > 1 ? ` (+${failures.length - 1} more)` : '';

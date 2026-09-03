@@ -167,6 +167,44 @@ describe('render', () => {
     expect(text).toContain('+1 more');
   });
 
+  it('shows a stuck action on its own line, above the reads', () => {
+    // The finding the ledgers in `adapter/act.ts` exist to produce, on the one
+    // screen the operator has open. Before this it reached the JSONL log and
+    // nowhere else, which is how all four loops it was built from managed to
+    // run for hours.
+    const failing = dashboard();
+    if (failing.report === null) throw new Error('fixture must include a report');
+    const text = plain(
+      render(
+        {
+          ...failing,
+          report: {
+            ...failing.report,
+            adapterFailures: [
+              {
+                site: 'reflex.repairTownship',
+                count: 2,
+                lastError: 'failed 5 times in a row against an identical projection',
+                kind: 'stuck',
+              },
+              { site: 'candidates.thievingSuccessRate', count: 412, lastError: 'not a function' },
+            ],
+          },
+        },
+        null,
+        120,
+        30,
+      ),
+    );
+    expect(text).toContain('action stuck: reflex.repairTownship ×2');
+    // Its own line: a loop is not a read that fell back, and one label for both
+    // would send the reader hunting a renamed getter.
+    expect(text).toContain('adapter reads failing: candidates.thievingSuccessRate ×412');
+    // The reads count only themselves, so the "+n more" cannot claim a stuck
+    // action is a sixth failing getter.
+    expect(text).not.toContain('+1 more');
+  });
+
   it('says nothing about adapter reads while they all work', () => {
     // A permanent warning line is a warning nobody reads.
     expect(plain(render(dashboard(), null, 100, 30))).not.toContain('adapter reads failing');

@@ -40,6 +40,40 @@ function categoricalRefusal(purchase: ShopPurchase): string | null {
 }
 
 /**
+ * Runs a shop call with the shop page's quantity dropdown pinned, then restores it.
+ *
+ * `buyItemOnClick` buys `shop.buyQuantity` (shop.d.ts:232) and not a quantity
+ * passed in — the parameter was validated and then ignored, so "buy 25 shards"
+ * bought one, an objective reporting success having done a twenty-fifth of its
+ * job. Setting the field is therefore not optional.
+ *
+ * Leaving it set is the half this fixes. The field is the shop page's own buy
+ * quantity selector — `updateBuyQuantity` is documented as its callback
+ * (shop.d.ts:263) — so a human's next click bought whatever the agent last
+ * asked for: twenty-five of something they wanted one of. Not a correctness
+ * problem for the agent, which sets the field on every purchase; purely a
+ * surprise for the operator, whose game this is.
+ *
+ * The same shape as `withTownBiome` and `withBuildQuantity` in `township.ts`,
+ * and deliberately a third small copy rather than a shared helper: this field
+ * is a plain `number`, while `currentTownBiome` is optional and has to be
+ * restored to *absent* rather than to `undefined`, so the one abstraction that
+ * covered all three would have to carry that distinction into every call site
+ * to save five lines at each of them.
+ *
+ * @typeParam T - Whatever the wrapped call returns; passed straight back.
+ */
+function withBuyQuantity<T>(quantity: number, call: () => T): T {
+  const previous = game.shop.buyQuantity;
+  game.shop.buyQuantity = quantity;
+  try {
+    return call();
+  } finally {
+    game.shop.buyQuantity = previous;
+  }
+}
+
+/**
  * Buys from the shop.
  *
  * Shop purchases are the transition the wiki corpus exists to advise on — which
@@ -115,15 +149,11 @@ export function buyShopPurchase(
         }
         return null;
       },
-      perform: () => {
-        // `buyItemOnClick` buys `shop.buyQuantity`, not a quantity passed in.
-        // The parameter was validated and then ignored, so "buy 25 shards"
-        // bought one — an objective that reported success having done a
-        // twenty-fifth of its job.
-        game.shop.buyQuantity = quantity;
-        // `confirmed` skips the modal, which nothing would answer.
-        game.shop.buyItemOnClick(purchase, true);
-      },
+      perform: () =>
+        withBuyQuantity(quantity, () => {
+          // `confirmed` skips the modal, which nothing would answer.
+          game.shop.buyItemOnClick(purchase, true);
+        }),
       // Either signal counts: an upgrade raises the purchase count, a
       // consumable raises the bank. Both spend the currency, but GP alone is
       // not proof — a failed purchase that refunds would look identical.

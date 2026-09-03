@@ -1,5 +1,5 @@
 import { type ActionResult, fail, ok } from '@melvor-agent/shared';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, recordStuck } from './safe.js';
 
 /**
  * Options for a single verified action.
@@ -229,6 +229,7 @@ function noteNoChange(name: string, projection: string): string {
   if (entry.repeats >= IDENTICAL_LIMIT && !entry.reported) {
     entry.reported = true;
     return report(
+      name,
       `${name} has now failed ${entry.repeats} times in a row against an identical projection — the call may read a selection it does not take (see learnings/game-state.md)`,
     );
   }
@@ -236,6 +237,7 @@ function noteNoChange(name: string, projection: string): string {
   if (entry.run >= MOVING_LIMIT && !entry.runReported) {
     entry.runReported = true;
     return report(
+      name,
       `${name} has now failed ${entry.run} times in a row while its projection kept moving — either the call achieves nothing, or \`changed\` is too narrow to credit what it does`,
     );
   }
@@ -318,6 +320,7 @@ function noteRedone(name: string, projection: string): string {
   if (entry.repeats >= REDONE_LIMIT && !entry.reported) {
     entry.reported = true;
     return report(
+      name,
       `${name} has now succeeded ${entry.repeats} times in a row from an identical starting state within ${Math.round((now - entry.since) / 1000)}s — something is undoing it, so the work is being redone rather than done`,
     );
   }
@@ -333,11 +336,27 @@ function evictOldest(runs: Map<string, unknown>): void {
   }
 }
 
-function report(message: string): string {
-  // The in-game console is not shipped anywhere, so the note that travels is
-  // the one appended to the failure detail — both tiers log that. The warning
-  // is for whoever has the game open.
+/**
+ * Emits one finding, on the transition, to all three places it has to reach.
+ *
+ * The detail note is for the log, the warning is for whoever has the game open,
+ * and `recordStuck` is what puts it on the panel and in the state summary. Only
+ * the third is new, and it is the one that matters: the detail travels inside
+ * the policy tier's structured payload rather than its message, so before this
+ * a `STUCK` line could be grepped out of `data/logs/*.jsonl` and was visible
+ * nowhere a person actually looks. A detector nobody reads until after the next
+ * day-long loop is the failure it was built to prevent.
+ *
+ * Called only from the two `!reported` transitions above, which is what keeps
+ * the counter meaningful: it counts stuck runs, not stuck passes.
+ *
+ * @param name - The action's stable name, used as the report's site.
+ * @param message - The ledger's finding.
+ * @returns The note to append to the result detail.
+ */
+function report(name: string, message: string): string {
   console.warn(`[play-agent] ${message}`);
+  recordStuck(name, message);
   return ` — STUCK: ${message}`;
 }
 

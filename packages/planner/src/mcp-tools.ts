@@ -170,16 +170,36 @@ export const TOOLS: Record<string, ToolHandler> = {
       // Optional at the read, because the field is newer than some reports:
       // a mod that has not reloaded yet sends none, and an undefined here would
       // take down the whole state summary rather than omit one line of it.
-      ...((report.adapterFailures ?? []).length === 0
-        ? []
-        : [
-            `Adapter reads failing (rates and candidates may be silently falling back): ${(
-              report.adapterFailures ?? []
-            )
-              .slice(0, 5)
-              .map((entry) => `${entry.site} ×${entry.count} (${entry.lastError})`)
-              .join('; ')}`,
-          ]),
+      // Stuck actions, on their own line and ahead of the reads.
+      //
+      // Same list, different claim, so they cannot share a sentence: a guarded
+      // read that fell back leaves a rate looking optimistic, while a stuck
+      // action means the agent has been repeating one call for hours and
+      // achieving nothing. Describing one as the other would send a reader
+      // hunting a renamed getter. Ahead, and outside the five-entry truncation
+      // below, because that truncation has already hidden real failures behind
+      // noisier sites — and these entries are once per detected loop, never
+      // once per pass, so the line cannot become the wallpaper that buried the
+      // last two diagnostics here.
+      ...(() => {
+        const stuck = (report.adapterFailures ?? []).filter((entry) => entry.kind === 'stuck');
+        if (stuck.length === 0) return [];
+        return [
+          `Actions stuck (the call runs, the world does not move): ${stuck
+            .map((entry) => `${entry.lastError} [×${entry.count} run(s)]`)
+            .join('; ')}`,
+        ];
+      })(),
+      ...(() => {
+        const reads = (report.adapterFailures ?? []).filter((entry) => entry.kind !== 'stuck');
+        if (reads.length === 0) return [];
+        return [
+          `Adapter reads failing (rates and candidates may be silently falling back): ${reads
+            .slice(0, 5)
+            .map((entry) => `${entry.site} ×${entry.count} (${entry.lastError})`)
+            .join('; ')}`,
+        ];
+      })(),
       // "none" and "nothing" are what a stalled agent shows and also what a
       // healthy one shows for the second or two between plan steps. Naming the
       // queue separates them; without it, three snapshots this morning were

@@ -1149,11 +1149,19 @@ readActiveRecipeIds: () => string[]
 
 `function`
 
-Every site that has failed, worst first.
+Every site that has failed, stuck actions first and then worst reads first.
 
 Cumulative for the run rather than drained per report, because the question
 an operator asks at 8am is "what has been failing all night", and a counter
 that resets every three seconds cannot answer it.
+
+Stuck actions rank ahead of reads unconditionally, and not by count. They are
+far rarer — one entry per detected loop, never one per pass — and far more
+serious: a read that fell back leaves a rate looking optimistic, while a
+stuck action means the agent has spent hours achieving nothing. The list is
+truncated on display (`mcp-tools.ts` renders five), and that truncation has
+already hidden real failures behind noisier sites, so the ordering is what
+keeps a loop from queueing behind five chatty getters.
 
 ```ts
 readAdapterFailures: () => AdapterFailure[]
