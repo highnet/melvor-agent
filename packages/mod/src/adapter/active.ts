@@ -54,6 +54,25 @@ function activeRecipesFor(skillId: string): string[] {
       return obstacle === undefined ? [] : [obstacle.id];
     }
 
+    // Alt Magic is registered under `melvorD:Magic` and names its selection
+    // `selectedSpell` (altMagic.d.ts:121), not `activeRecipe` -- it extends
+    // CraftingSkill but never gained that field. Without this case it fell to
+    // the artisan `default` below, read undefined, and returned []. The caller
+    // documents "cannot tell" as "not the one I want", so the policy stopped
+    // and recast the spell every single tick: the live log was
+    // `altMagic.cast ok` / `melvorD:Magic.stop ok` alternating every two
+    // seconds, indefinitely, for zero XP. Every cast was accepted and every
+    // stop verified, so nothing above the adapter could see it as anything but
+    // work -- the same shape as the Agility restart loop.
+    //
+    // `selectedSpell` rather than `activeSpell` (:122): the latter is a bare
+    // getter with no `?`, so it is the one that throws when nothing is chosen,
+    // which is the state this is read in most often.
+    case 'melvorD:Magic': {
+      const spell = safeValue('active.altMagicSpell', () => game.altMagic.selectedSpell);
+      return spell === undefined ? [] : [spell.id];
+    }
+
     case 'melvorItA:Harvesting': {
       // Harvesting only exists with the Into the Abyss expansion installed.
       const vein = safeValue('active.harvestingVein', () => game.harvesting?.activeVein);
