@@ -34,6 +34,11 @@ Worse, the game's own return conventions are inconsistent —
 `Woodcutting.selectTree` return `void`. So the return value is recorded as
 *supporting* detail, never as the verdict; the verdict is the before/after diff.
 
+One `no_state_change` is a fact about one call. A run of them against an
+unmoved projection is a different claim — that the action cannot work in this
+state — and nothing above the adapter was keeping the count. `noteNoChange`
+does, and appends its finding to the failure detail once, on the transition.
+
 ```ts
 act: <T>(spec: ActSpec<T>, isSuspended: () => boolean) => ActionResult<T>
 ```

@@ -88,6 +88,41 @@ function withTownBiome<T>(township: typeof game.township, biome: TownshipBiome, 
 }
 
 /**
+ * Runs a build call with the town page's quantity dropdown pinned.
+ *
+ * The biome is not the only thing `buildBuilding` takes off the screen. The
+ * shipped v1.3.1 source — read from the nw.js cache, see `learnings/mod-api.md`
+ * — opens with:
+ *
+ *   const upgradeQty = this.upgradeQty > 0 ? this.upgradeQty : this.getMaxAffordableBuildingQty(building, biome);
+ *   const qtyToBuild = Math.min(this.getBuildingCountRemainingForLevelUp(building, biome), upgradeQty);
+ *
+ * `upgradeQty` (township.d.ts:439) is the town page's 1 / 5 / MAX dropdown, and
+ * MAX is stored as `-1` — so a human who ever clicks MAX turns every later
+ * agent build into "spend everything affordable". That is precisely the
+ * outcome `BUILD_RESERVE_MULTIPLE` exists to prevent, and the reserve check
+ * could not see it coming: it proves the town can afford four and the call
+ * would then buy as many as it liked.
+ *
+ * Nothing has been observed doing this — the field defaults to 1 and the agent
+ * never touches it — so this is the prophylactic half of the same audit that
+ * found the biome. It is the identical shape: a button callback reading a
+ * selection it does not take. `shop.buyItemOnClick` had already cost a real
+ * objective for the same reason and `shop.ts` sets `buyQuantity` for it.
+ *
+ * @typeParam T - Whatever the wrapped call returns; passed straight back.
+ */
+function withBuildQuantity<T>(township: typeof game.township, quantity: number, call: () => T): T {
+  const previousQuantity = township.upgradeQty;
+  township.upgradeQty = quantity;
+  try {
+    return call();
+  } finally {
+    township.upgradeQty = previousQuantity;
+  }
+}
+
+/**
  * Builds one building in a biome.
  *
  * `buildBuilding` takes no biome argument: it builds into whichever biome the
@@ -164,7 +199,13 @@ export function buildTownshipBuilding(
         }
         return null;
       },
-      perform: () => withTownBiome(township, biome, () => township.buildBuilding(building)),
+      // One at a time: the precondition proved the town can afford one and
+      // still keep its reserve, and that is the only claim it made. See
+      // `withBuildQuantity`.
+      perform: () =>
+        withTownBiome(township, biome, () =>
+          withBuildQuantity(township, 1, () => township.buildBuilding(building)),
+        ),
       changed: (before, after) => after.count > before.count,
     },
     isSuspended,
