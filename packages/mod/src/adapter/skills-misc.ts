@@ -329,8 +329,15 @@ function startAltMagic(
         // occupying the furnace, and both were unreachable -- while Magic sat
         // at level 2 against a stated goal of 20, and the agent had no
         // automatic way to convert stock into money at all.
-        if (needsSelection(spell) && chooseSelection(spell) === null) {
-          return `spell ${recipeId} needs an item to consume and nothing eligible is banked`;
+        //
+        // The refusal quotes `chooseSelection`'s own reason. It used to say
+        // "nothing eligible is banked" for every empty answer, which is false
+        // whenever the bank is full of items the spell accepts and the cast is
+        // being refused because it would destroy them at a loss -- a refusal
+        // the operator cannot interpret is a refusal that gets overridden.
+        if (needsSelection(spell)) {
+          const outcome = chooseSelection(spell);
+          if (!outcome.ok) return `spell ${recipeId} cannot be cast: ${outcome.reason}`;
         }
         if (skill.isActive && skill.selectedSpell === spell) return `already casting ${recipeId}`;
         return actionSlotHeldBy('melvorD:Magic');
@@ -340,8 +347,9 @@ function startAltMagic(
 
         // After the spell, because the selection menus are per-spell: choosing
         // first would set it against whatever was previously selected.
-        const selection = chooseSelection(spell);
-        if (selection !== null) {
+        const outcome = chooseSelection(spell);
+        if (outcome.ok) {
+          const selection = outcome.selection;
           if (selection.kind === 'bar') skill.selectBarOnClick(selection.recipe);
           else skill.selectItemOnClick(selection.item);
         }
@@ -472,29 +480,63 @@ function needsSelection(spell: AltMagicSpell): boolean {
 }
 
 /**
+ * The `AltMagicProductionID` and `AltMagicConsumptionID` sentinels, as literals.
+ *
+ * Both are plain `declare enum`s (altMagic.d.ts:28-37 and :19-27), so the
+ * runtime bundle carries no value for them and `AltMagicProductionID.Bar` is a
+ * bare global reference resolved when this runs. `candidates.ts` and
+ * `registries.ts` both already spell their sentinels out for that reason; this
+ * file did not, and it is the one place where the reference is inside a
+ * catch-all: an unresolved global there is swallowed into "no selection", which
+ * refuses *every* item-consuming spell with a message about the bank. The
+ * numbers are taken from the declaration rather than from memory.
+ */
+const PRODUCES_GP = -1;
+const PRODUCES_BAR = -2;
+const CONSUMES_BAR_INGREDIENTS_WITH_COAL = -3;
+
+/** What a spell will consume: a Smithing recipe for Superheat, else a bank item. */
+type SpellSelection = { kind: 'bar'; recipe: SmithingRecipe } | { kind: 'item'; item: AnyItem };
+
+/**
+ * A selection, or the reason there is none.
+ *
+ * The reason is carried rather than collapsed to `null` because the caller
+ * cannot reconstruct it. `startAltMagic` used to turn every empty answer into
+ * "nothing eligible is banked", which is one of four different situations and
+ * the wrong one in three of them -- and an operator reading "nothing eligible
+ * is banked" against a bank full of ore has been sent looking in the wrong
+ * place by this repo before.
+ */
+type SelectionOutcome = { ok: true; selection: SpellSelection } | { ok: false; reason: string };
+
+/**
  * What a spell should consume, chosen from the game's own list of eligible items.
  *
  * Two shapes. Superheat consumes the ingredients of a Smithing recipe and
  * produces its bar, so the selection is a `SmithingRecipe` and the right one is
  * the bar with the best margin the character can both smith and afford.
  * Everything else -- Item Alchemy and the conversion spells -- consumes a bank
- * item, and the right one is whichever converts to the most GP.
+ * item, and which item is right depends on what the spell pays; see below.
  *
- * Alchemy's candidates are drawn through the sell guards rather than from the
- * raw bank. Alchemising an item destroys it exactly as selling does, so the
- * reasons not to sell food, ammunition, seeds, spell runes, mastery tokens or
- * anything a Township task wants apply here unchanged. Reusing the filter means
- * a guard added for one path protects both, instead of the two drifting until
- * the newer one burns the larder.
+ * The candidates are drawn through the sell guards rather than from the raw
+ * bank. Consuming an item destroys it exactly as selling does, so the reasons
+ * not to sell food, ammunition, seeds, spell runes, mastery tokens or anything
+ * a Township task wants apply here unchanged. Reusing the filter means a guard
+ * added for one path protects both, instead of the two drifting until the newer
+ * one burns the larder.
+ *
+ * The refusal lives here, with the ranking, rather than in the caller: this is
+ * the only place that knows which item would be destroyed and what it is worth,
+ * and a caller that re-derived either would be a second ranking to keep in step
+ * with this one.
  */
-function chooseSelection(
-  spell: AltMagicSpell,
-): { kind: 'bar'; recipe: SmithingRecipe } | { kind: 'item'; item: AnyItem } | null {
+function chooseSelection(spell: AltMagicSpell): SelectionOutcome {
   try {
     const magic = game.altMagic;
 
     // Superheat: the produced thing is a bar, so the selection is the recipe.
-    if (spell.produces === AltMagicProductionID.Bar) {
+    if (spell.produces === PRODUCES_BAR) {
       let best: { recipe: SmithingRecipe; net: number } | null = null;
 
       for (const recipe of game.smithing.actions.allObjects) {
@@ -502,7 +544,7 @@ function chooseSelection(
           if (recipe.level > game.smithing.level) continue;
           if (!game.smithing.isMasteryActionUnlocked(recipe)) continue;
 
-          const useCoal = spell.specialCost.type === AltMagicConsumptionID.BarIngredientsWithCoal;
+          const useCoal = spell.specialCost.type === CONSUMES_BAR_INGREDIENTS_WITH_COAL;
           if (!magic.getSuperheatBarCosts(recipe, useCoal, 1).checkIfOwned()) continue;
 
           const net = saleValueOf(recipe.product);
@@ -513,31 +555,135 @@ function chooseSelection(
         }
       }
 
-      return best === null ? null : { kind: 'bar', recipe: best.recipe };
+      return best === null
+        ? { ok: false, reason: 'no smithable bar has its ingredients in the bank' }
+        : { ok: true, selection: { kind: 'bar', recipe: best.recipe } };
     }
 
     // Everything else consumes a bank item the game will name for us.
+    // `getSpellItemSelection` (altMagic.d.ts:139) returns exactly what this
+    // spell accepts, so eligibility is never guessed at.
     const eligible = new Set(magic.getSpellItemSelection(spell).map((item) => item.id));
-    if (eligible.size === 0) return null;
+    if (eligible.size === 0) {
+      return { ok: false, reason: `nothing ${spell.name} accepts is in the bank` };
+    }
 
-    let best: { item: AnyItem; gp: number } | null = null;
+    const offered: AnyItem[] = [];
     for (const option of readSellCandidates()) {
       const itemId = String((option.params as { itemId?: unknown }).itemId ?? '');
       if (!eligible.has(itemId)) continue;
 
       const item = game.items.getObjectByID(itemId);
-      if (item === undefined) continue;
-
-      const gp = magic.getAlchemyGP(item, spell.productionRatio);
-      if (!Number.isFinite(gp) || gp <= 0) continue;
-      if (best === null || gp > best.gp) best = { item, gp };
+      if (item !== undefined) offered.push(item);
     }
 
-    return best === null ? null : { kind: 'item', item: best.item };
+    if (offered.length === 0) {
+      return {
+        ok: false,
+        reason: `every item ${spell.name} accepts is withheld by a sell guard — food under the reserve, ammunition, seeds, runes a castable spell needs, mastery tokens, what a Township task wants, or a locked stack`,
+      };
+    }
+
+    // Which item to destroy depends on what the spell pays, and the two cases
+    // want *opposite* items. One `>` served both and always picked the dearest.
+    //
+    // `produces` is `AltMagicProductionID | AnyItem` (altMagic.d.ts:75), and GP
+    // is the -1 sentinel (:29). Alchemy pays a ratio of the consumed item's own
+    // value, so the dearest eligible item is right. Every other item-consuming
+    // spell pays a fixed product regardless of the input -- Just Learning
+    // yields exactly one Rune Essence whether it eats an Arrow Shaft worth 1 or
+    // a Gold Ore worth 30 -- so there the dearest item is precisely the wrong
+    // one, and the mistake is unrecoverable in the way selling the same item
+    // would at least not have been.
+    return spell.produces === PRODUCES_GP
+      ? chooseAlchemyItem(magic, spell, offered)
+      : chooseCheapestItem(offered);
   } catch (error) {
     noteSwallowed('skills-misc.chooseSelection', error);
-    return null;
+    return { ok: false, reason: 'the item selection could not be read' };
   }
+}
+
+/**
+ * The least valuable offered item, for a spell whose product is fixed.
+ *
+ * Nothing about the input changes the output, so the entire cost of the cast is
+ * whatever the consumed item was worth. Ties at zero are fine: an item that
+ * sells for nothing is as good a candidate as any other, and the sell guards
+ * have already removed everything that is scarce rather than merely cheap.
+ *
+ * Deliberately no profitability refusal here, unlike alchemy. The product is an
+ * item plus Magic XP rather than GP, so there is no like-for-like comparison to
+ * make; refusing whenever the cheapest offered item outvalues a Rune Essence
+ * would make Just Learning uncastable on most banks, and picking the cheapest
+ * already bounds the loss to the least valuable thing the guards will part with.
+ */
+function chooseCheapestItem(offered: readonly AnyItem[]): SelectionOutcome {
+  let best: { item: AnyItem; value: number } | null = null;
+  for (const item of offered) {
+    const value = saleValueOf(item);
+    if (best === null || value < best.value) best = { item, value };
+  }
+
+  return best === null
+    ? { ok: false, reason: 'no offered item could be priced' }
+    : { ok: true, selection: { kind: 'item', item: best.item } };
+}
+
+/**
+ * The offered item alchemy pays the most *over its sale price* to destroy.
+ *
+ * The margin over selling is the whole quantity of interest, because alchemy
+ * and the shop consume the item identically: the alternative to casting is not
+ * keeping the item, it is selling it. `getAlchemyGP` (altMagic.d.ts:162) is the
+ * game's own modified payout for `productionRatio` (:76), so a ratio raised by
+ * a modifier is accounted for without this code knowing about the modifier.
+ *
+ * A cast that pays no more than the shop is refused rather than merely ranked
+ * last. Item Alchemy I converts at 0.4x against a shop paying 1.0x, so casting
+ * it burns four runes to destroy 60% of an item's value -- and the planner
+ * books the difference as income, because the GP genuinely lands. Alchemy only
+ * beats selling from tier III (1.6x) upward. Break-even is refused too: the
+ * runes are paid either way, so a cast has to clear the sale price to have paid
+ * for itself at all.
+ *
+ * Checked per item rather than once for the spell, so an item-specific modifier
+ * cannot make the ratio profitable for one item and be assumed for the rest.
+ */
+function chooseAlchemyItem(
+  magic: AltMagic,
+  spell: AltMagicSpell,
+  offered: readonly AnyItem[],
+): SelectionOutcome {
+  let best: { item: AnyItem; margin: number } | null = null;
+  // The most-paying rejected item, kept only to make the refusal legible: an
+  // operator needs the two numbers that failed the comparison, not "no".
+  let nearest: { item: AnyItem; gp: number; value: number } | null = null;
+
+  for (const item of offered) {
+    const gp = magic.getAlchemyGP(item, spell.productionRatio);
+    if (!Number.isFinite(gp) || gp <= 0) continue;
+
+    const value = saleValueOf(item);
+    if (gp <= value) {
+      if (nearest === null || gp > nearest.gp) nearest = { item, gp, value };
+      continue;
+    }
+
+    const margin = gp - value;
+    if (best === null || margin > best.margin) best = { item, margin };
+  }
+
+  if (best !== null) return { ok: true, selection: { kind: 'item', item: best.item } };
+
+  if (nearest === null) {
+    return { ok: false, reason: `no item ${spell.name} accepts has a readable alchemy value` };
+  }
+
+  return {
+    ok: false,
+    reason: `${spell.name} pays less GP than selling: at ${spell.productionRatio}x its best offer, ${nearest.item.name}, alchemises for ${nearest.gp} against a sale value of ${nearest.value} — sell the item instead`,
+  };
 }
 
 /** GP an item sells for, or 0 when it sells for another currency. */

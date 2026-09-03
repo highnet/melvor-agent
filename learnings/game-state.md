@@ -484,3 +484,50 @@ Firemaking preferring its slowest logs.
 exhaustion of its *fallback* is reporting on a question nobody asked, and it does so once per
 pass forever — which is how a real regression arrives as a sixth line under a thousand lines
 of noise.
+
+## One comparison cannot serve two economics
+
+`chooseSelection` picked the item an Alt Magic spell destroys by the highest `getAlchemyGP`,
+for every item-consuming spell. That is right for Item Alchemy, whose payout is a ratio of the
+consumed item's own value, and backwards for everything else: `Just Learning` produces exactly
+one Rune Essence whether it eats an Arrow Shaft that sells for 1 or a Gold Ore that sells for
+30. The dump says so in one line — `produces {kind: Item, itemId: melvorD:Rune_Essence} ratio 1`
+against Item Alchemy's `kind GP` — and the two cases want *opposite* ends of the same sorted
+list. A single `>` served both and always took the dearest.
+
+The tell that generalises: the ranking key and the payout model have to come from the same
+place. Here the payout is `getAlchemyGP` for one family and a fixed product for the other, so
+no one key could be right for both. When a chooser ranks candidates for an action whose
+*yield model* varies by case, the key belongs beside the model, not above it.
+
+The same reading turned up a second thing. **Item Alchemy I pays 0.4x while the shop pays
+1.0x** — four runes spent to destroy 60% of an item's value — and the GP genuinely lands, so
+the planner books the loss as income. Alchemy only beats selling from tier III (1.6x). The
+executor now refuses any alchemy cast that does not clear the item's sale price: alchemy and
+the shop consume the item identically, so the alternative to casting is selling, not keeping.
+
+Two things that refusal had to get right:
+
+- **Rank by the margin over selling, not by the gross payout.** Gross is the number the game
+  shows, and it is the one that is almost always wrong — the same lesson as pricing a chain by
+  its last step.
+- **Carry the reason with the refusal.** `startAltMagic` turned every empty answer into
+  "nothing eligible is banked", which is false when the bank is full of items the spell accepts
+  and the cast is refused for losing money. A refusal the operator cannot interpret gets
+  overridden. The *decision* stays where the ranking is — nothing else knows which item would
+  be destroyed or what it is worth — but it now returns the reason rather than a `null` the
+  caller has to invent a story for.
+
+## A `declare enum` is a global reference, and this repo has now paid for it three times
+
+`AltMagicProductionID` (`altMagic.d.ts:28-37`) is a plain `declare enum`, so
+`spell.produces === AltMagicProductionID.Bar` compiles to a bare global lookup at the moment it
+runs. `candidates.ts` spelled its two sentinels as `-1`/`-2` for that reason and `registries.ts`
+spelled out all eight — while `skills-misc.ts` still used the enum, inside a `try` whose catch
+returns "no selection". An unresolved global there refuses *every* item-consuming spell with a
+message about the bank.
+
+The test found it: the first run of the new fixture failed eight ways with `the item selection
+could not be read`, which is the swallowed `ReferenceError` and nothing else. A convention
+followed in two files out of three is not a convention, and the file that skipped it was the
+one where the failure is silent. The sentinels are literals here now.
