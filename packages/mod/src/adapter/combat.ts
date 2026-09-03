@@ -7,6 +7,7 @@ import type {
 } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { ammoTypeName } from './equipment.js';
 import { isRefusedRealm } from './guards.js';
 import { killValueFor } from './pricing.js';
 import { readFightRate } from './rates.js';
@@ -351,8 +352,39 @@ export function readCombatGateInputs(
   };
 }
 
-/** The slot ranged ammunition occupies; see `EquipmentSlotIDs` in the typings. */
+/** The slot ranged ammunition occupies; `EquipmentSlotIDs.Quiver`, idEnums.d.ts:8652. */
 const QUIVER_SLOT_ID = 'melvorD:Quiver';
+
+/** The slot the weapon occupies; `EquipmentSlotIDs.Weapon`, idEnums.d.ts:8647. */
+const WEAPON_SLOT_ID = 'melvorD:Weapon';
+
+/** `AmmoTypeID.None`, enums.d.ts:2987 — a weapon that needs no ammunition. */
+const AMMO_TYPE_NONE = 4;
+
+/**
+ * Why no fight can be taken at all, or null if one can.
+ *
+ * Character-wide rather than per-monster: nothing here reads the target. It is
+ * about the character's *own* ability to throw a punch, which is why one answer
+ * covers every fight, dungeon and combat event on the board.
+ *
+ * Structured rather than a sentence, because both callers want different halves
+ * of it. The executor wants the refusal text; the blocked list wants the items,
+ * so it can name the recipe that makes them — a sentence would have made the
+ * shortfall invisible to the code that has to act on it, which is the mistake
+ * `sustainableMinutes` and the rung projection each made in turn.
+ */
+export interface CannotAttack {
+  /** The refusal, in the words the executor has always used. */
+  detail: string;
+  /**
+   * What the bank is short of, in the blocked list's shape.
+   *
+   * Empty when the block is not a shortfall — no spell selected, or the wrong
+   * ammunition loaded, both of which are selections rather than stock.
+   */
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}
 
 /**
  * Why this fight cannot be fought, or null if it can.
@@ -371,15 +403,64 @@ const QUIVER_SLOT_ID = 'melvorD:Quiver';
  * is what a precondition is for, and the general lesson is that *being able to
  * attack* is state, as much as health or ammunition, and nothing was checking
  * it.
+ *
+ * Exported because the *candidate* list has to ask the same question. The
+ * executor refused `Fight Leech` all evening with
+ * `Wind Strike is selected but the bank cannot pay for it (needs 1x Mind Rune)`
+ * while the list went on offering it fully priced — 200 HP, ~84 kills/h,
+ * ~16,744 damage/h — and grepping the whole candidate text for "Wind Strike" or
+ * "Mind Rune" returned nothing. The refusal was correct; the offer was the lie.
+ * One exported reader means the two can no longer disagree.
  */
-function cannotAttackRefusal(): string | null {
+export function readCannotAttackReason(): CannotAttack | null {
   const player = game.combat.player;
 
   if (player.attackType === 'ranged') {
-    const quiver = player.equipment.equippedItems[QUIVER_SLOT_ID];
-    const held = quiver === undefined || quiver.item === quiver.emptyItem ? 0 : quiver.quantity;
-    if (held <= 0) {
-      return 'the quiver is empty and the equipped weapon is ranged, so no attack can land';
+    // The game's own test, read out of the shipped v1.3.1 build rather than
+    // guessed at (nw.js HTTP cache, `Player.attack`, f_00019a.js:759-766; see
+    // learnings/mod-api.md for the brotli recipe):
+    //
+    //     if (weapon.ammoTypeRequired === 4) break;
+    //     if (weapon.ammoTypeRequired !== quiver.ammoType) {
+    //         this.onRangedAttackFailure(quiver);
+    //         canAttack = false;
+    //     }
+    //
+    // Both halves were wrong here, in opposite directions. Refusing on quiver
+    // *quantity* alone let a stack of Bronze Arrows arm an Adamant Crossbow,
+    // which the game answers with TOASTS_WRONG_AMMO (f_00019a.js:720-725) and
+    // which produces exactly the silent zero-damage stall this function exists
+    // for. And it refused a Slingshot — one of the four ranged weapons in the
+    // dump whose `ammoTypeRequired` is `None` — for an empty quiver the game
+    // breaks out before ever looking at. A guard that withholds every fight
+    // must not invent the last one.
+    const weapon = player.equipment.getItemInSlot(WEAPON_SLOT_ID);
+    // `ammoTypeRequired` lives on WeaponItem (item.d.ts:308), not on the
+    // EquipmentItem `getItemInSlot` (equipment.d.ts:110) is typed to return.
+    const required = weapon instanceof WeaponItem ? weapon.ammoTypeRequired : undefined;
+
+    if (required !== undefined && required !== AMMO_TYPE_NONE) {
+      const quiver = player.equipment.equippedItems[QUIVER_SLOT_ID];
+      const loaded = quiver === undefined || quiver.item === quiver.emptyItem ? null : quiver;
+      const wanted = ammoTypeName(required);
+
+      // Quantity as well as type, and deliberately kept alongside the game's
+      // check rather than replaced by it. Quantity is what caught the original
+      // stall, it is only ever consulted once ammunition is genuinely required,
+      // and a quiver holding nothing is not a fight anyone can take.
+      if (loaded === null || loaded.quantity <= 0) {
+        return {
+          detail: `the quiver is empty and ${weapon.name} needs ${wanted}, so no attack can land`,
+          missing: [],
+        };
+      }
+
+      if (loaded.item.ammoType !== required) {
+        return {
+          detail: `the quiver holds ${loaded.item.name} but ${weapon.name} needs ${wanted}, so no attack can land`,
+          missing: [],
+        };
+      }
     }
   }
 
@@ -389,7 +470,10 @@ function cannotAttackRefusal(): string | null {
     // entry, so it is invisible in every projection the agent takes.
     const spell = player.spellSelection.attack;
     if (spell === undefined) {
-      return 'the weapon is a staff but no attack spell is selected, so no attack can be cast';
+      return {
+        detail: 'the weapon is a staff but no attack spell is selected, so no attack can be cast',
+        missing: [],
+      };
     }
 
     // Checking only that a spell is *selected* was the wrong half of the
@@ -397,16 +481,40 @@ function cannotAttackRefusal(): string | null {
     // Strike was selected the whole time; what was missing were the Mind Runes
     // it spends, sold earlier as spare change. A selected spell with no runes
     // is exactly as unfireable as no spell at all, and just as quiet.
-    const missing = spell.runesRequired.filter(
-      (rune) => game.bank.getQty(rune.item) < rune.quantity,
-    );
+    //
+    // `getRuneCosts` (player.d.ts:163) rather than the raw `runesRequired`
+    // (spells.d.ts:27), because the listed cost is not the bill. The shipped
+    // `Player.attack` pays `this.getRuneCosts(spell)` (f_00019a.js:745) and
+    // that method (:673-693) swaps in `runesRequiredAlt` when combination runes
+    // are on and subtracts `runesProvided` — the runes the equipped staff
+    // supplies for nothing. Reading the raw list would refuse a fight the
+    // character can pay for, which is the same class of lie as offering one it
+    // cannot, and this reader now withholds candidates on the answer.
+    const missing = player
+      .getRuneCosts(spell)
+      .map((cost) => ({
+        itemId: cost.item.id,
+        name: cost.item.name,
+        need: cost.quantity,
+        have: game.bank.getQty(cost.item),
+      }))
+      .filter((cost) => cost.have < cost.need);
+
     if (missing.length > 0) {
-      const names = missing.map((rune) => `${rune.quantity}x ${rune.item.name}`).join(', ');
-      return `${spell.name} is selected but the bank cannot pay for it (needs ${names})`;
+      const names = missing.map((rune) => `${rune.need}x ${rune.name}`).join(', ');
+      return {
+        detail: `${spell.name} is selected but the bank cannot pay for it (needs ${names})`,
+        missing,
+      };
     }
   }
 
   return null;
+}
+
+/** The same question as {@link readCannotAttackReason}, as an `act` precondition. */
+function cannotAttackRefusal(): string | null {
+  return readCannotAttackReason()?.detail ?? null;
 }
 
 /**

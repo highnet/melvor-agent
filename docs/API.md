@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-221 exports.
+222 exports.
 
 ## `act`
 
@@ -2661,6 +2661,45 @@ next, and somewhere along it are the dig sites.
 
 ```ts
 readTravelCandidates: () => Candidate[]
+```
+
+## `readUnfightableCombat`
+
+`function`
+
+Why no fight, dungeon or combat event can be taken, when none can.
+
+The candidate half of {@link readCannotAttackReason}, and the reason it had
+to become a reader. All evening the executor abandoned both Fight Leech
+objectives with
+
+    abandoning objective; the game refuses it in this state:
+      Wind Strike is selected but the bank cannot pay for it (needs 1x Mind Rune)
+
+while the list offered `221. Fight Leech (Wet Forest, combat level 20) — 200
+HP (defence 10), ~84 kills/h, ~16,744 damage/h` as fully available, and a
+grep of the entire candidate text for "Wind Strike" or "Mind Rune" returned
+nothing. Every combat goal — `ranged-20`, `defence-20`, `hp-40`, `prayer-20`,
+`first-dungeon` — was blocked on a fact the planner had no way to read.
+
+One line, not one per fight. There are around two hundred reachable fights
+and the blocked window is twelve; two hundred identical copies would truncate
+away every other diagnostic, which is precisely how four notices written in a
+day were shipped and never once read. The count is stated instead.
+
+Named producers for the same reason recipes have them since
+`Magic: Superheat II — Earth Rune from Runecrafting: Earth Rune`: "needs 1x
+Mind Rune" is a fact, and "Mind Rune from Runecrafting: Mind Rune" is a move.
+
+**This guard cannot starve its own precondition, and that was checked rather
+than assumed.** What it withholds is combat; what restores the ability to
+attack is runes (a Runecrafting candidate), ammunition (Fletching, the shop,
+or the quiver reflex) or a different weapon (an equip candidate) — not one of
+them a fight. That is the difference from the bank-slot cap, whose only
+replenishment was the gathering it was blocking.
+
+```ts
+readUnfightableCombat: (withheld: number) => { label: string; xpPerHour: number; severity: BlockedSeverity; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readUnsellableNotice`

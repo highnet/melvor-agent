@@ -125,6 +125,7 @@ import {
   readTownshipGoodsCandidates,
   readTraderCandidates,
   readTravelCandidates,
+  readUnfightableCombat,
   readUnsellableNotice,
   readUpgradeCandidates,
   readWorshipCandidates,
@@ -2403,7 +2404,14 @@ export class Agent {
         ...readLockedActions().map((entry) => ({ ...entry, severity: 'low' as const })),
         // "You cannot fight this yet, and here is why" is progression context,
         // not a countdown.
-        ...this.blockedCombat().map((entry) => ({ ...entry, severity: 'low' as const })),
+        //
+        // Unless the entry set its own severity, which exactly one of them
+        // does: `readUnfightableCombat` reports that *no* fight can be taken,
+        // and forcing that to `low` would have dropped it. There are around
+        // twenty low lines competing for twelve slots, so a flat override is a
+        // decision about what gets read, and this line is the only thing
+        // standing between five combat goals and the silence that blocked them.
+        ...this.blockedCombat().map((entry) => ({ ...entry, severity: entry.severity ?? 'low' })),
       ];
 
       // Severity is filled in here rather than left to the schema's default, so
@@ -2507,6 +2515,28 @@ export class Agent {
       return this.combatCache;
     }
 
+    const targets = readCombatTargets();
+
+    // Asked once, before anything is priced, because the answer does not depend
+    // on the target: whether the character can throw a punch at all.
+    //
+    // `readUnfightableCombat` wraps the very precondition `combat.engage` and
+    // `combat.startDungeon` refuse on, so when it answers, every fight below is
+    // a candidate the game is certain to reject. A candidate is defined here as
+    // something the mod has proven it can execute right now, and offering two
+    // hundred guaranteed refusals — `Fight Leech ... ~84 kills/h` among them,
+    // priced to four significant figures — breaks that guarantee outright.
+    //
+    // Withheld and *explained*, never withheld silently: the returned line
+    // names the selected spell, the rune the bank is short of and the
+    // Runecrafting recipe that makes it. Silence here is what cost the evening,
+    // and it would cost it again one level down.
+    const unfightable = readUnfightableCombat(targets.length);
+    if (unfightable.length > 0) {
+      this.combatCache = { at: now, candidates: [], blocked: unfightable };
+      return this.combatCache;
+    }
+
     // Items the agent already knows it wants: what an open Township task asks
     // for, plus seeds it holds too few of to plant. Computed once rather than
     // per monster.
@@ -2515,7 +2545,7 @@ export class Agent {
     const candidates: Candidate[] = [];
     const blocked: ReturnType<typeof readBlockedOpportunities> = [];
 
-    for (const target of readCombatTargets()) {
+    for (const target of targets) {
       // The Slayer task says so in both lists. A refused task monster is not
       // "one more fight we cannot take": it is the only fight that can clear the
       // task blocking every other Slayer candidate, so the planner needs to see

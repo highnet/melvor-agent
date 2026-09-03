@@ -2,6 +2,7 @@ import type { BlockedSeverity, Candidate } from '@melvor-agent/shared';
 import { readActiveRecipeIds } from './active.js';
 import { canAfford, missingInputs } from './affordability.js';
 import { readGatherCandidates } from './candidates.js';
+import { readCannotAttackReason } from './combat.js';
 import { readFoodReserve, readUnusableCombatStyles } from './equipment.js';
 import { readSeedShortfalls } from './farming.js';
 import { STARTABLE_SKILL_IDS } from './gathering.js';
@@ -453,6 +454,71 @@ export function readUnstockedSkills(): {
   }
 
   return out;
+}
+
+/**
+ * Why no fight, dungeon or combat event can be taken, when none can.
+ *
+ * The candidate half of {@link readCannotAttackReason}, and the reason it had
+ * to become a reader. All evening the executor abandoned both Fight Leech
+ * objectives with
+ *
+ *     abandoning objective; the game refuses it in this state:
+ *       Wind Strike is selected but the bank cannot pay for it (needs 1x Mind Rune)
+ *
+ * while the list offered `221. Fight Leech (Wet Forest, combat level 20) — 200
+ * HP (defence 10), ~84 kills/h, ~16,744 damage/h` as fully available, and a
+ * grep of the entire candidate text for "Wind Strike" or "Mind Rune" returned
+ * nothing. Every combat goal — `ranged-20`, `defence-20`, `hp-40`, `prayer-20`,
+ * `first-dungeon` — was blocked on a fact the planner had no way to read.
+ *
+ * One line, not one per fight. There are around two hundred reachable fights
+ * and the blocked window is twelve; two hundred identical copies would truncate
+ * away every other diagnostic, which is precisely how four notices written in a
+ * day were shipped and never once read. The count is stated instead.
+ *
+ * Named producers for the same reason recipes have them since
+ * `Magic: Superheat II — Earth Rune from Runecrafting: Earth Rune`: "needs 1x
+ * Mind Rune" is a fact, and "Mind Rune from Runecrafting: Mind Rune" is a move.
+ *
+ * **This guard cannot starve its own precondition, and that was checked rather
+ * than assumed.** What it withholds is combat; what restores the ability to
+ * attack is runes (a Runecrafting candidate), ammunition (Fletching, the shop,
+ * or the quiver reflex) or a different weapon (an equip candidate) — not one of
+ * them a fight. That is the difference from the bank-slot cap, whose only
+ * replenishment was the gathering it was blocking.
+ *
+ * @param withheld - How many fights were withheld, for the label.
+ */
+export function readUnfightableCombat(withheld: number): {
+  label: string;
+  xpPerHour: number;
+  severity: BlockedSeverity;
+  missing: { itemId: string; name: string; need: number; have: number }[];
+}[] {
+  try {
+    const reason = readCannotAttackReason();
+    if (reason === null) return [];
+
+    return [
+      {
+        label: `Combat: none of the ${withheld} reachable fights, dungeons or combat events can be taken — ${reason.detail}. They are withheld rather than offered, because the game refuses every one of them in this state${describeProducers(reason.missing)}`,
+        xpPerHour: 0,
+        // Not `low` like the rest of the combat lines. Those say "you cannot
+        // fight *this* yet", which is progression context; this says combat is
+        // unavailable entirely, and it is the only line standing between five
+        // goals and silence.
+        severity: 'high',
+        missing: reason.missing,
+      },
+    ];
+  } catch (error) {
+    noteSwallowed('candidates.readUnfightableCombat', error);
+    // A reason that cannot be read is not reported as one. Combat keeps being
+    // offered, and the executor's own refusal remains the backstop it has
+    // always been.
+    return [];
+  }
 }
 
 /**

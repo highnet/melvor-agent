@@ -1,6 +1,7 @@
 import type { ActionResult, Candidate } from '@melvor-agent/shared';
 import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
+import { readCannotAttackReason } from './combat.js';
 import { isRefusedRealm } from './guards.js';
 import { noteSwallowed } from './safe.js';
 
@@ -71,6 +72,15 @@ export function startCombatEvent(
         if (game.combat.player.food.currentSlot.quantity <= 0) {
           return 'no food equipped; an event without food is a death with extra steps';
         }
+        // Nor is being able to attack. `combat.engage` and `combat.startDungeon`
+        // have refused on this since the empty-quiver stall; the event path was
+        // written later and never picked it up, so the one entry point into the
+        // hardest content in the game would happily start a run the character
+        // cannot land a hit in — standing in a boss area taking damage with no
+        // way to deal any, which is worse than the idle stall by exactly the
+        // amount of health it costs.
+        const cannotAttack = readCannotAttackReason();
+        if (cannotAttack !== null) return cannotAttack.detail;
         return null;
       },
       perform: () => game.combat.startEvent(event),
@@ -167,6 +177,12 @@ export function readEventCandidates(): Candidate[] {
 
   if (game.combat.isActive || game.activeAction !== undefined) return [];
   if (game.combat.player.food.currentSlot.quantity <= 0) return [];
+  // The same question the executor above now asks, asked here so the answer
+  // cannot differ. Not explained per-event: `readUnfightableCombat` says once,
+  // at high severity, that no fight, dungeon *or* combat event can be taken,
+  // and repeating it on a candidate withheld for the same reason would spend a
+  // second of the twelve blocked slots saying it again.
+  if (readCannotAttackReason() !== null) return [];
 
   for (const event of game.combatEvents.allObjects) {
     try {

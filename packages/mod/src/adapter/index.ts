@@ -124,6 +124,7 @@ export {
   readBlockedOpportunities,
   readLockedActions,
   readShopGoalNotice,
+  readUnfightableCombat,
 } from './blocked.js';
 export { readGatherCandidates, readShopObjectiveCandidates } from './candidates.js';
 export {
