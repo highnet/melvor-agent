@@ -1305,3 +1305,114 @@ to attack is runes, ammunition or a different weapon: a Runecrafting candidate, 
 reflex, an equip candidate. None of them is a fight, so unlike the bank-slot cap this guard
 cannot starve its own precondition. That was verified rather than assumed, and it is the reason
 withholding is safe here and would not have been for food.
+
+## Empty slots are in the death roll, so a slot can be worth emptying
+
+Every gear reader in this mod answered "what is worth *wearing*". The question
+nobody asked is whether a slot is worth **emptying**, and `applyDeathPenalty`
+had been charging for the omission 55 times.
+
+The typings say only *"Removes an item from the player's equipment on death"*
+(player.d.ts:410). The shipped v1.3.1 `Player` says how (nw.js cache,
+f_00019a.js:2628-2643):
+
+```js
+const priorityOrderSlots = [...this.equipment.equippedArray]
+    .sort((a, b) => a.item.deathPenaltyPriority - b.item.deathPenaltyPriority);
+const lowestPriority = priorityOrderSlots[0].item.deathPenaltyPriority;
+let minPriorityLength = priorityOrderSlots.findIndex(
+    (equipped) => equipped.item.deathPenaltyPriority > lowestPriority);
+if (minPriorityLength === -1) minPriorityLength = priorityOrderSlots.length;
+const priorityIndex = rollInteger(0, minPriorityLength - 1);
+const equipped = priorityOrderSlots[priorityIndex];
+if (!equipped.isEmpty && this.game.tutorial.complete) { /* it is destroyed */ }
+```
+
+Three facts, and the third is the one worth having:
+
+- `deathPenaltyPriority` defaults to 0 (item.d.ts:197-198) and **exactly one
+  item in the base game sets it** — the Decoy Idol, at -1, whose own
+  description is "This is always chosen as the item lost on death". So for
+  everyone else the tier is uniform and the roll is over the whole array.
+- The empty-slot placeholder is an ordinary `EquipmentItem` constructed with no
+  `deathPenaltyPriority` at all (f_00019d.js:346-362). It defaults to 0 too, so
+  **empty slots are drawn like any other**, and a roll landing on one destroys
+  nothing.
+- Therefore taking an item off does not merely remove it from the draw — it
+  converts its ticket into a blank. This character's array is 19 entries with 9
+  occupied, so each worn item was 1/19 per death, and each strip is worth a
+  full ticket in both directions.
+
+None of that is derivable from the typings, and the middle fact is the one a
+reasonable person would have guessed wrong.
+
+### "Cannot be scored" is not "contributes nothing"
+
+The tempting rule is "strip anything with no combat stats". Three items in this
+character's own loadout show why that is not the same claim, and the shipped
+data settles each:
+
+| Item | `equipmentStats` | Verdict |
+|---|---|---|
+| Thiever's Cape | `[]` | inert in a fight — its modifiers are Thieving |
+| Basic Barrier Gem | `[]` | **not** inert — `flatBarrierDamage` acts in a fight |
+| Ent (Summon) | `[]` | skilling familiar; a *combat* one carries `summoningMaxhit` |
+
+`Modifier.isCombat` looks like the game's own answer and is not. It is
+documented as "if this modifier causes a change in combat stats when changed"
+(modifiers.d.ts:295-296) — a claim about the recomputed stats block, not about
+whether the modifier matters when swords come out. `flatBarrierDamage` and
+`lifesteal` are both unscoped, neither sets `isCombat`, and both plainly act in
+a fight. There is no machine-readable "affects combat" flag on a modifier.
+
+What is real is `ModifierValue.skill` (modifiers.d.ts:56, :19) — the game's own
+record of the scope — but it is present on fewer modifiers than the data
+suggests: the Thiever's Cape's `currencyGain` and `skillXP` carry
+`skillID: melvorD:Thieving`, while its `thievingStealth` carries no scope at
+all. So "every modifier is skill-scoped to a non-combat skill" rejects the very
+item the work existed for.
+
+The rule that survived is deny-by-default and three-layered: no non-zero
+equipment stat, no conditional modifiers, and every modifier either scoped by
+the game to a non-combat skill *or* named in a short explicit table — plus a
+slot deny-list, so the Gem and the Summons take two mistakes rather than one to
+strip. Being wrong toward "keep it on" costs nothing that is not already being
+paid; being wrong toward "inert" fights without something that mattered.
+
+### The `withTownBiome` shape does not survive contact with a fight
+
+`withTownBiome` / `withBuildQuantity` / `withBuyQuantity` work because the call
+they wrap is synchronous. A fight is not: it starts on one tick and ends minutes
+later on a tick nobody is standing on, and it can end in death, an abort, a
+reload or the offline loop. A `finally` around `combat.engage` returns before
+the first punch.
+
+The general form: **when the thing being scoped outlives the call, the restore
+is a state machine and not a scope** — a record of what was changed, and a
+condition that puts it back. Here the strip is `inCombat && strippable > 0` and
+the restore is `!inCombat && stashed`, which is one observation covering death,
+abort, victory and disengage alike, plus an explicit restore before `reloadGame`
+saves, since a reload takes the page and the record with it.
+
+The failure the design cannot handle is worth stating because it is why this is
+safe: a crash mid-fight loses the record, and loses nothing else. Stashed gear
+is in the *bank*, where the death penalty cannot reach it, and the fill reflex
+puts it back unprompted next session.
+
+### One opinion per question
+
+The first version stripped at the engage chokepoint. The better version is one
+more clause beside `removePenalisingGear`, which already unequips gear that
+*actively hurts* the style in use — the missing case was gear that merely
+contributes nothing. Two separate opinions about what should come off is the bug
+class this repo keeps paying for, and the existing reflex had already solved an
+ordering problem the new one would have hit: unequipping puts the item back in
+the bank, so it has to run after the bank reflexes, on a bank that sits at 53 of
+64 slots most of the day.
+
+The cost of folding it in is one throttled tick of exposure at the start of each
+fight instead of none. That is the right trade, and the condition it buys is the
+one that matters: `inCombat`, so the Thiever's Cape keeps its 25 Stealth and
++10% Thieving GP every second the character is not fighting. A rule that
+stripped whenever an item failed a *combat* test would quietly have cost the
+Thieving income the run lives on.

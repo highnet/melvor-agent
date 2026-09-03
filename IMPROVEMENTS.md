@@ -40,7 +40,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
-- [ ] **The agent wears valuables into fights that give it nothing, and death
+- [x] **The agent wears valuables into fights that give it nothing, and death
       takes one** — M. `Player.applyDeathPenalty()` (player.d.ts:410) is
       documented verbatim as *"Removes an item from the player's equipment on
       death"*. This character has died **55 times**. It is currently wearing a
@@ -66,6 +66,38 @@ Township summary reported 0% health while the repair reflex correctly computed
       consumed or contribute in ways the stat comparison does not see, and the
       operator's own selections are their state -- so this should strip what
       demonstrably contributes nothing, not everything it cannot score.
+      Fixed, and the shipped source made it a bigger win than the brief
+      assumed. `applyDeathPenalty` (f_00019a.js:2628-2643) rolls uniformly over
+      the *whole* equipment array: `deathPenaltyPriority` defaults to 0
+      (item.d.ts:197) and only the Decoy Idol sets -1, and the empty-slot
+      placeholder is an ordinary item with the default too
+      (f_00019d.js:346-362) -- so **empty slots are in the roll** and taking an
+      item off converts its ticket into a blank rather than merely removing it.
+      This array is 19 entries with 9 occupied, so the Cape and the Necklace
+      were 1/19 each on all 55 deaths.
+      `reflex.stripValuables` is one more clause beside `removePenalisingGear`
+      rather than a second path: that one acts on gear that *actively hurts*
+      the style, this one on gear the fight has no use for, and it inherits the
+      ordering that reflex already documents -- after the bank reflexes,
+      because unequipping needs a free bank slot and this bank runs 53 of 64.
+      It fires only while `inCombat`, so the Thiever's Cape keeps its Stealth
+      and its +10% Thieving GP the rest of the day.
+      `reflex.restoreValuables` is the load-bearing half and is deliberately
+      broader: `!inCombat && stashed` is one observation covering death, abort,
+      victory and disengage alike, and `reloadGame` restores separately since a
+      reload takes the page and the stash with it. Nothing added makes the
+      agent fight less or gates a fight on gear state.
+      The two cautions were both real and both settled from the data rather
+      than by exclusion alone. A *combat* familiar carries `summoningMaxhit`
+      and `consumesOn: PlayerSummonAttack` while the equipped Ent is a
+      Woodcutting tablet -- the stat test alone would have stripped the wrong
+      one of the pair, so the Summon slots are excluded outright and the
+      synergy the planner arranges cannot be broken by a reflex. And the Basic
+      Barrier Gem is the proof that "no combat stats" is not "inert": its
+      `flatBarrierDamage` does **not** set `Modifier.isCombat`
+      (modifiers.d.ts:295) yet plainly acts in a fight, which is why the rule
+      is deny-by-default over an explicit table instead of a filter on that
+      flag. See `learnings/game-state.md`.
 
 - [x] **A fight is offered at full price while the selected attack spell cannot be
       cast** — M. Every combat goal has been blocked all evening and nothing in
