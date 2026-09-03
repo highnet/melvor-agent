@@ -198,6 +198,7 @@ import {
   stopWhenStarving,
   unlockAffordablePlots,
 } from './combat-reflex.js';
+import { DeathWatch } from './death-watch.js';
 import type { Logger } from './logger.js';
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
@@ -371,15 +372,14 @@ export class Agent {
     blocked: ReturnType<typeof readBlockedOpportunities>;
   } | null = null;
   private objectiveStartedAt = Date.now();
-  private deathsSinceStart = 0;
 
   /**
-   * Last observed value of the game's lifetime death counter.
+   * Deaths, and the baseline they are counted from.
    *
    * `null` until the first reading, so arming does not report the character's
-   * entire history as deaths that just happened.
+   * entire history as deaths that just happened. See {@link DeathWatch}.
    */
-  private lastDeathCount: number | null = null;
+  private readonly deaths = new DeathWatch();
 
   /** Game-loop ticks since load. The only evidence the loop is alive. */
   private tickCount = 0;
@@ -1131,7 +1131,7 @@ export class Agent {
     this.settings = { ...this.settings, enabled: true, lastDeathCount: readDeathCount() };
     this.objectiveStartedAt = Date.now();
     this.objectiveStartMetrics = this.captureMetrics();
-    this.deathsSinceStart = 0;
+    this.deaths.resetRun();
     this.log.info('runtime', 'armed');
     this.notify();
   }
@@ -1213,7 +1213,7 @@ export class Agent {
       this.settings = { ...this.settings, objective: next, plan: rest };
       this.objectiveStartedAt = now;
       this.objectivelessSince = null;
-      this.deathsSinceStart = 0;
+      this.deaths.resetRun();
       this.consecutiveActionFailures = 0;
       this.log.info('planner', `plan advanced (${rest.length} left): ${next.rationale}`);
       this.notify();
@@ -1244,7 +1244,7 @@ export class Agent {
     this.settings = { ...this.settings, objective };
     this.objectiveStartedAt = now;
     this.objectivelessSince = null;
-    this.deathsSinceStart = 0;
+    this.deaths.resetRun();
     this.consecutiveActionFailures = 0;
     this.log.warn('policy', `stopgap adopted: ${objective.rationale}`);
     this.requestReplan('objective_completed');
@@ -1321,7 +1321,7 @@ export class Agent {
     // A real plan arrived, so the stopgap clock starts again from scratch next
     // time rather than firing immediately after this objective ends.
     this.objectivelessSince = null;
-    this.deathsSinceStart = 0;
+    this.deaths.resetRun();
     this.consecutiveActionFailures = 0;
     this.log.info('planner', `new objective (${trigger}): ${usable.rationale}`, {
       reasoning: response.reasoning,
@@ -1500,26 +1500,12 @@ export class Agent {
    */
   private detectDeath(): void {
     const deaths = readDeathCount();
-
-    // First reading establishes the baseline; a character with a long history
-    // has not just died forty times.
-    if (this.lastDeathCount === null) {
-      this.lastDeathCount = deaths;
-      return;
-    }
-
-    if (deaths <= this.lastDeathCount) {
-      this.lastDeathCount = deaths;
-      return;
-    }
-
-    const died = deaths - this.lastDeathCount;
-    this.lastDeathCount = deaths;
-    this.deathsSinceStart += died;
+    const died = this.deaths.observe(deaths);
+    if (died === 0) return;
 
     this.log.error(
       'runtime',
-      `character died (${died} since last check, ${this.deathsSinceStart} this run); clearing the objective`,
+      `character died (${died} since last check, ${this.deaths.deathsSinceStart} this run); clearing the objective`,
     );
 
     // The baseline moves with it. A death the agent has already seen, reported
@@ -1587,7 +1573,7 @@ export class Agent {
       objective,
       now: Date.now(),
       objectiveStartedAt: this.objectiveStartedAt,
-      deathsSinceStart: this.deathsSinceStart,
+      deathsSinceStart: this.deaths.deathsSinceStart,
     });
 
     switch (decision.kind) {
@@ -2219,7 +2205,7 @@ export class Agent {
     return {
       totalLevel: snapshot.totalLevel,
       gp: snapshot.currencies.find((entry) => entry.id === GP_CURRENCY_ID)?.amount ?? 0,
-      deaths: this.deathsSinceStart,
+      deaths: this.deaths.deathsSinceStart,
     };
   }
 
@@ -2259,7 +2245,7 @@ export class Agent {
       deltas: {
         totalLevel: snapshot.totalLevel - started.totalLevel,
         gp: gp - started.gp,
-        deaths: Math.max(0, this.deathsSinceStart - started.deaths),
+        deaths: Math.max(0, this.deaths.deathsSinceStart - started.deaths),
       },
       note,
     });
@@ -2634,7 +2620,7 @@ export class Agent {
         this.objectiveStartedAt = Date.now();
         this.objectiveStartMetrics = this.captureMetrics();
         this.objectivelessSince = null;
-        this.deathsSinceStart = 0;
+        this.deaths.resetRun();
         this.consecutiveActionFailures = 0;
         this.log.info(
           'operator',
@@ -2691,7 +2677,7 @@ export class Agent {
         this.objectiveStartedAt = Date.now();
         this.objectiveStartMetrics = this.captureMetrics();
         this.objectivelessSince = null;
-        this.deathsSinceStart = 0;
+        this.deaths.resetRun();
         this.consecutiveActionFailures = 0;
         this.log.info(
           'operator',
