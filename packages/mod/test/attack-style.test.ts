@@ -87,10 +87,13 @@ describe('putting on gear the character is missing', () => {
     // candidate list saying "Neck is empty" for as long as nobody read that
     // line. The reader was working; the choosing was not.
     const equipped: string[] = [];
-    fillEmptySlots({ inCombat: false, emptySlotGear: [necklace], replacements: [] }, (itemId) => {
-      equipped.push(itemId);
-      return ok();
-    });
+    fillEmptySlots(
+      { inCombat: false, emptySlotGear: [necklace], replacements: [], stuckEquipIds: [] },
+      (itemId) => {
+        equipped.push(itemId);
+        return ok();
+      },
+    );
 
     expect(equipped).toEqual(['melvorD:Jeweled_Necklace']);
   });
@@ -103,6 +106,7 @@ describe('putting on gear the character is missing', () => {
         inCombat: false,
         emptySlotGear: [necklace],
         replacements: [{ itemId: 'melvorD:Steel_Helmet', slotId: 'melvorD:Helmet', gain: 5 }],
+        stuckEquipIds: [],
       },
       (itemId) => {
         equipped.push(itemId);
@@ -119,7 +123,10 @@ describe('putting on gear the character is missing', () => {
     const marginal = [{ itemId: 'melvorD:X', slotId: 'melvorD:Helmet', gain: 1.05 }];
 
     expect(
-      fillEmptySlots({ inCombat: false, emptySlotGear: [], replacements: marginal }, () => ok()),
+      fillEmptySlots(
+        { inCombat: false, emptySlotGear: [], replacements: marginal, stuckEquipIds: [] },
+        () => ok(),
+      ),
     ).toBeNull();
   });
 
@@ -127,7 +134,10 @@ describe('putting on gear the character is missing', () => {
     // The survivability gate approved this fight with the gear the character
     // had; changing it underneath that approval is how a safe fight turns.
     expect(
-      fillEmptySlots({ inCombat: true, emptySlotGear: [necklace], replacements: [] }, () => ok()),
+      fillEmptySlots(
+        { inCombat: true, emptySlotGear: [necklace], replacements: [], stuckEquipIds: [] },
+        () => ok(),
+      ),
     ).toBeNull();
   });
 });

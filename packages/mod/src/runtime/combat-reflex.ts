@@ -786,6 +786,26 @@ export function fillEmptySlots(
     emptySlotGear: readonly { itemId: string; slotId: string }[];
     /** Gear that beats what is worn, as a ratio of stat scores, best first. */
     replacements: readonly { itemId: string; slotId: string; gain: number }[];
+    /**
+     * Equips that reported success and did not stick, so must not be retried.
+     *
+     * Observed live: `reflex.upgradeGear` equipped a Steel Scimitar over a
+     * Staff of Air roughly every 1.5 seconds for minutes on end. Every call
+     * returned `ok` with a real before/after diff -- the adapter's own read of
+     * `player.equipment.equippedItems` genuinely showed the scimitar after the
+     * call -- and yet the next tick read the staff again, and the bank count of
+     * scimitars never moved. Something reverts the slot between the call and
+     * the following tick, unlogged, and nothing in the typings says what.
+     *
+     * That cause is still open. This does not paper over it: it converts an
+     * unbounded loop that reads as success into one reported refusal, which is
+     * the difference between an agent that looks busy and an agent that says
+     * what is wrong. The action slot was being spent forty times a minute on a
+     * swap the game was undoing, and no tier above the adapter could see it --
+     * the same shape as the Alt Magic cast/stop loop and the Agility
+     * stop/run loop before it.
+     */
+    stuckEquipIds: readonly string[];
   },
   equip: (itemId: string, slotId: string) => ActionResult<unknown>,
 ): ReflexOutcome | null {
@@ -794,7 +814,9 @@ export function fillEmptySlots(
   // fight becomes an unsafe one.
   if (state.inCombat) return null;
 
-  const next = state.emptySlotGear[0];
+  const stuck = new Set(state.stuckEquipIds);
+
+  const next = state.emptySlotGear.find((entry) => !stuck.has(entry.itemId));
   if (next !== undefined) {
     return { name: 'reflex.fillEmptySlot', result: equip(next.itemId, next.slotId) };
   }
@@ -804,7 +826,9 @@ export function fillEmptySlots(
   // already been wrong once — a Steel Platebody scored higher than what it
   // replaced and left an archer unable to land a shot. A margin means the sum
   // has to be confidently right, not merely right.
-  const upgrade = state.replacements.find((entry) => entry.gain >= GEAR_UPGRADE_MARGIN);
+  const upgrade = state.replacements.find(
+    (entry) => entry.gain >= GEAR_UPGRADE_MARGIN && !stuck.has(entry.itemId),
+  );
   if (upgrade === undefined) return null;
 
   return { name: 'reflex.upgradeGear', result: equip(upgrade.itemId, upgrade.slotId) };

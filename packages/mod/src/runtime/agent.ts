@@ -212,6 +212,7 @@ import {
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { QualityWindow } from './quality-window.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
+import { StuckEquipWatch } from './stuck-equip.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
 import type { Transport } from './transport.js';
 
@@ -452,6 +453,17 @@ export class Agent {
    * no to the second for fifteen minutes, at zero XP.
    */
   private readonly noMovement = new NoMovementWatch();
+
+  /**
+   * Catches an equip that verifies and is then undone; see StuckEquipWatch.
+   *
+   * Paired with `lastEquipAttempt`, because the check has to happen a tick
+   * later than the call -- the adapter's `ok` was truthful at the moment it
+   * looked, and the reversion happens after that.
+   */
+  private readonly stuckEquip = new StuckEquipWatch();
+
+  private lastEquipAttempt: { itemId: string; slotId: string } | null = null;
 
   /** The stall last detected, with the objective it belongs to. Null while healthy. */
   private stalled: { objectiveId: string; evidence: StalledCounter } | null = null;
@@ -752,6 +764,27 @@ export class Agent {
         : (snapshot.combat.food.find((entry) => entry.qty > 0) ?? selected);
 
     const liveFood = readEquippedFood();
+    // Judge last tick's equip before choosing this tick's. The adapter's `ok`
+    // was honest about the moment it looked; only a later tick can show that
+    // the slot was put back. See StuckEquipWatch.
+    const attempted = this.lastEquipAttempt;
+    this.lastEquipAttempt = null;
+    if (attempted !== null) {
+      const worn =
+        snapshot.combat.equipment.find((entry) => entry.slot === attempted.slotId)?.itemId ?? null;
+      const wasStuck = this.stuckEquip.isStuck(attempted.itemId);
+      this.stuckEquip.record(attempted.itemId, worn);
+
+      // Once, on the transition. A line every tick for a condition that
+      // persists is the noise that has twice buried real diagnostics here.
+      if (!wasStuck && this.stuckEquip.isStuck(attempted.itemId)) {
+        this.log.error(
+          'policy',
+          `equipping ${attempted.itemId} into ${attempted.slotId} verified and was then undone three times running (slot now holds ${worn ?? 'nothing'}); the game is reverting it for a reason nothing reports, so it will not be retried`,
+        );
+      }
+    }
+
     const gearUpgrades = readGearUpgrades();
 
     // Read live rather than from the snapshot. The snapshot refreshes only on
@@ -829,8 +862,12 @@ export class Agent {
           inCombat: snapshot.combat.inCombat,
           emptySlotGear: gearUpgrades.emptySlot,
           replacements: gearUpgrades.replacement,
+          stuckEquipIds: this.stuckEquip.ids(),
         },
-        (itemId, slotId) => equipItem(itemId, slotId, isSuspended),
+        (itemId, slotId) => {
+          this.lastEquipAttempt = { itemId, slotId };
+          return equipItem(itemId, slotId, isSuspended);
+        },
       ),
       // Food, before anything that spends it. Passive cooking does not take the
       // action slot, so this is free alongside whatever is running.
