@@ -233,6 +233,35 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Critical — correctness or safety, do next
 
+- [ ] **`upgradeGear` re-equips the same item forever** — S. The sixth loop of
+      this class, found while chasing the fight thrash and left alone to keep
+      that fix reviewable. On 2026-09-03 at 15:58 the log holds 89 identical
+      `equipment.equip ok — itemId "melvorF:Staff_of_Air" -> "melvorD:Steel_Scimitar"`
+      lines from the policy tier on the 3s clock, each followed by
+      `reflex.upgradeGear fired` on the reflex clock — *two* tiers each swapping
+      the weapon, at 15:58:10.916 / 15:58:11.403, 15:58:13.902 / 15:58:14.484,
+      and so on for four minutes. The two disagree about which weapon is better
+      and undo each other, which is the "one opinion per question" rule broken
+      the other way from the valuables strip. `reflex.repairTownship: state
+      unchanged after call` appears 381 times the same day and wants the same
+      look.
+- [ ] **A level target for a fight is never sized against the rate** — S.
+      `rungFor` returns `{ level: targetLevel, note: null }` unchanged when the
+      candidate has no `params.skillId`, which is every combat candidate. Now
+      that a fight carries a real Hitpoints criterion, that criterion is the one
+      shape with no guard — the exact asymmetry *a parameter nothing has ever
+      passed* records for stock targets. It needs the combat candidate's own
+      Hitpoints XP/h, which `readFightPricing` is the natural place to supply.
+- [ ] **`successFor` still drops a target silently for any kind it cannot
+      express** — S. Fights are fixed; the general hole is not. A blanket
+      refusal is the wrong shape, because `targetLevel` is a required argument
+      every caller passes including the genuinely one-shot sales and purchases
+      the `[]` branch exists for, so refusing on "could not express it" would
+      break them. The right fix is to name the *sustained* kinds — the ones that
+      train while they run — and refuse when one of those produces no criterion,
+      so the next `fight_monster`-shaped kind fails loudly instead of queueing an
+      objective that can never complete.
+
 - [x] **Death is never detected** *(2×)* — S. `deathsSinceStart` (agent.ts:302) is
       only ever assigned 0, so `abortWhen.deathsExceed` can never fire and the
       `death` trigger is never sent. Poll

@@ -91,6 +91,7 @@ import {
   readGatherCandidates,
   readGearUpgrades,
   readHeldCompost,
+  readInCombat,
   readLapsingPotions,
   readLevelCapCandidates,
   readLoadoutCandidates,
@@ -932,7 +933,11 @@ export class Agent {
       // that ends by dying is the fight whose restore matters most.
       restoreValuablesAfterCombat(
         {
-          inCombat: snapshot.combat.inCombat,
+          // Read live, not from the snapshot. On the throttled snapshot this
+          // fired one second into every fight and put the valuables straight
+          // back on -- undoing the protection the strip exists for, at the one
+          // moment `applyDeathPenalty` can charge for it. See readInCombat.
+          inCombat: readInCombat(),
           hasStashedValuables: hasStashedValuables(),
         },
         () => restoreStashedValuables(isSuspended),
@@ -1060,7 +1065,10 @@ export class Agent {
       // all 55 deaths while `applyDeathPenalty` rolled for it every time.
       stripValuablesForFight(
         {
-          inCombat: snapshot.combat.inCombat,
+          // Live, for the reason its partner above documents: on the snapshot
+          // this fired one second *after* each disengage, stripping a
+          // character who had stopped fighting.
+          inCombat: readInCombat(),
           strippable: readStrippableValuables().length,
         },
         () => stashValuablesForCombat(isSuspended),

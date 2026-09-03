@@ -51,6 +51,7 @@ export {
   startDungeon,
   type CombatProjection,
   readPlayerHitpoints,
+  readInCombat,
 } from './combat.js';
 export {
   FARMING_ID,

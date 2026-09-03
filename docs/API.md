@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-238 exports.
+239 exports.
 
 ## `act`
 
@@ -1965,6 +1965,41 @@ The cheapest compost actually held, or null when there is none.
 
 ```ts
 readHeldCompost: () => { itemId: string; held: number; } | null
+```
+
+## `readInCombat`
+
+`function`
+
+Whether a fight is running, read now rather than from the last snapshot.
+
+The sibling of {@link readPlayerHitpoints} and it exists for the identical
+reason: the reflex tier runs on a 1s throttle against `lastSnapshot`, which
+only refreshes on the 3s policy clock, so a reflex whose entire condition is
+`inCombat` can act on a reading up to three seconds out of date.
+
+That is not a theoretical window. Live, `reflex.restoreValuables` fired one
+second after every `combat.engage` — reading the pre-engage snapshot, seeing
+no fight, and putting the Thiever's Cape and Jeweled Necklace straight back
+on *during* the fight the strip exists to protect them from. Its partner
+fired one second after each disengage and stripped a character who was no
+longer fighting. The pair was inverted by exactly one throttled tick.
+
+`isActive` (baseManager.d.ts:68, inherited by `CombatManager`,
+combatManager.d.ts:53-54) is the same field the snapshot reads
+(`readers.ts`, `combat.inCombat`) and the same one `disengageCombat`'s
+precondition checks, so this is the identical question asked at the right
+moment rather than a second opinion about it.
+
+Not `fightInProgress` (baseManager.d.ts:61), which is the narrower claim and
+the wrong one here: it goes false between kills while the spawn timer runs,
+and a character standing in a combat area waiting for the next enemy is
+exactly as exposed to `applyDeathPenalty` as one mid-swing. `isActive` spans
+the whole session, from `selectMonster` to `stop`, which is the window the
+valuables must stay off for.
+
+```ts
+readInCombat: () => boolean
 ```
 
 ## `readIsInOnlineLoop`
