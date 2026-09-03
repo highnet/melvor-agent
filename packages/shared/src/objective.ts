@@ -515,6 +515,61 @@ export const candidateSchema = z.object({
    * Both labels said "inputs run out almost immediately".
    */
   sustainMinutes: z.number().nonnegative().optional(),
+  /**
+   * The item this candidate puts in the bank, and how fast.
+   *
+   * Absent where nothing identifiable is produced -- Thieving pays coins, a
+   * purchase or an equip produces nothing -- so absent means "this is not a
+   * producer", never "the rate is unknown".
+   *
+   * It exists because a stock target had no way to be sized. `rungFor` sizes a
+   * *level* target against `xpPerHour` and the budget, and its whole argument
+   * is that an objective which times out "teaches nothing"; a stock target
+   * skipped that sizing entirely, so `untilQuantity: 10000` for Mind Runes was
+   * accepted against a bank holding 1,347 Rune Essence and would have run its
+   * full 90 minute abort producing about 5,000. `perHour` is the missing term:
+   * with it and {@link sustainMinutes}, the budget ceiling and the materials
+   * ceiling are both arithmetic.
+   *
+   * `perHour` is the expectation the candidate's own rate is built from --
+   * `productYieldFor` times the same actions-per-hour the XP figure uses -- so
+   * it carries the same mastery, doubling and landing-chance terms and cannot
+   * drift from the label beside it.
+   */
+  produces: z
+    .object({
+      itemId: gameIdSchema,
+      name: z.string(),
+      perHour: z.number().nonnegative(),
+    })
+    .optional(),
+  /**
+   * A stock figure something else is short of, that this candidate produces.
+   *
+   * The agent has always computed exact stock requirements and spent them on
+   * prose. `readBlockedOpportunities` emits a line reading `Magic: Superheat II
+   * — Earth Rune from Runecrafting: Earth Rune — needs Earth Rune 1/3`: a
+   * complete stock objective, naming a producer, an item and a number, that
+   * nothing could consume as data. So every goal and every plan step came out
+   * level-shaped, and "craft Mind Runes to Runecrafting 49" was set for a
+   * problem whose real question was how many runes combat needed.
+   *
+   * This is that number, carried on the candidate that would produce it, ready
+   * to pass to `untilQuantity`. It is a **suggestion and not a choice**: the
+   * planner is told what is short and how the figure was derived (`why`), and
+   * decides. Picking for the caller is the thing `rungFor` argues against.
+   */
+  suggestedStock: z
+    .object({
+      itemId: gameIdSchema,
+      name: z.string(),
+      /** An absolute bank target, matching `item_qty_at_least`, not a delta. */
+      quantity: z.number().int().positive(),
+      have: z.number().nonnegative(),
+      /** How the figure was derived, so it can be argued with rather than trusted. */
+      why: z.string(),
+    })
+    .optional(),
   /** Requirements that are currently met. Candidates with unmet ones are not emitted. */
   requiresLevel: z.number().int().nonnegative().optional(),
   available: z.literal(true),

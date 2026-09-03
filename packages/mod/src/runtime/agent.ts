@@ -14,9 +14,11 @@ import type {
 } from '@melvor-agent/shared';
 import { checkArmHealth, fail, stateSnapshotSchema, summariseResult } from '@melvor-agent/shared';
 import {
+  type StockDemand,
   Subscriptions,
   THIEVING_ID,
   advanceGolbinRaid,
+  annotateStockDemand,
   buildAgilityObstacle,
   buildTownshipBuilding,
   buryBones,
@@ -45,6 +47,7 @@ import {
   harvestFarmPlot,
   hasAutoEat,
   increaseTownHealth,
+  mergeDemands,
   newSlayerTask,
   onGameEvent,
   openItem,
@@ -119,6 +122,7 @@ import {
   readSynergyCandidates,
   readTaskCandidates,
   readTaskOpportunities,
+  readTaskStockDemands,
   readTaskWantedItemIds,
   readTownHealthCandidates,
   readTownshipCandidates,
@@ -450,6 +454,17 @@ export class Agent {
   private attention: string | null = null;
   /** The blocked opportunities last shipped, so the panel can show the urgent ones. */
   private lastBlocked: BlockedOpportunity[] = [];
+
+  /**
+   * Stock shortfalls from the last blocked enumeration, keyed by item.
+   *
+   * Held here rather than recomputed by {@link safeCandidates} because the
+   * blocked walk is what produces them and it covers every recipe of every
+   * skill -- doing it twice a report to answer the same question would be the
+   * expensive half of enumeration paid twice. See {@link stockDemands} for why
+   * the two calls are ordered.
+   */
+  private lastDemands: ReadonlyMap<string, StockDemand> = new Map();
   private replanPending: string | null = null;
   /** Guards against overlapping planner calls while one is in flight. */
   private replanning = false;
@@ -1322,10 +1337,14 @@ export class Agent {
     const snapshot = this.lastSnapshot;
     if (snapshot === null) return;
 
+    // Same ordering as the report path, and for the same reason: the blocked
+    // walk computes the shortfalls that `safeCandidates` attaches.
+    const blockedOpportunities = this.safeBlocked();
+
     const response = await this.transport.plan({
       snapshot,
       candidates: this.safeCandidates(),
-      blockedOpportunities: this.safeBlocked(),
+      blockedOpportunities,
       digest: { recent: [], aggregates: [] },
       trigger: KNOWN_TRIGGERS.has(trigger) ? trigger : 'operator',
     });
@@ -2291,6 +2310,15 @@ export class Agent {
     const journalEntries = this.journal.drain();
     const quiet = options.stateOnly === true || this.state === 'killed';
 
+    // Blocked first, deliberately: the blocked walk is what computes the stock
+    // shortfalls, and `safeCandidates` puts them on the producers. Left to the
+    // object literal's own evaluation order below, candidates ran first and
+    // every suggestion would have been one report stale -- which is exactly the
+    // failure this feature exists to end, a number arriving too late to be
+    // acted on.
+    const blockedOpportunities = quiet ? [] : this.safeBlocked();
+    const candidates = quiet ? [] : this.safeCandidates();
+
     const reply = await this.transport.report({
       runState: this.state,
       snapshot: options.stateOnly === true ? null : this.lastSnapshot,
@@ -2299,8 +2327,8 @@ export class Agent {
       // steps" cannot tell whether any of the three still matches the game.
       plan: this.settings.plan,
       objectiveStartedAt: this.settings.objective === null ? null : this.objectiveStartedAt,
-      candidates: quiet ? [] : this.safeCandidates(),
-      blockedOpportunities: quiet ? [] : this.safeBlocked(),
+      candidates,
+      blockedOpportunities,
       buildStamp: readBuildStamp(),
       logs,
       quality: this.quality.recent(),
@@ -2414,6 +2442,18 @@ export class Agent {
         severity: entry.severity ?? ('normal' as const),
       }));
 
+      // The shortfalls, as numbers, for the candidates that would fill them.
+      //
+      // Taken from the entries this pass built rather than from `ranked`, so a
+      // demand is not lost to the twelve-slot cut: the cut decides what a
+      // *person* reads, and this is read by the code that sizes an objective.
+      // Township tasks are folded in here because they are the one demand
+      // source that states its own quantity -- see readTaskStockDemands.
+      this.lastDemands = mergeDemands([
+        ...blocked.flatMap((entry) => entry.demands ?? []),
+        ...readTaskStockDemands(readBankQuantity),
+      ]);
+
       // Cached for the panel, which must not recompute this on every render.
       this.lastBlocked = ranked;
       return ranked;
@@ -2467,7 +2507,13 @@ export class Agent {
         this.log.warn('adapter', `${name} candidate enumeration failed: ${String(error)}`);
       }
     }
-    return candidates;
+    // Each producer told what is short of the thing it produces, and how much.
+    //
+    // The join has to happen here rather than inside any one enumerator: the
+    // shortfall belongs to a *consumer* in some other skill -- bars from
+    // Smithing for a Fletching recipe, runes from Runecrafting for a spell --
+    // and no enumerator can see across the boundary. See annotateStockDemand.
+    return annotateStockDemand(candidates, this.lastDemands);
   }
 
   /**

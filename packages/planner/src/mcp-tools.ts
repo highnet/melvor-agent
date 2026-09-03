@@ -321,7 +321,7 @@ export const TOOLS: Record<string, ToolHandler> = {
     // a level. Both must be present to mean anything.
     const stockItemId = typeof args.untilItemId === 'string' ? args.untilItemId : undefined;
     const stockQuantity = Number(args.untilQuantity);
-    const stockTarget =
+    const requestedStock =
       stockItemId !== undefined && Number.isFinite(stockQuantity) && stockQuantity > 0
         ? { itemId: stockItemId, quantity: stockQuantity }
         : undefined;
@@ -332,11 +332,23 @@ export const TOOLS: Record<string, ToolHandler> = {
     // budget. Unchecked, it lands on one of the two failures nextRung was
     // written to prevent: too far and the objective always ends in
     // `abortMinutes`, too near and it completes in minutes and spends the hour
-    // replanning. A stock target has no level, so it skips this entirely.
+    // replanning. A stock target has no level, so it skips this entirely --
+    // and is sized by {@link stockRungFor} instead, against the two ceilings a
+    // count has. Skipping *both* is what let `untilQuantity: 10000` through
+    // against a bank that could reach about 5,400.
     const rung =
-      stockTarget !== undefined
+      requestedStock !== undefined
         ? { level: targetLevel, note: null }
         : rungFor(chosen, targetLevel, abortMinutes, snapshot);
+
+    const sized =
+      requestedStock === undefined
+        ? { quantity: 0, note: null }
+        : stockRungFor(chosen, requestedStock, abortMinutes, snapshot);
+    const stockTarget =
+      requestedStock === undefined
+        ? undefined
+        : { itemId: requestedStock.itemId, quantity: sized.quantity };
 
     // The criteria are checked *as queued*, after the rung has been sized, and
     // an objective whose criteria already hold is refused rather than accepted.
@@ -376,8 +388,13 @@ export const TOOLS: Record<string, ToolHandler> = {
 
     return [
       `Queued: ${chosen.label}`,
-      `Target: level ${rung.level}, abort after ${abortMinutes}min.`,
+      // The criteria as queued, not a level read off an argument that a stock
+      // objective never used. This line said `Target: level NaN` for every
+      // stock objective ever set, in the confirmation the caller reads to check
+      // they got what they asked for.
+      `Target: ${describeCriteria(successFor(chosen, rung.level, stockTarget))}, abort after ${abortMinutes}min.`,
       ...(rung.note === null ? [] : [rung.note]),
+      ...(sized.note === null ? [] : [sized.note]),
       ...commitmentWarning(store.report, args.urgent === true),
       "Applies on the mod's next report.",
     ].join(NEWLINE);
@@ -388,7 +405,22 @@ export const TOOLS: Record<string, ToolHandler> = {
     const steps = Array.isArray(args.steps) ? args.steps : [];
 
     if (steps.length === 0) {
-      return 'Pass steps: [{candidateIndex, targetLevel, abortMinutes, rationale}, ...] — a plan of 2 to 8 objectives.';
+      // Both shapes, at the point of use.
+      //
+      // This string named only the level-shaped one, so at the single moment a
+      // caller is looking for the parameter list, half the tool was invisible.
+      // Every goal and every plan step this run has ever set has been
+      // level-shaped, and `untilItemId`/`untilQuantity` have been accepted the
+      // whole time -- one plan went out as "craft Mind Runes to Runecrafting
+      // 49", a level target for a stock problem, which would have stopped at
+      // whatever rune count level 49 happened to land on.
+      return [
+        'Pass steps: [{candidateIndex, abortMinutes, rationale, and a target}, ...] — a plan of 2 to 8 objectives.',
+        'A target is one of two shapes, and the step should carry whichever matches what it is for:',
+        '  - targetLevel — for training. The step ends at a skill level.',
+        '  - untilItemId + untilQuantity — for producing. The step ends when the bank holds that many.',
+        'Training toward a level goal wants a level; producing an input something else consumes wants a stock count, because a level target either stops short of the count the next step needs or runs hours past it. They are not exclusive — a step that crafts runes trains Runecrafting too — so pick the one that names the thing you actually want, and read each candidate for a "would fill a shortfall" line, which carries an item and a number ready to pass here.',
+      ].join(NEWLINE);
     }
 
     // Read once for the whole plan rather than per step: it is the operator's
@@ -429,10 +461,28 @@ export const TOOLS: Record<string, ToolHandler> = {
       // shape of work a plan exists to remove.
       const stepItemId = typeof step.untilItemId === 'string' ? step.untilItemId : undefined;
       const stepQuantity = Number(step.untilQuantity);
-      const stepStock =
+      const requestedStock =
         stepItemId !== undefined && Number.isFinite(stepQuantity) && stepQuantity > 0
           ? { itemId: stepItemId, quantity: stepQuantity }
           : undefined;
+
+      // Sized against the two ceilings a count has, on exactly the terms the
+      // level path is sized on -- and only for the first step, for the same
+      // reason. What is banked and what a step can reach are both read off the
+      // character as it stands now, and by the time step three runs its inputs
+      // are whatever step two produced or consumed. Projecting that far would
+      // be arithmetic dressed up as foresight, and worse here than for a level:
+      // a level cannot go down, and a stock can.
+      const stockRung =
+        requestedStock === undefined || position > 0
+          ? { quantity: requestedStock?.quantity ?? 0, note: null }
+          : stockRungFor(chosen, requestedStock, abortMinutes, store.report?.snapshot);
+      if (stockRung.note !== null) notes.push(`step ${position + 1}: ${stockRung.note}`);
+
+      const stepStock =
+        requestedStock === undefined
+          ? undefined
+          : { itemId: requestedStock.itemId, quantity: stockRung.quantity };
 
       // Sized against the rate and the budget, exactly as a single objective
       // is. A plan is where an unreachable rung costs most: the step does not
@@ -641,6 +691,99 @@ function rungFor(
 }
 
 /**
+ * Sizes a requested stock target against what the candidate can actually make.
+ *
+ * The exact counterpart of {@link rungFor}, and it exists because the asymmetry
+ * between the two shapes was a live bug. A level target is sized against the
+ * rate and the budget; a stock target was sized against nothing at all --
+ * `set_objective` skips `rungFor` outright when one is given, because a stock
+ * target has no level to clamp. So the one shape the tools were being taught to
+ * use first-class was the one shape with no guard, which is a good part of why
+ * it stayed unused: the first caller to try it gets an objective that silently
+ * never finishes.
+ *
+ * Measured live: `untilQuantity: 10000` for Mind Runes, against a bank holding
+ * 1,347 Rune Essence at a yield of four runes per essence. The ceiling was
+ * about 5,400 and the objective would have run its full 90 minute abort and
+ * completed nothing -- exactly the outcome `rungFor` argues against, since an
+ * objective that completes "produces a journal entry, a replan and a measured
+ * rate, while one that times out produces an abandonment and teaches nothing".
+ *
+ * Two ceilings, and they are different questions:
+ *
+ * - **The budget.** `perHour` for `abortMinutes`. The same clamp `rungFor`
+ *   applies to a level.
+ * - **The materials.** `sustainMinutes` is how long the banked inputs last, so
+ *   production stops there whatever the budget says. Absent means no ceiling,
+ *   not an unknown one -- a gathering action consumes nothing and is limited
+ *   only by time. Note this is *not* "inputs held divided by inputs per craft":
+ *   Runecrafting yields four Mind Runes per essence at this mastery, so a naive
+ *   count would have been wrong by a factor of four in the pessimistic
+ *   direction. `perHour` comes from the mod's `productYieldFor`, which samples
+ *   the game's own rolling accessor until it can identify the un-doubled
+ *   quantity, so the multiplier is measured rather than assumed.
+ *
+ * Clamped down, never up, and reported -- the same one-directional rule and for
+ * the same reason. Silent about a target it cannot judge: no `produces` means
+ * the candidate banks nothing identifiable, and a clamp derived from no rate
+ * would be a guess wearing a measurement's clothes.
+ *
+ * @returns The quantity to commit to, and a line for the caller when it differs
+ *          from the request.
+ */
+function stockRungFor(
+  candidate: {
+    label: string;
+    produces?: { itemId: string; name: string; perHour: number } | undefined;
+    sustainMinutes?: number | undefined;
+  },
+  stockTarget: { itemId: string; quantity: number },
+  abortMinutes: number,
+  snapshot: StateSnapshot | null | undefined,
+): { quantity: number; note: string | null } {
+  const produces = candidate.produces;
+  if (produces === undefined || produces.itemId !== stockTarget.itemId) {
+    return { quantity: stockTarget.quantity, note: null };
+  }
+  if (!(produces.perHour > 0)) return { quantity: stockTarget.quantity, note: null };
+
+  const have = snapshot?.bank.items.find((item) => item.id === stockTarget.itemId)?.qty ?? 0;
+
+  // The binding ceiling is whichever runs out first. `sustainMinutes` is
+  // absent for anything that consumes nothing, and absent is "no limit" —
+  // see the field's own note on the candidate schema.
+  const materialMinutes = candidate.sustainMinutes ?? Number.POSITIVE_INFINITY;
+  const minutes = Math.min(abortMinutes, materialMinutes);
+  const reachable = Math.floor(have + (produces.perHour * minutes) / 60);
+
+  if (reachable >= stockTarget.quantity) return { quantity: stockTarget.quantity, note: null };
+
+  // Nothing to clamp *to*. Below one unit above what is already banked there is
+  // no target that both fits and asks for work, and a refusal naming the
+  // ceiling is more use than a target of `have` that the no-op guard would
+  // reject a line later for a reason that sounds unrelated.
+  if (reachable <= have) {
+    return {
+      quantity: stockTarget.quantity,
+      note: `WARNING: ${candidate.label} cannot reach ${stockTarget.quantity.toLocaleString()}x ${produces.name} — at ${Math.round(produces.perHour).toLocaleString()}/h it produces under one unit in the ${Math.round(minutes)}min available${describeBinding(abortMinutes, materialMinutes)}. This objective will abort rather than complete.`,
+    };
+  }
+
+  return {
+    quantity: reachable,
+    note: `Target lowered from ${stockTarget.quantity.toLocaleString()} to ${reachable.toLocaleString()}x ${produces.name}: ${candidate.label} produces about ${Math.round(produces.perHour).toLocaleString()}/h, and ${Math.round(minutes)}min is all that is available${describeBinding(abortMinutes, materialMinutes)}, against ${have.toLocaleString()} banked. The original target would have run the whole budget and completed nothing. Raise abortMinutes, or gather more input first, if you meant the larger figure.`,
+  };
+}
+
+/** Which of the two ceilings bound the run, so the caller knows what to change. */
+function describeBinding(abortMinutes: number, materialMinutes: number): string {
+  if (!Number.isFinite(materialMinutes)) return ` (the ${abortMinutes}min budget)`;
+  return materialMinutes < abortMinutes
+    ? ` (the banked inputs last about ${Math.round(materialMinutes)}min, less than the ${abortMinutes}min budget)`
+    : ` (the ${abortMinutes}min budget, inside the ${Math.round(materialMinutes)}min the banked inputs last)`;
+}
+
+/**
  * How long an objective should hold before it is worth swapping.
  *
  * Ten minutes. Short enough that a genuine mistake is cheap to correct, long
@@ -733,17 +876,33 @@ function renderPlan(plan: readonly Objective[], candidates: readonly Candidate[]
 
 /** A step's finish line, in the terms it was actually written in. */
 function describeTarget(objective: Objective): string {
-  const criteria = objective.successWhen.map((criterion) => {
+  return describeCriteria(objective.successWhen);
+}
+
+/**
+ * A finish line in the shape it was actually written in.
+ *
+ * Extracted from {@link describeTarget} because `set_objective` was printing
+ * `Target: level NaN` for every stock objective it queued. The level was never
+ * read for a stock target -- the branch above deliberately skips `rungFor` --
+ * so the confirmation was reporting a number nothing had computed, live, at the
+ * one moment a caller can still tell they meant something else. A tool whose
+ * confirmation cannot name the thing it just did teaches the caller that the
+ * shape does not really work, which is a fair summary of why the stock path sat
+ * unused with every layer beneath it built.
+ */
+function describeCriteria(criteria: readonly SuccessCriterion[]): string {
+  const described = criteria.map((criterion) => {
     switch (criterion.type) {
       case 'skill_level_at_least':
         return `to level ${criterion.level}`;
       case 'item_qty_at_least':
-        return `until ${criterion.qty}x ${criterion.itemId}`;
+        return `until the bank holds ${criterion.qty.toLocaleString()}x ${criterion.itemId}`;
       case 'currency_at_least':
         return `until ${criterion.amount.toLocaleString()} ${criterion.currencyId}`;
     }
   });
-  return criteria.length === 0 ? 'one-shot' : criteria.join(', ');
+  return described.length === 0 ? 'one-shot' : described.join(', ');
 }
 
 function topStacks(items: { qty: number; name: string }[]): string {
@@ -763,6 +922,7 @@ function describe(
     xpPerHour?: number | undefined;
     gpPerHour?: number | undefined;
     requiresLevel?: number | undefined;
+    suggestedStock?: { itemId: string; name: string; quantity: number; why: string } | undefined;
   },
   skillXp?: ReadonlyMap<string, number>,
 ): string {
@@ -793,6 +953,22 @@ function describe(
     parts.push(`${Math.round(candidate.gpPerHour ?? 0).toLocaleString()} gp/h`);
   }
   if (candidate.requiresLevel !== undefined) parts.push(`needs lvl ${candidate.requiresLevel}`);
+
+  // The stock figure something else is short of, on the candidate that makes
+  // it. This is the sentence the blocked list has been printing for months --
+  // "needs Earth Rune 1/3", with the producer named -- turned into a number
+  // and a parameter, so it can be passed to untilQuantity instead of invented.
+  //
+  // Phrased as an offer rather than an instruction: which producer to run, and
+  // whether to produce at all, is the caller's decision. See `suggestedStock`
+  // on the candidate schema.
+  const suggested = candidate.suggestedStock;
+  if (suggested !== undefined) {
+    parts.push(
+      `STOCK SHORTFALL: pass untilItemId "${suggested.itemId}", untilQuantity ${suggested.quantity} to run this until the bank holds ${suggested.quantity.toLocaleString()}x ${suggested.name} (${suggested.why})`,
+    );
+  }
+
   return parts.join(' — ');
 }
 

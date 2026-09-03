@@ -252,6 +252,18 @@ function genericSkillCandidates(): Candidate[] {
         xpPerHour: lapXpPerHour ?? actionsPerHour * requirement.xp * xpMultiplier,
         gpPerHour: netPerHour > 0 ? netPerHour : undefined,
         ...(sustainMinutes === null ? {} : { sustainMinutes }),
+        // Same three terms as the gathering path; see `produces` on the
+        // candidate schema. An Alt Magic spell has no `product` -- it pays a
+        // currency or converts an item chosen at cast time -- so it emits none.
+        ...(recipe.product === undefined
+          ? {}
+          : {
+              produces: {
+                itemId: recipe.product.id,
+                name: recipe.product.name,
+                perHour: actionsPerHour * yielded,
+              },
+            }),
         // Alt Magic's alchemy pays currency; every other recipe here produces
         // an item whose value needs a sale to become GP.
         gpIsEarned: skillId === ALT_MAGIC_ID,
