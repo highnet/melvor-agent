@@ -26,8 +26,13 @@ export const LOOP_STALL_MS = 15_000;
 export type LoopStallEvent = { kind: 'resumed' } | { kind: 'stalled'; stalledMs: number };
 
 export class LoopStallWatch {
+  /** Tick count at the previous policy tick, for the liveness comparison. */
   private lastSeenTickCount = 0;
+
+  /** When the loop was first seen not to tick, or null while it is healthy. */
   private stalledSince: number | null = null;
+
+  /** Whether the current stall has already been reported. */
   private reported = false;
 
   /**
@@ -39,10 +44,7 @@ export class LoopStallWatch {
    *                  still tracked either way, so arming does not inherit a
    *                  stall from the time before it.
    * @param now - `Date.now()`, passed in so the threshold is testable.
-   * @returns The event to report, or null. A stall is returned once per
-   *          episode, not once per observation: an alarm repeating every three
-   *          seconds fills the log queue and evicts the diagnostics that would
-   *          explain it.
+   * @returns The event to report, or null.
    */
   observe(tickCount: number, running: boolean, now: number): LoopStallEvent | null {
     const ticked = tickCount !== this.lastSeenTickCount;
@@ -64,6 +66,9 @@ export class LoopStallWatch {
       return null;
     }
 
+    // Reported once per stall, not once per tick: an alarm that repeats every
+    // three seconds fills the log queue and evicts the diagnostics that would
+    // explain it.
     if (this.reported) return null;
     if (now - this.stalledSince < LOOP_STALL_MS) return null;
 

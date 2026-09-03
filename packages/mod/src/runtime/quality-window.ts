@@ -15,10 +15,7 @@ import type { QualitySample } from '@melvor-agent/shared';
  * were correspondingly untested.
  */
 
-/**
- * Samples retained. 48h of minute samples is plenty to compare a planner change
- * against the control condition of one skill left running.
- */
+/** Samples retained; see the cap in {@link QualityWindow.add}. */
 const WINDOW_SAMPLES = 2880;
 
 /** Samples shipped with a report; the tail, not the archive. */
@@ -38,6 +35,8 @@ export class QualityWindow {
 
   add(sample: QualitySample): void {
     this.samples.push(sample);
+    // 48h of minute samples is plenty to compare a planner change against the
+    // control condition of one skill left running.
     if (this.samples.length > WINDOW_SAMPLES) this.samples.shift();
   }
 
@@ -52,13 +51,12 @@ export class QualityWindow {
   }
 
   /**
-   * Levels and GP per hour across the window.
+   * Levels and GP per hour across the sample window.
    *
-   * The project's one metric, which until this getter existed lived only in the
-   * planner's replies -- visible when a session asked, invisible while the
-   * agent actually ran. An operator watching the panel could see everything
-   * about the current action and nothing about whether the last four hours were
-   * worth it.
+   * The project's one metric, which until now lived only in the planner's
+   * replies — visible when a session asked, invisible while the agent actually
+   * ran. An operator watching the panel could see everything about the current
+   * action and nothing about whether the last four hours were worth it.
    *
    * Deliberately not compared against the control here: the control rate needs
    * the candidate list, which the panel has no business recomputing on every

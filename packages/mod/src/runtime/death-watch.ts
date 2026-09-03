@@ -22,7 +22,12 @@
  * this side of the adapter boundary.
  */
 export class DeathWatch {
-  /** Null until the first reading; see {@link observe}. */
+  /**
+   * Last observed value of the game's lifetime death counter.
+   *
+   * `null` until the first reading, so arming does not report the character's
+   * entire history as deaths that just happened.
+   */
   private lastCount: number | null = null;
   private deaths = 0;
 
