@@ -34,10 +34,13 @@ Worse, the game's own return conventions are inconsistent —
 `Woodcutting.selectTree` return `void`. So the return value is recorded as
 *supporting* detail, never as the verdict; the verdict is the before/after diff.
 
-One `no_state_change` is a fact about one call. A run of them against an
-unmoved projection is a different claim — that the action cannot work in this
-state — and nothing above the adapter was keeping the count. `noteNoChange`
-does, and appends its finding to the failure detail once, on the transition.
+One result is a fact about one call. A *run* of them is a different claim,
+and nothing above the adapter was keeping the count. Two ledgers do:
+`noteNoChange` for an action failing repeatedly against a projection that
+never moves, and `noteRedone` for one succeeding repeatedly from a state it
+keeps being returned to. Each appends its finding to the result detail once,
+on the transition — never on every pass, which is how two real diagnostics
+have already been buried here.
 
 ```ts
 act: <T>(spec: ActSpec<T>, isSuspended: () => boolean) => ActionResult<T>

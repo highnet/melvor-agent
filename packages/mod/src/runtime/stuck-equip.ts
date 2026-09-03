@@ -28,6 +28,24 @@
  * whose requirements stop being met -- lands here as one reported refusal
  * rather than as an unbounded loop that reads as success.
  *
+ * `act` now keeps its own ledger of actions that keep being redone
+ * (`adapter/act.ts`, `noteRedone`), and this does *not* defer to it. The two
+ * answer different questions and only one of them can refuse:
+ *
+ * - the ledger reports. It sees only what `ActSpec` gives it — an action name
+ *   and a projection — so it can say "`equipment.equip` has succeeded five
+ *   times from an identical slot state" and nothing more. It cannot name the
+ *   item the reflex asked for, and it cannot decline to offer it again.
+ * - this refuses. `lastEquipAttempt` is the reflex's own record of what it put
+ *   on, which is knowledge the adapter does not have and should not acquire:
+ *   giving `act` a memory of *who* asked would make every action's evidence
+ *   depend on the tier that issued it.
+ *
+ * So the ledger is the diagnostic and this is the bound, and the two crossing
+ * the same loop from different sides is the intended arrangement rather than
+ * duplication. Removing this would leave a forty-equips-a-minute loop reported
+ * once and then unbounded, which is what the 2026-09-03 morning looked like.
+ *
  * What it can say is bounded by what it is told. `lastEquipAttempt` is set only
  * on the reflex's own equips, so the item it names is the one the *reflex* put
  * on, which in the 2026-09-03 loop was the staff and not the scimitar. It

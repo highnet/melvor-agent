@@ -226,6 +226,114 @@ describe('an action whose projection moves but never arrives', () => {
   });
 });
 
+/**
+ * The half the brief did not expect to need.
+ *
+ * The premise was that all four loops produced a `no_state_change`. The logs
+ * say otherwise: two of them reported `ok` on every pass, with real before and
+ * after evidence —
+ *
+ *   equipment.equip ok — itemId "melvorF:Staff_of_Air" -> "melvorD:Steel_Scimitar"
+ *
+ * every three seconds for forty minutes, and `agility.run` flipping active from
+ * false to true every six seconds through a fifteen-minute stretch that earned
+ * no XP at all. Both readings were true. What gives them away is the *before*
+ * being identical every time: the change lands and something puts it back.
+ */
+describe('an action that keeps being redone', () => {
+  it('reports once when the same success repeats inside a minute', () => {
+    vi.useFakeTimers();
+    try {
+      let worn = 'melvorF:Staff_of_Air';
+      const equip = () =>
+        act(
+          {
+            name: 'equipment.equip',
+            observe: () => ({ slot: 'melvorD:Weapon', itemId: worn }),
+            // The other tier put the staff back between our ticks, which is
+            // why every call starts from the same state.
+            perform: () => {
+              worn = 'melvorD:Steel_Scimitar';
+              return true;
+            },
+            changed: (before, after) => before.itemId !== after.itemId,
+          },
+          never,
+        );
+
+      for (let attempt = 1; attempt <= 4; attempt += 1) {
+        const result = equip();
+        expect(result.ok).toBe(true);
+        expect(result.detail).not.toContain('STUCK');
+        worn = 'melvorF:Staff_of_Air';
+        vi.advanceTimersByTime(3_000);
+      }
+
+      const fifth = equip();
+      expect(fifth.detail).toContain('STUCK');
+      expect(fifth.detail).toContain('equipment.equip');
+      expect(fifth.detail).toContain('5 times in a row');
+      // The success evidence is still there; the note is added, not swapped in.
+      expect(fifth.detail).toContain('returned true');
+      expect(warn).toHaveBeenCalledTimes(1);
+
+      for (let attempt = 6; attempt <= 10; attempt += 1) {
+        worn = 'melvorF:Staff_of_Air';
+        vi.advanceTimersByTime(3_000);
+        expect(equip().detail).not.toContain('STUCK');
+      }
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says nothing about fast work that starts somewhere new each time', () => {
+    vi.useFakeTimers();
+    try {
+      // The reflex clearing a backlog: five different buildings repaired in
+      // five seconds is the tier working, not looping. Only the starting state
+      // being *identical* says the change is being undone, so speed alone must
+      // never be enough to report.
+      const township = new FakeTownship();
+      township.currentTownBiome = { id: 'melvorF:Mountains' };
+
+      for (let attempt = 1; attempt <= 10; attempt += 1) {
+        township.efficiency = 40 + attempt;
+        expect(repair(township).detail ?? '').not.toContain('STUCK');
+        vi.advanceTimersByTime(1_000);
+      }
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('says nothing about the same repair coming round again slowly', () => {
+    vi.useFakeTimers();
+    try {
+      // A building degrades and is repaired again from the same efficiency.
+      // That is the town working, not a loop, and the only thing separating
+      // the two is how fast it comes back round.
+      const township = new FakeTownship();
+      township.currentTownBiome = { id: 'melvorF:Mountains' };
+
+      for (let attempt = 1; attempt <= 10; attempt += 1) {
+        township.efficiency = 85;
+        // A quiet success carries no detail at all, which is the point.
+        expect(repair(township).detail ?? '').not.toContain('STUCK');
+        // A minute and a second — the tightest spacing that must stay silent.
+        // Real degradation is far slower than this and quieter still; the
+        // window is what separates it from a tier fighting another tier.
+        vi.advanceTimersByTime(61_000);
+      }
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('the ledger under a process that runs for days', () => {
   it('tracks at most sixty-four actions at once', () => {
     // Names are a fixed set of literals plus a few built from skill ids, so

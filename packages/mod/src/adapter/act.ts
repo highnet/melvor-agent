@@ -37,10 +37,13 @@ export interface ActSpec<T> {
  * `Woodcutting.selectTree` return `void`. So the return value is recorded as
  * *supporting* detail, never as the verdict; the verdict is the before/after diff.
  *
- * One `no_state_change` is a fact about one call. A run of them against an
- * unmoved projection is a different claim — that the action cannot work in this
- * state — and nothing above the adapter was keeping the count. `noteNoChange`
- * does, and appends its finding to the failure detail once, on the transition.
+ * One result is a fact about one call. A *run* of them is a different claim,
+ * and nothing above the adapter was keeping the count. Two ledgers do:
+ * `noteNoChange` for an action failing repeatedly against a projection that
+ * never moves, and `noteRedone` for one succeeding repeatedly from a state it
+ * keeps being returned to. Each appends its finding to the result detail once,
+ * on the transition — never on every pass, which is how two real diagnostics
+ * have already been buried here.
  *
  * @param spec - What to observe, what to call, and what counts as changed.
  * @param isSuspended - Guard: refuses to act while offline progress is resolving.
@@ -94,11 +97,14 @@ export function act<T>(spec: ActSpec<T>, isSuspended: () => boolean): ActionResu
   }
 
   forgetNoChange(spec.name);
+  const churn = noteRedone(spec.name, safeJson(before));
   return ok(
     spec.name,
     before,
     after,
-    returned === undefined ? undefined : `returned ${safeJson(returned)}`,
+    [returned === undefined ? undefined : `returned ${safeJson(returned)}`, churn]
+      .filter((part) => part !== undefined && part !== '')
+      .join('') || undefined,
   );
 }
 
@@ -178,13 +184,17 @@ const noChangeRuns = new Map<string, NoChangeRun>();
 /**
  * Records a no-change failure and returns a note to append, once.
  *
- * Every one of the four loops found on 2026-09-03 — Agility thrashing every
- * three seconds, Alt Magic casting and stopping every two, the gear reflex
- * re-equipping every 1.5, and Township repair once a minute for a whole day —
- * produced a truthful `no_state_change` on its very first call. Nothing
- * remembered the second one. Each was found by a human reading a log, hours
- * later; the shape they share is that the call reads a selection it does not
- * take, and for an agent that never clicks a UI that selection is absent.
+ * Two of the four loops found on 2026-09-03 land here: `altMagic.cast` failing
+ * every two seconds, and `reflex.repairTownship` once a minute for a whole day.
+ * Both produced a truthful `no_state_change` on their very first call, and
+ * nothing remembered the second one; both were found by a human reading a log,
+ * hours later. The shape is that the call reads a selection it does not take,
+ * and for an agent that never clicks a UI that selection is absent.
+ *
+ * `reflex.refillFood` — 232 identical no-change warnings in one run, never
+ * investigated — is a third that had been sitting in the logs unrecognised.
+ * The other two loops reported `ok` rather than failing at all; `noteRedone`
+ * below is what covers those.
  *
  * So the ledger is `act` itself rather than a guard per action: one place that
  * notices the same call failing against the same unmoved projection, and says
@@ -214,7 +224,7 @@ function noteNoChange(name: string, projection: string): string {
   // which is what the eviction below relies on.
   noChangeRuns.delete(name);
   noChangeRuns.set(name, entry);
-  evictOldest();
+  evictOldest(noChangeRuns);
 
   if (entry.repeats >= IDENTICAL_LIMIT && !entry.reported) {
     entry.reported = true;
@@ -238,11 +248,88 @@ function forgetNoChange(name: string): void {
   noChangeRuns.delete(name);
 }
 
-function evictOldest(): void {
-  while (noChangeRuns.size > MAX_TRACKED) {
-    const oldest = noChangeRuns.keys().next();
+/**
+ * One action's run of successes that all started from the same state.
+ */
+interface RedoneRun {
+  projection: string;
+  repeats: number;
+  since: number;
+  reported: boolean;
+}
+
+/**
+ * How many identical re-dos before the ledger says so, and how fast.
+ *
+ * This half exists because the brief's premise did not survive the logs. Two
+ * of the four loops never produced a `no_state_change` at all — they reported
+ * `ok`, with real before/after evidence, every single time:
+ *
+ *   equipment.equip ok — itemId "melvorF:Staff_of_Air" -> "melvorD:Steel_Scimitar"
+ *   {"slot":"melvorD:Weapon","itemId":"melvorF:Staff_of_Air","quantity":1} -> {...Steel_Scimitar}
+ *
+ * every 3s for forty minutes, and `agility.run` with
+ * `{"active":false,...} -> {"active":true,...}` every six seconds for a
+ * fifteen-minute stretch that earned no XP. The evidence was true both times.
+ * What gives it away is that the *before* is identical on every pass: the
+ * change is real and something puts it back, so the work is being redone
+ * rather than done.
+ *
+ * The window is what separates that from ordinary repetition. A building
+ * degrades and is repaired again from the same efficiency, which is correct and
+ * happens minutes apart; a tier fighting another tier repeats inside seconds.
+ * Five identical re-dos in a minute is a loop by any reading — Agility managed
+ * five in fifteen seconds, the gear reflex in seven and a half.
+ */
+const REDONE_LIMIT = 5;
+const REDONE_WINDOW_MS = 60_000;
+
+const redoneRuns = new Map<string, RedoneRun>();
+
+/**
+ * Records a success and returns a note to append, once.
+ *
+ * Weaker evidence than a no-change run, and deliberately treated as such: a
+ * legitimate repeat is possible, so this reports and never refuses, and it
+ * reports once per run rather than once per pass. `StuckEquipWatch`
+ * (`runtime/stuck-equip.ts`) still owns the *bounding* of the equip case — it
+ * knows which item the reflex asked for, which `act` cannot see.
+ *
+ * @param name - The action's stable name.
+ * @param projection - `before`, serialised; the state the action started from.
+ * @returns A note to append to the success detail, or '' on every other call.
+ */
+function noteRedone(name: string, projection: string): string {
+  const now = Date.now();
+  const previous = redoneRuns.get(name);
+  const continues =
+    previous !== undefined &&
+    previous.projection === projection &&
+    now - previous.since <= REDONE_WINDOW_MS;
+
+  const entry: RedoneRun = continues
+    ? { ...previous, repeats: previous.repeats + 1 }
+    : { projection, repeats: 1, since: now, reported: false };
+
+  redoneRuns.delete(name);
+  redoneRuns.set(name, entry);
+  evictOldest(redoneRuns);
+
+  if (entry.repeats >= REDONE_LIMIT && !entry.reported) {
+    entry.reported = true;
+    return report(
+      `${name} has now succeeded ${entry.repeats} times in a row from an identical starting state within ${Math.round((now - entry.since) / 1000)}s — something is undoing it, so the work is being redone rather than done`,
+    );
+  }
+
+  return '';
+}
+
+function evictOldest(runs: Map<string, unknown>): void {
+  while (runs.size > MAX_TRACKED) {
+    const oldest = runs.keys().next();
     if (oldest.done === true) return;
-    noChangeRuns.delete(oldest.value);
+    runs.delete(oldest.value);
   }
 }
 
@@ -257,6 +344,7 @@ function report(message: string): string {
 /** Test seam; the agent never resets this. */
 export function resetActLedger(): void {
   noChangeRuns.clear();
+  redoneRuns.clear();
 }
 
 function describe(error: unknown): string {
