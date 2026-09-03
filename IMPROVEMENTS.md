@@ -153,6 +153,30 @@ Township summary reported 0% health while the repair reflex correctly computed
 - [x] **Realised rates are never compared against advertised ones** *(3×)* — M.
       The one mechanism that would have caught every other rate bug on this list.
       Needs `skillId`/`recipeId` on `QualitySample`.
+- [ ] **Monster fights are the only candidates carrying no rate at all** — M.
+      Thieving prices itself completely: "hits up to 3.2 (2% of current HP) —
+      6,766 xp/h — 4.00 levels/h — 72,490 gp/h". A fight carries drops and goal
+      tags only, so all ~60 sort identically and the planner cannot tell a
+      level-1 Chicken from a level-27 Sweaty Monster. This became the largest
+      gap the moment Auto Eat was bought, since five remaining goals are
+      combat-shaped: `ranged-20`, `defence-20`, `hp-40`, `prayer-20` and
+      `first-dungeon`. Needs XP/h per skill trained, a damage estimate reusing
+      the existing combat gate rather than a second estimator, and the level
+      requirement so an out-of-reach fight blocks with a stated reason. Watch
+      for the `modifyPrimaryProductQuantity` trap: if a combat quantity getter
+      rolls the same way, an hour must not be priced off one call.
+
+- [ ] **Ranged cannot be trained at all and nothing says so** — S. `ranged-20`
+      is a stated goal reading 3/20. The bank holds 1,620 Adamant Arrows, 344
+      Rune Arrows, 170 Dragon Arrows and Rune/Adamant/Dragon Crossbows, but no
+      bow, and no crossbow is offered as equippable at Ranged 3 -- presumably a
+      level requirement, though the dump records neither `ammoType` nor
+      `validSlots` so compatibility cannot be checked offline. The goal text
+      still says "using the bow and the 1,259 self-made arrows", so the bow was
+      expected and is gone. Two things to settle: whether the dump should carry
+      equip requirements and ammo types, and whether a goal whose equipment is
+      unobtainable should say so rather than sitting at 15% forever.
+
 - [ ] **What undoes a verified equip** — S. `equipment.equip` returns a truthful
       `ok`: the adapter reads `player.equipment.equippedItems`, `act` fails any
       call whose `changed` predicate does not hold, and the Steel Scimitar
