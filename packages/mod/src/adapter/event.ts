@@ -3,7 +3,7 @@ import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { readCannotAttackReason } from './combat.js';
 import { isRefusedRealm } from './guards.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, safeValue } from './safe.js';
 
 /**
  * Combat events — the end-game gauntlet.
@@ -182,7 +182,13 @@ export function readEventCandidates(): Candidate[] {
   // at high severity, that no fight, dungeon *or* combat event can be taken,
   // and repeating it on a candidate withheld for the same reason would spend a
   // second of the twelve blocked slots saying it again.
-  if (readCannotAttackReason() !== null) return [];
+  //
+  // Guarded, and offering on a failed read rather than withholding: a reason
+  // that cannot be read is not a reason, the executor's own precondition is
+  // still the backstop, and an unguarded throw here would take the whole event
+  // enumerator down once per pass for as long as the accessor stayed broken.
+  const cannotAttack = safeValue('event.cannotAttack', readCannotAttackReason);
+  if (cannotAttack !== undefined && cannotAttack !== null) return [];
 
   for (const event of game.combatEvents.allObjects) {
     try {
