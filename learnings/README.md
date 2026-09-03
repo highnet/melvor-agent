@@ -315,3 +315,67 @@ three seconds before the refusal, so the craft *started* and `canAfford` was
 right. `canAfford` answers "is one action possible". A thirty minute objective
 was asking a different question, and there is no bug in the answer to a question
 nobody asked.
+
+## A parameter nothing has ever passed is a parameter that does not exist
+
+`item_qty_at_least` was in the objective contract, implemented in `criteria.ts`,
+rendered in the panel, parseable in `GOALS.md` as `item <id> >= <n>`, and
+accepted by both planning tools as `untilItemId`/`untilQuantity`. Every layer
+was built. In fifteen goals and every plan step ever set it had been used zero
+times — the file holds 15 `skill`, 2 `total`, 1 `shop` and no `item` at all.
+
+The habit never formed, and three small things kept it from forming. None is a
+bug in the feature; together they are the feature.
+
+- **The usage string named one shape.** `set_plan` with no steps answered `Pass
+  steps: [{candidateIndex, targetLevel, abortMinutes, rationale}, ...]`. At the
+  single moment a caller looks for the parameter list, half the tool was
+  invisible.
+- **The confirmation could not describe what it had just done.** A stock
+  objective printed `Target: level NaN`, because `targetLevel` is never read on
+  that branch. A tool that cannot name its own result teaches, once, that the
+  shape does not really work.
+- **The one shape being encouraged was the one shape with no guard.** `rungFor`
+  sizes a level target against the rate and the budget; the stock branch skipped
+  it and nothing replaced it. So `untilQuantity: 10000` was accepted against a
+  bank that could reach about 5,400, and the first caller to try the new shape
+  would have got an objective that silently never finished.
+
+The general form, and it is the sharper cousin of "a number computed for a
+sentence is invisible to the code": **an unexercised path decays in ways no test
+and no type checker can see, because nothing about it is wrong.** The `NaN`, the
+half-written usage string and the missing guard were all introduced by people
+who never ran the path, and would have been caught in ten seconds by anyone who
+had.
+
+So the test for a capability that exists and is unused is not "does it work". It
+is: can a caller *find* it at the point of use, does the confirmation prove it
+did what was asked, and does it have the same guards its sibling has? If any
+answer is no, the capability is documentation.
+
+The second half of this is where the numbers were. The agent had been computing
+exact stock requirements all along and spending them on prose — the blocked list
+prints `Magic: Superheat II — Earth Rune from Runecrafting: Earth Rune — needs
+Earth Rune 1/3`, which is a producer, an item and a quantity, and therefore a
+complete stock objective that nothing could read. A shape with no data behind it
+does not get used even when it works; carrying the number to the candidate that
+would produce it is what makes the parameter answerable rather than merely
+available.
+
+One caution learned in the doing. The blocked list's `need` is *one craft's
+worth* — three Earth Runes — and "craft until 3" is over in seconds. Scaling it
+needs a multiplier, and a guessed multiplier is exactly where this repo keeps
+finding a measurement should be. The one available without inventing anything is
+the consumer's own actions-per-hour, and the span is an hour because both tools
+cap `expectedDurationMin` at 60. State the derivation next to the figure: a
+suggestion the planner can argue with is worth more than one it has to trust.
+
+Two ceilings bound a stock target and they want different responses. The budget
+is `perHour × abortMinutes`, and the answer to exceeding it is a longer budget.
+The materials ceiling is `sustainMinutes`, and the answer is to gather more
+first. A clamp that does not say which one bound it is a number with no action
+attached. The materials ceiling is also the one place a plausible shortcut is
+wrong: "inputs held ÷ inputs per craft" understated Mind Runes by a factor of
+four, because Runecrafting yields four runes per essence at this mastery. The
+multiplier has to come from `productYieldFor`, which samples the game's own
+rolling accessor until it can identify the un-doubled quantity.

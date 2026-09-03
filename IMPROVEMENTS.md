@@ -357,6 +357,69 @@ Township summary reported 0% health while the repair reflex correctly computed
       the pass where every sample doubled, and then it is wrong by exactly 2x,
       which is the same defect one level down. See `learnings/game-state.md`.
 
+## Stock-shaped objectives — what was left open
+
+- [x] **Every goal and every plan step was level-shaped, and the stock shape had
+      no data behind it** — M. `parseCondition` accepts `item <id> >= <n>` and
+      `GOALS.md` used it zero times against 15 `skill`, 2 `total` and 1 `shop`;
+      `successFor`'s own comment says `item_qty_at_least` "has existed in the
+      contract, in `criteria.ts` and in the panel the whole time; nothing could
+      ever set one, so it may as well not have existed". The plumbing worked and
+      the habit never formed, which is what "craft Mind Runes to Runecrafting
+      49" — a level target for a stock problem — cost.
+      The numbers were never missing. `missingInputs` returns `{ itemId, need,
+      have }`, `readTaskWantedQuantities` a map of item to quantity, and the
+      blocked list already printed a producer, an item and a number in one
+      sentence. `Candidate.produces` now names what an action banks and how
+      fast, `Candidate.suggestedStock` carries a shortfall to the candidate that
+      would fill it, and `stockRungFor` sizes a stock target against the budget
+      and against `sustainMinutes` the way `rungFor` sizes a level. Both tools'
+      descriptions show both shapes; the confirmation no longer prints `Target:
+      level NaN`. See `learnings/README.md`.
+
+- [ ] **A combat shortfall produces no stock demand, and that is the case that
+      started this** — M. What combat actually needed was enough runes to keep
+      casting, and the rune shortfall for a selected attack spell is not in the
+      blocked-recipe walk at all: it is the still-open first entry on this list,
+      "a fight is offered at full price while the selected attack spell cannot
+      be cast". When that entry is done it should emit a `StockDemand` the same
+      way `readBlockedOpportunities` now does, and the scale is available on the
+      same terms — `attackInterval` is on the snapshot, so casts per hour times
+      runes per cast is one hour of fighting, exactly the derivation used for a
+      blocked recipe. Deliberately not guessed at here: the fight candidate does
+      not yet know which spell is selected or what it costs, and inventing that
+      join would put an inference where a reading belongs.
+
+- [ ] **`suggestedStock` has one demand per item and no way to say a second
+      consumer wants the same thing** — S. `mergeDemands` keeps the largest and
+      drops the rest, on the argument that consumers are not run at once so the
+      larger covers the smaller. True for the quantity and false for the
+      *reason*: "a Township task wants 250 and Superheat wants 5,400" is a
+      stronger case for producing than either alone, and only the second is
+      shown. Carry the runners-up in the `why` rather than the quantity; the
+      quantity must stay the largest, never the sum.
+
+- [ ] **A stock target is sized against one candidate, not against the plan** —
+      M. `stockRungFor` asks what *this* candidate can produce in *this* step's
+      budget. A plan whose first step mines the ore its second step smelts has a
+      materials ceiling that step one is about to lift, and only the first step
+      is sized at all for exactly that reason. That is honest and it is also a
+      ceiling on how much a plan can be checked: "mine 200 ore, then smelt 200
+      bars" is still unverifiable end to end. Doing better needs the projection
+      to carry state forward between steps, which is the arithmetic-dressed-as-
+      foresight this repo has been right to refuse so far — so it wants a
+      deliberate decision, not a quiet extension.
+
+- [ ] **`produces.perHour` is unverified against a realised count** — S. Every
+      other rate on a candidate is now compared against measurement through
+      `measureAgainstClaim`, which was "the one mechanism that would have caught
+      every other rate bug on this list". `perHour` has no such comparison, and
+      it is now load-bearing: it decides whether a target is clamped. The
+      machinery mostly exists — `QualitySample` carries `skillId`/`recipeId`
+      already — and what is missing is a banked-quantity series to difference.
+      Until then a wrong `perHour` clamps a good target with a confident note,
+      which is the failure mode this repo has paid for twice.
+
 ## Planning
 
 - [x] **Plan steps cannot carry a quantity target** — S. `set_objective` has
