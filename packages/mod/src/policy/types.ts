@@ -80,7 +80,13 @@ export type PolicyIdleReason =
   | 'objective_satisfied'
   | 'already_running'
   | 'nothing_to_do'
-  | 'waiting_for_game';
+  | 'waiting_for_game'
+  /**
+   * A safety floor is crossed and the executor is standing still until it
+   * clears, rather than starting the activity that crossed it. Distinct from
+   * `waiting_for_game`, which is about the game not being ready to be asked.
+   */
+  | 'waiting_to_recover';
 
 export type PolicyDecision =
   | {

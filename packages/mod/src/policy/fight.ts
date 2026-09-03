@@ -56,6 +56,27 @@ function hpFloorFor(combat: { autoEatThreshold: number }, foodRemaining: number)
 const FOOD_FLOOR = 5;
 
 /**
+ * Whether a floor is crossed right now, named so the reason can be logged.
+ *
+ * One function for both floors because both answer the same question — "is
+ * fighting still the right thing to be doing" — and the caller must ask it in
+ * two places: before leaving a fight and before starting one. Two copies of
+ * that test is exactly how they came to disagree, with the entry side simply
+ * not having one.
+ *
+ * @returns A sentence naming the crossing, or null when nothing is crossed.
+ */
+function crossedFloor(hpFraction: number, hpFloor: number, foodRemaining: number): string | null {
+  if (hpFraction < hpFloor) {
+    return `HP ${(hpFraction * 100).toFixed(0)}% below floor ${(hpFloor * 100).toFixed(0)}%`;
+  }
+  if (foodRemaining < FOOD_FLOOR) {
+    return `food down to ${foodRemaining}; the sustain argument no longer holds`;
+  }
+  return null;
+}
+
+/**
  * Executes a `fight_monster` objective.
  *
  * This tier decides *whether to keep fighting*. It never decides whether a fight
@@ -105,22 +126,43 @@ export const fightMonster: PolicyExecutor = (context: PolicyContext): PolicyDeci
   const foodRemaining = combat.food.reduce((sum, slot) => sum + slot.qty, 0);
 
   const hpFloor = hpFloorFor(combat, foodRemaining);
+  const crossed = crossedFloor(hpFraction, hpFloor, foodRemaining);
+
+  // Evaluated before the `inCombat` split, and that ordering is the fix.
+  //
+  // Both floors used to live *inside* the in-combat branch, so a crossing could
+  // only ever end the current fight — nothing consulted them on the way in. The
+  // next tick therefore found combat stopped, skipped the floors entirely and
+  // engaged again, and the tick after that crossed the same floor and stopped
+  // again. A floor that governs leaving but not starting cannot terminate
+  // anything; it can only alternate.
+  //
+  // That is the whole shape of the live loop: `combat.engage ok` /
+  // `combat.disengage ok` on the 3s policy clock for seventeen minutes across
+  // two game reloads, no kills, no XP, no GP. The give-away in the log is that
+  // the *first* engage of an episode holds for 42s and 24s and every subsequent
+  // one holds for exactly 3.0s -- one policy tick. Something became true during
+  // the first fight and stayed true, and the executor asked about it only at
+  // the one moment it could not act on the answer.
+  //
+  // Refusing to engage is not idling in the bad sense. Out of combat both
+  // conditions are the ones that mend themselves: hitpoints regenerate, and
+  // `refillFood` and `cookWhenFoodLow` restock the slot the fight emptied.
+  // Standing still is what gives them the chance the thrash denied them, and if
+  // the condition does not clear the budget and the no-movement detector
+  // replan it -- which is a diagnosis, where the loop was silence.
+  if (crossed !== null) {
+    if (combat.inCombat) {
+      return { kind: 'act', actions: [{ type: 'disengage' }], reason: `${crossed}; disengaging` };
+    }
+    return {
+      kind: 'idle',
+      reason: 'waiting_to_recover',
+      detail: `${crossed}; not starting another fight until that clears`,
+    };
+  }
 
   if (combat.inCombat) {
-    if (hpFraction < hpFloor) {
-      return {
-        kind: 'act',
-        actions: [{ type: 'disengage' }],
-        reason: `HP ${(hpFraction * 100).toFixed(0)}% below floor ${(hpFloor * 100).toFixed(0)}%; disengaging`,
-      };
-    }
-    if (foodRemaining < FOOD_FLOOR) {
-      return {
-        kind: 'act',
-        actions: [{ type: 'disengage' }],
-        reason: `food down to ${foodRemaining}; the sustain argument no longer holds`,
-      };
-    }
     return {
       kind: 'idle',
       reason: 'already_running',
