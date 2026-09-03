@@ -119,13 +119,15 @@ export {
   readBlockedOpportunities,
   readLockedActions,
   readGatherCandidates,
-  readCheapestExpendableStack,
   readShopGoalNotice,
-  readUnsellableNotice,
-  readMostValuableExpendableStack,
-  readSellCandidates,
   readShopObjectiveCandidates,
 } from './candidates.js';
+export {
+  readCheapestExpendableStack,
+  readMostValuableExpendableStack,
+  readSellCandidates,
+  readUnsellableNotice,
+} from './disposal.js';
 export { ARTISAN_SKILL_IDS, isArtisanSkill } from './artisan.js';
 export { readAdapterFailures, type AdapterFailure } from './safe.js';
 export { MISC_SKILL_IDS, isMiscSkill } from './skills-misc.js';
