@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   MASTERY_HEADROOM_LEVEL,
-  type RecipeLike,
   masteryIntervalFor,
   masteryNote,
   productYieldFor,
   xpMultiplierFor,
 } from '../src/adapter/candidates.js';
+import type { RecipeLike } from '../src/adapter/recipes.js';
 
 /**
  * Rates scale with mastery, so an instantaneous rate is a myopic way to choose
