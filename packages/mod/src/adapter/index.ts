@@ -279,6 +279,16 @@ export type {
   StrippableValuable,
   WornItemFacts,
 } from './valuables.js';
+export {
+  describeMatchup,
+  matchupFrom,
+  readAreaTriangle,
+  readTriangleMatchup,
+  type PlayerAttackType,
+  type TargetAttackType,
+  type TriangleLike,
+  type TriangleMatchup,
+} from './triangle.js';
 export type {
   ActionResult,
   ActiveActionState,

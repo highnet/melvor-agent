@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-239 exports.
+247 exports.
 
 ## `act`
 
@@ -612,6 +612,27 @@ What is already banked counts toward it, because the target is absolute.
 demandFromShortfall: (consumerLabel: string, missing: { itemId: string; name: string; need: number; have: number; }, actionsPerHour: number) => StockDemand | null
 ```
 
+## `describeMatchup`
+
+`function`
+
+The clause a fight candidate carries, or '' when the triangle has nothing to say.
+
+Empty on a neutral matchup deliberately. Every fight candidate would
+otherwise gain a sentence, and a note on every line is the same as no note —
+the exact failure the drops annotation was written to avoid. A mirror
+matchup (magic against magic) is neutral by construction and is precisely
+the case where the planner should read nothing and move on.
+
+The multipliers are printed rather than summarised into a verdict alone,
+because this repo has twice found a computed number spent on a sentence and
+then unavailable to anything that had to decide. A planner that can see 0.85
+can weigh it against a kill rate; one told only "unfavourable" cannot.
+
+```ts
+describeMatchup: (matchup: TriangleMatchup | null) => string
+```
+
 ## `disengageCombat`
 
 `function`
@@ -970,6 +991,19 @@ What spending the pool claims to change.
 MasteryProjection: any
 ```
 
+## `matchupFrom`
+
+`function`
+
+Prices one matchup out of a triangle table.
+
+Pure, and separated from the reader below so the orientation established
+from the shipped source can be pinned by a test that does not need a game.
+
+```ts
+matchupFrom: (triangle: TriangleLike | undefined, playerType: PlayerAttackType, targetType: TargetAttackType, standardTriangle: boolean) => TriangleMatchup | null
+```
+
 ## `mergeDemands`
 
 `function`
@@ -1161,6 +1195,16 @@ change is the verdict rather than the return value.
 plantFarmPlot: (plotId: string, recipeId: string, isSuspended: () => boolean) => ActionResult<{ state: string; recipeId: string | null; }>
 ```
 
+## `PlayerAttackType`
+
+`type`
+
+The three types a *player* can attack with. `AttackType`, character.d.ts:621.
+
+```ts
+PlayerAttackType: any
+```
+
 ## `PurchaseProjection`
 
 `interface`
@@ -1295,6 +1339,28 @@ Selling seeds is not a judgement the planner should be offered.
 
 ```ts
 readAllSeedIds: () => Set<string>
+```
+
+## `readAreaTriangle`
+
+`function`
+
+The triangle that will apply in a given area, read live.
+
+Mirrors `CombatManager.combatTriangle` (combatManager.d.ts:100) rather than
+calling it, and that difference is the reason this exists. The getter reads
+`this.selectedArea` — the area the player is *currently in* — so outside
+combat it always answers with the default set, which is exactly when
+candidates are enumerated. Asking it about a prospective fight in a
+triangle-overriding area would return the wrong table with no error.
+
+`CombatArea.combatTriangleSet` is declared non-optional (combatAreas.d.ts:343)
+and the shipped getter still guards it with a `??` fallback to
+`game.normalCombatTriangleSet`, so the guard here is the game's own, not a
+defensive guess.
+
+```ts
+readAreaTriangle: (areaId: string | undefined) => { triangle: TriangleLike | undefined; standard: boolean; }
 ```
 
 ## `readAstrologyCandidates`
@@ -2833,6 +2899,16 @@ next, and somewhere along it are the dig sites.
 readTravelCandidates: () => Candidate[]
 ```
 
+## `readTriangleMatchup`
+
+`function`
+
+How the triangle prices a fight against one monster, in one area.
+
+```ts
+readTriangleMatchup: (monsterId: string, areaId: string | undefined) => TriangleMatchup | null
+```
+
 ## `readUnfightableCombat`
 
 `function`
@@ -3544,6 +3620,23 @@ being active on the hex we chose.
 surveyBestHex: (isSuspended: () => boolean) => ActionResult<{ surveying: boolean; hex: string | null; }>
 ```
 
+## `TargetAttackType`
+
+`type`
+
+What a *monster* attacks with.
+
+`Monster.attackType` is `AttackType | 'random'` (monsters.d.ts:106), and
+`'random'` is not a fourth column in the triangle — the tables are keyed by
+the three real types (combatTriangle.d.ts:10-13). Five monsters in the
+shipped data are `'random'`, three of which are currently on this
+character's candidate list, so this is a live case rather than a defensive
+one. It is reported as unknowable rather than guessed at.
+
+```ts
+TargetAttackType: any
+```
+
 ## `THIEVING_ID`
 
 `const`
@@ -3650,6 +3743,26 @@ game deducts and refuses exactly as it would for a player.
 
 ```ts
 travelToPointOfInterest: (poiId: string, isSuspended: () => boolean) => ActionResult<{ discovered: number; undiscovered: number; position: string; }>
+```
+
+## `TriangleLike`
+
+`interface`
+
+The minimum a triangle must supply. Structurally `CombatTriangle`, combatTriangle.d.ts:6-9.
+
+```ts
+TriangleLike: any
+```
+
+## `TriangleMatchup`
+
+`interface`
+
+One side of one fight, priced by the triangle.
+
+```ts
+TriangleMatchup: any
 ```
 
 ## `unequipItem`
