@@ -3,7 +3,7 @@ import { fail } from '@melvor-agent/shared';
 import { act } from './act.js';
 import { isRefusedRealm } from './guards.js';
 import { townHealthPercent } from './passive.js';
-import { noteSwallowed } from './safe.js';
+import { noteSwallowed, recordFallback, safeNumber } from './safe.js';
 
 /**
  * The town.
@@ -361,6 +361,11 @@ export function readTownshipCandidates(): Candidate[] {
   if (!township.townData.townCreated) return [];
 
   const candidates: Candidate[] = [];
+  // Builds are collected apart from repairs so they can be ordered against each
+  // other before they are appended. See the sort below.
+  const builds: { candidate: Candidate; worth: number }[] = [];
+  // Read once for the whole pass; every build is priced against it.
+  const economy = readTownshipEconomy();
 
   for (const biome of township.biomes.allObjects) {
     if (isRefusedRealm(biome.realm.id)) continue;
@@ -406,11 +411,19 @@ export function readTownshipCandidates(): Candidate[] {
             ? ''
             : `, +${provides.population} pop, +${provides.happiness} happiness, +${provides.education} education`;
 
-        candidates.push({
-          kind: 'build_township',
-          params: { kind: 'build_township', buildingId: building.id, biomeId: biome.id },
-          label: `Build ${building.name} in ${biome.name} (${count} built${effect}${describeBuildTarget(building, biome)})`,
-          available: true,
+        const value = valueOfBuilding(building, biome, economy);
+
+        builds.push({
+          candidate: {
+            kind: 'build_township',
+            params: { kind: 'build_township', buildingId: building.id, biomeId: biome.id },
+            label: `Build ${building.name} in ${biome.name} (${count} built${effect}${describeBuildTarget(building, biome, value)})`,
+            available: true,
+          },
+          // Township XP is the goal (`township-20`) and the gate on the biomes
+          // and skilling outfits the skill is played for, so it leads; GP
+          // separates buildings the XP figure ties, which the many +0 ones do.
+          worth: value === null ? 0 : value.xpPerHour * 1000 + value.gpPerHour,
         });
       } catch (error) {
         noteSwallowed('township.readTownshipCandidates', error);
@@ -418,6 +431,23 @@ export function readTownshipCandidates(): Candidate[] {
       }
     }
   }
+
+  // Best build first, within the town's own candidates.
+  //
+  // Seventeen build candidates came off this reader in registry order, every
+  // one of them labelled "20 more here reaches the next Township level", and
+  // nothing anywhere chose between them — not the planner, which had no number
+  // to choose on, and not the stopgap, which only ever adopts gathering. So
+  // whichever building the registry happened to list first was the town's
+  // strategy.
+  //
+  // This is deliberately a sort *within* the township reader and not a change
+  // to how candidates rank globally: the two questions are different, and the
+  // global ordering is settled. A tie keeps registry order, so the many
+  // buildings worth exactly nothing to the town's output are left exactly where
+  // they were rather than shuffled by a comparator with nothing to compare.
+  builds.sort((a, b) => b.worth - a.worth);
+  for (const build of builds) candidates.push(build.candidate);
 
   // One entry for the whole town, offered only when there is more than one
   // building to fix. Below that it is the same action as the single repair
@@ -441,26 +471,362 @@ export function readTownshipCandidates(): Candidate[] {
   return candidates;
 }
 
+// --- what the town is worth per hour, and what a build adds to it -----------
+
+/**
+ * The town's actual output per hour, and the two multipliers that set it.
+ *
+ * Happiness had been read, reported and rendered since the summary existed, and
+ * nothing in the agent had ever asked what it *does*. The typings do not say —
+ * `currentHappiness` (township.d.ts:479) is a number with no documentation —
+ * so this was settled from the shipped v1.3.1 source in the nw.js cache
+ * (`learnings/mod-api.md`). Three lines of township.js are the whole answer:
+ *
+ *   computeTownPopulation() { ... this.townData.population = applyModifier(population, this.townData.happiness); }
+ *   get currentPopulation() { return applyModifier(this.townData.population, this.townData.health, 3); }
+ *   get baseXPRate() { return this.currentPopulation; }
+ *
+ * and, for money:
+ *
+ *   getGPGainRate() {
+ *       const gain = this.currentPopulation * this.GP_PER_CITIZEN * (this.taxRate / 100);
+ *       ...
+ *   }
+ *
+ * with `applyModifier(base, mod, 0)` = `floor(base * (1 + mod/100))` and type 3
+ * = `floor(base * (mod/100))` (f_000195.js:42, the shared helper).
+ *
+ * So the chain is: **happiness is a percentage bonus on population, population
+ * times health percent is Township XP per tick, and the same figure times 15
+ * times the tax rate is GP — real GP, credited to the character** (`addResources`
+ * calls `this.game.gp.add(gpToAdd)`, not merely the town's own GP resource).
+ *
+ * That makes happiness the one town statistic that scales everything at once,
+ * and it makes zero happiness a foregone multiplier rather than a fault: the
+ * town is not decaying at 0, it is simply running at exactly 1.0x. Every point
+ * is +1% Township XP and +1% GP, permanently and unattended.
+ *
+ * `basePopulation` is recomputed here rather than read, because the game keeps
+ * only the post-happiness figure and the delta a build is worth needs the
+ * pre-happiness one. The recomputation is checked against the game's own
+ * `townData.population` and a disagreement is reported through `safe.ts` —
+ * a transcribed formula that silently drifts from the engine is the exact
+ * failure this repo keeps paying for, so it is made to prove itself every read.
+ */
+export interface TownshipEconomy {
+  /** Raw population from buildings and flat modifiers, before happiness. */
+  basePopulation: number;
+  /** The game's `townData.population`: `basePopulation` scaled by happiness. */
+  population: number;
+  /** `currentPopulation`: population scaled by health. XP per tick, and taxed. */
+  workingPopulation: number;
+  happiness: number;
+  /** `townData.health`, 20..100. Decays on its own; see `passive.ts`. */
+  health: number;
+  /** Township XP per hour at the current town, through the game's `modifyXP`. */
+  xpPerHour: number;
+  /** GP per hour the town pays the character, through `getGPGainRate`. */
+  gpPerHour: number;
+  /** Town ticks per hour, from `TICK_LENGTH` (300s -> 12). */
+  ticksPerHour: number;
+  /**
+   * Set when the transcribed population formula disagreed with the game.
+   *
+   * Null is the normal case. A sentence here means every derived figure below
+   * is suspect, and it is also recorded as an adapter failure so it is visible
+   * without anyone reading this field.
+   */
+  modelMismatch: string | null;
+}
+
+/**
+ * Population before happiness, summed the way `computeTownPopulation` does.
+ *
+ * Every biome and every building, not just unlocked biomes and available
+ * buildings: the game's own loop is `this.biomes.forEach` over
+ * `this.buildings.forEach`, and narrowing it would undercount a town whose
+ * biome later locked behind a requirement.
+ */
+function sumBasePopulation(township: typeof game.township): number {
+  let population = 0;
+
+  for (const biome of township.biomes.allObjects) {
+    for (const building of township.buildings.allObjects) {
+      try {
+        const count = biome.getBuildingCount(building);
+        if (count <= 0) continue;
+        population += count * township.getPopulationProvidesForBiome(building, biome);
+      } catch (error) {
+        noteSwallowed('township.sumBasePopulation', error);
+        // One unreadable building understates the total, which the mismatch
+        // check below turns into a report rather than a quiet wrong answer.
+      }
+    }
+  }
+
+  return population + game.modifiers.flatTownshipPopulation;
+}
+
+/** `applyModifier(base, modifier, 0)` — the game's percentage bonus. */
+function applyPercentBonus(base: number, modifier: number): number {
+  return Math.floor(base * (1 + modifier / 100));
+}
+
+/** `applyModifier(base, modifier, 3)` — the game's percentage *of* base. */
+function applyPercentOf(base: number, modifier: number): number {
+  return Math.floor(base * (modifier / 100));
+}
+
+export function readTownshipEconomy(): TownshipEconomy | null {
+  const township = game.township;
+  if (!township.townData.townCreated) return null;
+
+  const happiness = township.townData.happiness;
+  const health = township.townData.health;
+  const basePopulation = sumBasePopulation(township);
+
+  // The proof that the transcription still matches the engine. Off-by-one is
+  // tolerated because `getPopulationProvidesForBiome` is unfloored (applyModifier
+  // type 4) and the game floors only once at the end, so summing per-building
+  // can land a fraction either side of the game's single rounding.
+  const modelled = applyPercentBonus(basePopulation, happiness);
+  const actual = township.townData.population;
+  let modelMismatch: string | null = null;
+  if (Math.abs(modelled - actual) > 1) {
+    modelMismatch = `modelled population ${modelled} against the game's ${actual} (base ${basePopulation}, happiness ${happiness})`;
+    recordFallback('township.populationModel', modelMismatch);
+  }
+
+  const ticksPerHour = safeNumber(
+    'township.ticksPerHour',
+    () => 3600 / township.TICK_LENGTH,
+    // 300s ticks are the game's own default; a zero here would erase the rate
+    // rather than fall back to it.
+    12,
+  );
+
+  return {
+    basePopulation,
+    population: actual,
+    workingPopulation: township.currentPopulation,
+    happiness,
+    health,
+    xpPerHour: safeNumber(
+      'township.xpPerHour',
+      () => township.modifyXP(township.baseXPRate) * ticksPerHour,
+      0,
+    ),
+    gpPerHour: safeNumber('township.gpPerHour', () => township.getGPGainRate() * ticksPerHour, 0),
+    ticksPerHour,
+    modelMismatch,
+  };
+}
+
+/** What building some of a building adds to the town's permanent output. */
+export interface BuildValue {
+  /** How many this figure is for. See {@link valueOfBuilding} on why not one. */
+  quantity: number;
+  /** Extra Township XP per hour, forever, with no action slot spent. */
+  xpPerHour: number;
+  /** Extra GP per hour the town pays the character, forever. */
+  gpPerHour: number;
+  /** Raw population the batch provides, before the happiness multiplier. */
+  populationGain: number;
+  /** Happiness the batch provides — a percentage bonus on the whole town. */
+  happinessGain: number;
+}
+
+/**
+ * Prices a building by the only two things Township pays in.
+ *
+ * This is the number that answers "which building", and until now nothing
+ * computed it: every build candidate carried a count and an affordability, and
+ * the two figures that decide the question — Township XP and GP — appeared
+ * nowhere. So a Wooden Hut (+1 population each) and a Tailor (+0 of everything
+ * the town is scored on) read identically, and a planner picking off a list of
+ * seventeen had nothing to pick on but the wording.
+ *
+ * Both halves are derived from the game's own accessors rather than replicated:
+ *
+ * - **XP** through `modifyXP` (skill.d.ts:371), which carries whatever mastery
+ *   and modifier terms the game applies, evaluated at the projected population
+ *   instead of the current one. `baseXPRate` *is* `currentPopulation`, so
+ *   substituting the projection is exact.
+ * - **GP** by scaling the live `getGPGainRate()` by the population ratio.
+ *   `getGPGainRate` is linear in `currentPopulation` — `pop * GP_PER_CITIZEN *
+ *   taxRate/100` — so the ratio needs neither the tax rate nor the GP modifier,
+ *   both of which would have had to be read and could each be wrong.
+ *
+ * The one thing genuinely transcribed is the two nested roundings between raw
+ * population and `currentPopulation`, and {@link readTownshipEconomy} checks
+ * that transcription against the game every time it is read.
+ *
+ * ## Why a batch and not one
+ *
+ * This priced one building first, and one building is the wrong unit — not for
+ * neatness, but because the flooring makes it answer *zero* for the single most
+ * valuable thing the town can currently do.
+ *
+ * Gardens provide +0.5 happiness each. Against this town's 184 population,
+ * `floor(184 × 1.005)` is 184: one Garden is worth literally nothing, two are
+ * worth as much as a Wooden Hut, and the twelve the town can afford are worth
+ * +6% of everything. A per-building figure would have ranked the only source of
+ * happiness in reach below buildings that provide nothing at all, with the
+ * arithmetic impeccable the whole way.
+ *
+ * So the unit is the batch a build candidate actually stands for. A build
+ * objective repeats — the adapter builds one per action and keeps going while
+ * the town holds its reserve — so "how many could go up" is the honest
+ * question, and it is the game's own clamp:
+ * `min(getMaxAffordableBuildingQty, getBuildingCountRemainingForLevelUp)`,
+ * which is exactly what `buildBuilding` computes before it spends anything.
+ *
+ * @returns Null when the town does not exist or the projection cannot be
+ *   trusted — never a zero standing in for "unknown", because zero is a real
+ *   and common answer here and the two must not be confused.
+ */
+export function valueOfBuilding(
+  building: TownshipBuilding,
+  biome: TownshipBiome,
+  /**
+   * The town read once by the caller. Passed rather than re-read because the
+   * candidate loop prices every building and `readTownshipEconomy` walks every
+   * biome and building to do it — re-reading it per candidate is that walk
+   * squared for an answer that cannot change within one pass.
+   */
+  economy: TownshipEconomy | null = readTownshipEconomy(),
+): BuildValue | null {
+  const township = game.township;
+  if (economy === null) return null;
+  // A projection built on a formula the game just contradicted is worse than no
+  // projection: it would rank builds against each other on a wrong scale and
+  // nothing downstream could tell.
+  if (economy.modelMismatch !== null) return null;
+
+  // The game's own clamp, from `buildBuilding` in the shipped v1.3.1 source:
+  //   const qtyToBuild = Math.min(this.getBuildingCountRemainingForLevelUp(building, biome), upgradeQty);
+  // with `upgradeQty` resolving to `getMaxAffordableBuildingQty` at MAX. At
+  // least one, so a building the town cannot yet afford is still priced for
+  // what it would be worth rather than silently reading as worthless.
+  const affordable = safeNumber(
+    'township.buildAffordableQty',
+    () => township.getMaxAffordableBuildingQty(building, biome),
+    1,
+  );
+  const remaining = safeNumber(
+    'township.buildRemainingQty',
+    () => township.getBuildingCountRemainingForLevelUp(building, biome),
+    1,
+  );
+  const quantity = Math.max(1, Math.min(affordable, remaining));
+
+  const populationGain =
+    safeNumber(
+      'township.buildPopulationGain',
+      () => township.getPopulationProvidesForBiome(building, biome),
+      0,
+    ) * quantity;
+  const happinessGain =
+    safeNumber(
+      'township.buildHappinessGain',
+      () => township.getHappinessProvidesForBiome(building, biome),
+      0,
+    ) * quantity;
+
+  const projectedPopulation = applyPercentBonus(
+    economy.basePopulation + populationGain,
+    economy.happiness + happinessGain,
+  );
+  const projectedWorking = applyPercentOf(projectedPopulation, economy.health);
+
+  const xpPerHour =
+    safeNumber('township.projectedXp', () => township.modifyXP(projectedWorking), 0) *
+      economy.ticksPerHour -
+    economy.xpPerHour;
+
+  // Zero working population makes the ratio undefined rather than infinite, and
+  // a town that taxes nobody earns nothing whatever is built, so the honest
+  // answer for the GP half is zero and not a division.
+  const gpPerHour =
+    economy.workingPopulation > 0
+      ? (economy.gpPerHour * projectedWorking) / economy.workingPopulation - economy.gpPerHour
+      : 0;
+
+  return {
+    quantity,
+    xpPerHour: Math.max(0, xpPerHour),
+    gpPerHour: Math.max(0, gpPerHour),
+    populationGain,
+    happinessGain,
+  };
+}
+
 /**
  * What one more of this building actually buys.
  *
- * "Build a hut" is not a decision anyone can weigh; "build 3 more huts and the
- * town levels up" is. Township level is the gate on biomes, on building tiers
- * and on the skilling outfits the whole skill is worth playing for, so the
- * distance to the next one is the number that makes a build worth ranking
- * against a fishing rate — and it was the one number the label never carried.
+ * "Build a hut" is not a decision anyone can weigh; "one more hut is +12 town
+ * XP an hour and +54 GP an hour, forever" is.
+ *
+ * This label used to open with *"N more here reaches the next Township level"*,
+ * and that sentence was false. `getBuildingCountRemainingForLevelUp` says
+ * nothing about Township level; the shipped v1.3.1 source (township.js, read
+ * from the nw.js cache — see `learnings/mod-api.md`) is one line:
+ *
+ *   getBuildingCountRemainingForLevelUp(building, biome) {
+ *       return building.maxUpgrades - biome.getBuildingCount(building);
+ *   }
+ *
+ * It is the count remaining until this building is *maxed in this biome*, which
+ * is what `isBuildingAvailable` (:1051) gates the next building in the upgrade
+ * chain on — a real and useful number, and not the one the label named. Every
+ * build candidate advertised "20 more here reaches the next Township level"
+ * because `maxUpgrades` is 20 for most buildings, and Gardens advertised 100.
+ * Nothing about the town levelled up when a building maxed.
+ *
+ * The operator hit the consequence by hand: three Schools went up on the
+ * strength of "3 more reaches the next Township level", the fourth was refused
+ * with `melvorF:School is maxed in melvorF:Grasslands`, and the plan advanced.
+ * The count was right about maxing and the sentence was wrong about why.
+ *
+ * The real answer to "what does this build buy" is {@link valueOfBuilding},
+ * which is arithmetic on the game's own accessors rather than a name taken at
+ * face value.
  *
  * The affordable quantity rides along because it bounds the answer: three more
  * needed and one affordable is a different plan from three and three.
  */
-function describeBuildTarget(building: TownshipBuilding, biome: TownshipBiome): string {
+function describeBuildTarget(
+  building: TownshipBuilding,
+  biome: TownshipBiome,
+  value: BuildValue | null,
+): string {
   const township = game.township;
   const parts: string[] = [];
+
+  if (value !== null && (value.xpPerHour > 0 || value.gpPerHour > 0)) {
+    parts.push(
+      `building the ${value.quantity} the town can afford is +${value.xpPerHour.toFixed(0)} Township xp/h and +${value.gpPerHour.toFixed(0)} GP/h forever, unattended`,
+    );
+    if (value.happinessGain > 0) {
+      // Named separately because happiness is not additive with population, it
+      // multiplies it — so a building that provides only happiness still moves
+      // both numbers above, and a reader comparing "+0 pop" against a non-zero
+      // rate would otherwise think the rate was invented.
+      parts.push(
+        `+${value.happinessGain} happiness across the batch, which is +${value.happinessGain}% population for the whole town`,
+      );
+    }
+  } else if (value !== null) {
+    // Explicit, because "no line" and "worth nothing" are the same silence and
+    // most of this town's buildings are genuinely the second. A planner reading
+    // a list of seventeen needs to see which ones the town is not paid for.
+    parts.push('worth no Township xp/h or GP/h — it produces a resource, not citizens');
+  }
 
   try {
     const remaining = township.getBuildingCountRemainingForLevelUp(building, biome);
     if (Number.isFinite(remaining) && remaining > 0) {
-      parts.push(`${remaining} more here reaches the next Township level`);
+      parts.push(`${remaining} more maxes it here and unlocks its upgrade`);
     }
   } catch {
     // A building that cannot answer contributes nothing to the label.
@@ -492,6 +858,16 @@ export interface TownshipSummary {
   worship: string;
   season: string | null;
   resources: { id: string; name: string; amount: number; cap: number }[];
+  /**
+   * What the town pays per hour, and what happiness is doing to it.
+   *
+   * The summary already carried `happiness` and had done for as long as it has
+   * existed. What it could not carry is the consequence, so a planner reading
+   * "happiness 0" had no way to know whether that was a fault, a cost, or
+   * nothing at all — and for a whole run nothing acted on it. See
+   * {@link TownshipEconomy}.
+   */
+  economy: TownshipEconomy | null;
 }
 
 /**
@@ -527,6 +903,7 @@ export function readTownshipSummary(): TownshipSummary | null {
     storageMax: township.getMaxStorage(),
     worship: township.currentWorshipName,
     season: data.season?.name ?? null,
+    economy: readTownshipEconomy(),
     resources: township.resources.allObjects.map((resource) => ({
       id: resource.id,
       name: resource.name,

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-247 exports.
+251 exports.
 
 ## `act`
 
@@ -224,6 +224,16 @@ buildAgilityObstacle: (obstacleId: string, isSuspended: () => boolean) => Action
 
 ```ts
 buildTownshipBuilding: (buildingId: string, biomeId: string, isSuspended: () => boolean) => ActionResult<TownshipProjection>
+```
+
+## `BuildValue`
+
+`interface`
+
+What building some of a building adds to the town's permanent output.
+
+```ts
+BuildValue: any
 ```
 
 ## `BuriableBones`
@@ -2841,6 +2851,14 @@ purchase is — it is simply not a move yet.
 readTownshipCandidates: () => Candidate[]
 ```
 
+## `readTownshipEconomy`
+
+`function`
+
+```ts
+readTownshipEconomy: () => TownshipEconomy | null
+```
+
 ## `readTownshipGoodsCandidates`
 
 `function`
@@ -3703,6 +3721,53 @@ leak, which is why this is an explicit decision rather than a reflex.
 togglePrayer: (prayerId: string, isSuspended: () => boolean) => ActionResult<{ active: string[]; }>
 ```
 
+## `TownshipEconomy`
+
+`interface`
+
+The town's actual output per hour, and the two multipliers that set it.
+
+Happiness had been read, reported and rendered since the summary existed, and
+nothing in the agent had ever asked what it *does*. The typings do not say —
+`currentHappiness` (township.d.ts:479) is a number with no documentation —
+so this was settled from the shipped v1.3.1 source in the nw.js cache
+(`learnings/mod-api.md`). Three lines of township.js are the whole answer:
+
+  computeTownPopulation() { ... this.townData.population = applyModifier(population, this.townData.happiness); }
+  get currentPopulation() { return applyModifier(this.townData.population, this.townData.health, 3); }
+  get baseXPRate() { return this.currentPopulation; }
+
+and, for money:
+
+  getGPGainRate() {
+      const gain = this.currentPopulation * this.GP_PER_CITIZEN * (this.taxRate / 100);
+      ...
+  }
+
+with `applyModifier(base, mod, 0)` = `floor(base * (1 + mod/100))` and type 3
+= `floor(base * (mod/100))` (f_000195.js:42, the shared helper).
+
+So the chain is: **happiness is a percentage bonus on population, population
+times health percent is Township XP per tick, and the same figure times 15
+times the tax rate is GP — real GP, credited to the character** (`addResources`
+calls `this.game.gp.add(gpToAdd)`, not merely the town's own GP resource).
+
+That makes happiness the one town statistic that scales everything at once,
+and it makes zero happiness a foregone multiplier rather than a fault: the
+town is not decaying at 0, it is simply running at exactly 1.0x. Every point
+is +1% Township XP and +1% GP, permanently and unattended.
+
+`basePopulation` is recomputed here rather than read, because the game keeps
+only the post-happiness figure and the delta a build is worth needs the
+pre-happiness one. The recomputation is checked against the game's own
+`townData.population` and a disagreement is reported through `safe.ts` —
+a transcribed formula that silently drifts from the engine is the exact
+failure this repo keeps paying for, so it is made to prove itself every read.
+
+```ts
+TownshipEconomy: any
+```
+
 ## `TownshipProjection`
 
 `interface`
@@ -3872,6 +3937,58 @@ wasteful otherwise.
 
 ```ts
 usePotion: (itemId: string, isSuspended: () => boolean) => ActionResult<{ potionId: string | null; charges: number; }>
+```
+
+## `valueOfBuilding`
+
+`function`
+
+Prices a building by the only two things Township pays in.
+
+This is the number that answers "which building", and until now nothing
+computed it: every build candidate carried a count and an affordability, and
+the two figures that decide the question — Township XP and GP — appeared
+nowhere. So a Wooden Hut (+1 population each) and a Tailor (+0 of everything
+the town is scored on) read identically, and a planner picking off a list of
+seventeen had nothing to pick on but the wording.
+
+Both halves are derived from the game's own accessors rather than replicated:
+
+- **XP** through `modifyXP` (skill.d.ts:371), which carries whatever mastery
+  and modifier terms the game applies, evaluated at the projected population
+  instead of the current one. `baseXPRate` *is* `currentPopulation`, so
+  substituting the projection is exact.
+- **GP** by scaling the live `getGPGainRate()` by the population ratio.
+  `getGPGainRate` is linear in `currentPopulation` — `pop * GP_PER_CITIZEN *
+  taxRate/100` — so the ratio needs neither the tax rate nor the GP modifier,
+  both of which would have had to be read and could each be wrong.
+
+The one thing genuinely transcribed is the two nested roundings between raw
+population and `currentPopulation`, and {@link readTownshipEconomy} checks
+that transcription against the game every time it is read.
+
+## Why a batch and not one
+
+This priced one building first, and one building is the wrong unit — not for
+neatness, but because the flooring makes it answer *zero* for the single most
+valuable thing the town can currently do.
+
+Gardens provide +0.5 happiness each. Against this town's 184 population,
+`floor(184 × 1.005)` is 184: one Garden is worth literally nothing, two are
+worth as much as a Wooden Hut, and the twelve the town can afford are worth
++6% of everything. A per-building figure would have ranked the only source of
+happiness in reach below buildings that provide nothing at all, with the
+arithmetic impeccable the whole way.
+
+So the unit is the batch a build candidate actually stands for. A build
+objective repeats — the adapter builds one per action and keeps going while
+the town holds its reserve — so "how many could go up" is the honest
+question, and it is the game's own clamp:
+`min(getMaxAffordableBuildingQty, getBuildingCountRemainingForLevelUp)`,
+which is exactly what `buildBuilding` computes before it spends anything.
+
+```ts
+valueOfBuilding: (building: TownshipBuilding, biome: TownshipBiome, economy?: TownshipEconomy | null) => BuildValue | null
 ```
 
 ## `whyInertInFight`

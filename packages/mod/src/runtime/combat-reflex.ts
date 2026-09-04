@@ -182,24 +182,63 @@ const PRAYER_POINT_RESERVE = 1000;
  *
  * One stack per pass, richest first, and only under the point reserve. See
  * {@link PRAYER_POINT_RESERVE} for why the reserve is there rather than a cap.
+ *
+ * ## What it will not bury
+ *
+ * A Township task wants 10,000 Bones. The bank read 0 through an entire Chicken
+ * grind, because this reflex checked only the point reserve and buried whatever
+ * it found — so the agent was simultaneously told to accumulate ten thousand of
+ * something and wired to destroy every one of them. The candidate said so in
+ * words: *"STOCK SHORTFALL: pass untilItemId melvorD:Bones, untilQuantity
+ * 10000 ... a Township task wants 10,000 and 0 are banked"*.
+ *
+ * The obvious fix is the one the sell guard uses — withhold whatever
+ * `readTaskWantedQuantities` names — and it is wrong here, in the exact shape
+ * *a guard that can starve its own precondition* describes. That reader walks
+ * **every task in the game**, not the ones currently offered, so it would
+ * reserve 10,000 Bones permanently; and burying is the only source of prayer
+ * points, which are the only source of Prayer XP, against a `prayer-20` goal
+ * standing at level 3. The guard would protect a task that may never be offered
+ * by making a goal unreachable.
+ *
+ * What is reserved instead is the stock the *running objective* asked for. A
+ * task's wanted quantity is a hypothesis until a planner adopts it; once it has
+ * — once `item_qty_at_least melvorD:Bones 10000` is the objective's own success
+ * condition — burying them is the reflex tier undoing the objective tier, which
+ * is the same failure as the sell reflex eating the raw fish out from under the
+ * cook. With no such objective running, bones are surplus again and Prayer gets
+ * them.
+ *
+ * The surplus above the reserve is still buried rather than the whole stack
+ * being withheld, so an objective at 12,000 of a wanted 10,000 trains Prayer
+ * with the 2,000 it does not need.
+ *
+ * @param state.reserved - Absolute bank quantities the running objective is
+ *   trying to reach, by item id. Empty when no objective names one.
  */
 export function buryBonesWhenHeld(
   state: {
     prayerPoints: number;
     /** Bones held, richest first. */
     bones: readonly { itemId: string; quantity: number }[];
+    reserved?: ReadonlyMap<string, number>;
   },
   bury: (itemId: string, quantity: number) => ActionResult<unknown>,
 ): ReflexOutcome | null {
   if (state.prayerPoints >= PRAYER_POINT_RESERVE) return null;
 
-  const stack = state.bones[0];
-  if (stack === undefined || stack.quantity <= 0) return null;
+  for (const stack of state.bones) {
+    const keep = state.reserved?.get(stack.itemId) ?? 0;
+    const surplus = stack.quantity - keep;
+    if (surplus <= 0) continue;
 
-  return {
-    name: 'reflex.buryBones',
-    result: bury(stack.itemId, stack.quantity),
-  };
+    return {
+      name: 'reflex.buryBones',
+      result: bury(stack.itemId, surplus),
+    };
+  }
+
+  return null;
 }
 
 /**

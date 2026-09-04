@@ -476,6 +476,42 @@ export const objectiveSchema = z.object({
 export type Objective = z.infer<typeof objectiveSchema>;
 
 /**
+ * The bank quantities an objective is trying to reach, by item id.
+ *
+ * A reflex that consumes, sells or destroys an item has no other way to know
+ * that the objective tier is currently trying to accumulate it. Three separate
+ * failures in this repo are that gap: the sell reflex sold the raw fish out
+ * from under the cook consuming them, the sell guard grew a task-wanted
+ * exclusion to stop 500 Potatoes being sold an hour before a task asked for
+ * 100, and the bury reflex destroyed every Bone while a Township task wanted
+ * ten thousand of them.
+ *
+ * This is the narrowest honest answer to "what must not be spent": not what
+ * some task might one day want, which reserves a bank forever and starves the
+ * goals those items also feed, but what the objective *actually running* named
+ * as its finish line. It expires when the objective does, with no bookkeeping.
+ *
+ * Absolute targets, matching `item_qty_at_least`, so a holder is compared
+ * against them rather than having a delta subtracted twice. The largest wins
+ * when an objective names one item twice, which nothing does today and which
+ * would otherwise silently take the smaller reserve.
+ *
+ * @returns An empty map for a null objective or one with no stock criterion —
+ *   which is the common case, and means "reserve nothing".
+ */
+export function stockTargetsOf(objective: Objective | null | undefined): Map<string, number> {
+  const targets = new Map<string, number>();
+  if (objective === null || objective === undefined) return targets;
+
+  for (const criterion of objective.successWhen) {
+    if (criterion.type !== 'item_qty_at_least') continue;
+    targets.set(criterion.itemId, Math.max(targets.get(criterion.itemId) ?? 0, criterion.qty));
+  }
+
+  return targets;
+}
+
+/**
  * An objective the mod has *proven it can execute right now*, with real numbers
  * attached from game data. The planner chooses among candidates and orders them;
  * it never invents one.

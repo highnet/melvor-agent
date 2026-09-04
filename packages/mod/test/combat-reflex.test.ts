@@ -1,4 +1,5 @@
 import type { ActionResult } from '@melvor-agent/shared';
+import { stockTargetsOf } from '@melvor-agent/shared';
 import { describe, expect, it, vi } from 'vitest';
 import {
   abandonIfOutmatched,
@@ -911,6 +912,120 @@ describe('Prayer, which nothing could reach', () => {
 
   it('does nothing with no bones held', () => {
     expect(buryBonesWhenHeld({ prayerPoints: 0, bones: [] }, () => ok)).toBeNull();
+  });
+
+  it('reads the reserve off the objective the agent is actually running', () => {
+    // The other half: the reserve has to come from somewhere, and the whole
+    // argument for `stockTargetsOf` is that it names the *adopted* objective
+    // rather than every task the game could ever offer. An empty map for an
+    // objective with no stock criterion is the common case and means "reserve
+    // nothing" — burying keeps working for every level objective there is.
+    expect(
+      stockTargetsOf({
+        id: 'o1',
+        kind: 'fight_monster',
+        params: {
+          kind: 'fight_monster',
+          monsterId: 'melvorD:Chicken',
+          areaId: 'melvorD:Farmlands',
+        },
+        successWhen: [{ type: 'item_qty_at_least', itemId: 'melvorD:Bones', qty: 10_000 }],
+        abortWhen: { minutesExceed: 60 },
+        expectedDurationMin: 60,
+        rationale: 'bank bones for a Township task',
+      }),
+    ).toEqual(new Map([['melvorD:Bones', 10_000]]));
+
+    expect(stockTargetsOf(null).size).toBe(0);
+    expect(
+      stockTargetsOf({
+        id: 'o2',
+        kind: 'gather_resource',
+        params: {
+          kind: 'gather_resource',
+          skillId: 'melvorD:Woodcutting',
+          recipeId: 'melvorD:Yew_Tree',
+        },
+        successWhen: [{ type: 'skill_level_at_least', skillId: 'melvorD:Woodcutting', level: 61 }],
+        abortWhen: { minutesExceed: 60 },
+        expectedDurationMin: 60,
+        rationale: 'levels',
+      }).size,
+    ).toBe(0);
+  });
+
+  it('will not bury what the running objective is trying to bank', () => {
+    // The live failure: a Township task wants 10,000 Bones, the candidate said
+    // so with a stock target attached, and the bank read 0 through an entire
+    // Chicken grind because this reflex buried every one of them. Once a
+    // planner adopts that target, burying is the reflex tier undoing the
+    // objective tier.
+    const bury = vi.fn(() => ok);
+    const outcome = buryBonesWhenHeld(
+      {
+        prayerPoints: 0,
+        bones: [{ itemId: 'melvorD:Bones', quantity: 4200 }],
+        reserved: new Map([['melvorD:Bones', 10_000]]),
+      },
+      bury,
+    );
+
+    expect(outcome).toBeNull();
+    expect(bury).not.toHaveBeenCalled();
+  });
+
+  it('buries the surplus above the target rather than withholding the stack', () => {
+    // Reserving the whole stack once a target exists would stall Prayer for as
+    // long as the objective ran. Only the target is protected.
+    const bury = vi.fn(() => ok);
+    buryBonesWhenHeld(
+      {
+        prayerPoints: 0,
+        bones: [{ itemId: 'melvorD:Bones', quantity: 12_000 }],
+        reserved: new Map([['melvorD:Bones', 10_000]]),
+      },
+      bury,
+    );
+
+    expect(bury).toHaveBeenCalledWith('melvorD:Bones', 2000);
+  });
+
+  it('moves on to a bone the objective does not want', () => {
+    // The richest stack being reserved must not end the pass: the reflex takes
+    // one stack per tick, and stopping at the first reserved one would let a
+    // single protected bone type block every other.
+    const bury = vi.fn(() => ok);
+    buryBonesWhenHeld(
+      {
+        prayerPoints: 0,
+        bones: [
+          { itemId: 'melvorD:Bones', quantity: 900 },
+          { itemId: 'melvorD:Dragon_Bones', quantity: 40 },
+        ],
+        reserved: new Map([['melvorD:Bones', 10_000]]),
+      },
+      bury,
+    );
+
+    expect(bury).toHaveBeenCalledWith('melvorD:Dragon_Bones', 40);
+  });
+
+  it('buries everything when no objective names a stock target', () => {
+    // The common case, and the one that must not regress: Prayer is level 3
+    // against a prayer-20 goal and burying is its only source of points. A
+    // reserve drawn from every task the game could ever offer would have made
+    // that goal unreachable, which is why the reserve is the adopted objective.
+    const bury = vi.fn(() => ok);
+    buryBonesWhenHeld(
+      {
+        prayerPoints: 0,
+        bones: [{ itemId: 'melvorD:Bones', quantity: 289 }],
+        reserved: new Map(),
+      },
+      bury,
+    );
+
+    expect(bury).toHaveBeenCalledWith('melvorD:Bones', 289);
   });
 
   it('turns on the cheapest prayer in a fight', () => {

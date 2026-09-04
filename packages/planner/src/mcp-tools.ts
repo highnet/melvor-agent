@@ -236,6 +236,20 @@ export const TOOLS: Record<string, ToolHandler> = {
           ? 'owned'
           : 'not owned — fights still allowed, but the gate is stricter and eating is manual'
       }`,
+      // The town, which had never appeared in this summary at all.
+      //
+      // Township is the operator's stated first priority and the thing every
+      // skilling outfit sits behind, and the only way it reached a planning
+      // session was as seventeen build candidates near the bottom of
+      // `list_candidates`. Its level, its storage and its happiness were in the
+      // snapshot the whole time and rendered nowhere — so "happiness 0" was
+      // never once put in front of anything that could act on it.
+      //
+      // Storage leads because a full town discards everything it produces, and
+      // the happiness note is spelled out because the number alone reads as
+      // decoration: it is a percentage bonus on population, and population is
+      // both the Township XP rate and the taxed figure the town pays GP from.
+      ...renderTown(s.township),
       '',
       'Goals (GOALS.md):',
       renderGoals(evaluateGoals(await loadGoals(memoryRoot), s)),
@@ -836,6 +850,82 @@ function describeElapsed(objective: Objective, startedAt: number | null | undefi
   if (startedAt === null || startedAt === undefined) return '';
   const minutes = Math.max(0, Math.round((Date.now() - startedAt) / 60_000));
   return ` — ${minutes}min in, of ${Math.round(objective.expectedDurationMin)}min expected (aborts at ${Math.round(objective.abortWhen.minutesExceed)}min)`;
+}
+
+/**
+ * The town, in the terms a decision about it is actually made in.
+ *
+ * Nothing rendered the town here before, so the whole of Township reached a
+ * planning session as build candidates near the bottom of `list_candidates`,
+ * and the operator's stated first priority had no line in the state summary at
+ * all.
+ *
+ * Three facts, chosen because each has an action behind it:
+ *
+ * - **Storage.** A full town discards everything it produces, so a town at
+ *   100% earns nothing per hour however many buildings it has.
+ * - **What it pays.** Township XP per hour and GP per hour, so a build can be
+ *   weighed against a fishing rate instead of against a wall of prose.
+ * - **Happiness, with its consequence spelled out.** The number alone reads as
+ *   decoration and was treated as decoration for the entire run. It is a
+ *   percentage bonus on population, and population is both the XP rate and the
+ *   figure the town taxes GP from — so every point is +1% of both, forever.
+ *   Zero is stated as a foregone multiplier rather than as a fault, because the
+ *   town is not decaying at zero: it is running at exactly 1.0x.
+ *
+ * Health is named only when it is costing something. It decays on its own and
+ * cannot exceed 100, so a line reporting 100% every read would be the sort of
+ * per-pass wallpaper that has twice buried a real diagnostic here.
+ */
+function renderTown(town: StateSnapshot['township'] | undefined): string[] {
+  // Undefined as well as null, and not because the schema allows it -- it
+  // defaults to null. A report from a mod build older than this field arrives
+  // without the key at all, and the rule this file already follows for
+  // `adapterFailures` applies: a missing field must cost one line of the
+  // summary, never the whole summary.
+  if (town === null || town === undefined) return [];
+
+  const storagePercent =
+    town.storageMax > 0 ? Math.round((town.storageUsed / town.storageMax) * 100) : 0;
+
+  const lines = [
+    `Town: Township ${town.level}, population ${Math.round(town.population).toLocaleString()}, storage ${storagePercent}% (${Math.round(town.storageUsed).toLocaleString()}/${town.storageMax.toLocaleString()})`,
+  ];
+
+  const economy = town.economy ?? null;
+  if (economy === null) {
+    // An older mod build reports no economy. Saying so beats printing nothing,
+    // because the absence otherwise reads as "the town pays nothing".
+    lines.push(
+      '  Town output: not reported — the running mod build predates it; reload the game to get it.',
+    );
+    return lines;
+  }
+
+  if (economy.modelMismatch !== null) {
+    lines.push(
+      `  Town output: UNRELIABLE — the adapter's population model disagrees with the game (${economy.modelMismatch}). Treat every build's advertised value as unproven.`,
+    );
+    return lines;
+  }
+
+  lines.push(
+    `  Town output: ${Math.round(economy.xpPerHour).toLocaleString()} Township xp/h and ${Math.round(economy.gpPerHour).toLocaleString()} GP/h, unattended and costing no action slot`,
+  );
+
+  lines.push(
+    economy.happiness === 0
+      ? '  Happiness 0: not a fault, a foregone multiplier. Happiness is a percentage bonus on population, and population is both the Township XP rate and what the town taxes GP from — so the town is running at exactly 1.0x, and every +1 happiness is +1% of both figures above, permanently. Buildings that provide it say so in their build candidate.'
+      : `  Happiness ${economy.happiness}: +${economy.happiness}% population, which is +${economy.happiness}% on both figures above`,
+  );
+
+  if (economy.health < 100) {
+    lines.push(
+      `  Health ${economy.health}%: the town is producing at ${economy.health}% of what it could. It decays on its own and is restored by spending a town resource.`,
+    );
+  }
+
+  return lines;
 }
 
 /**

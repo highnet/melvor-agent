@@ -20,6 +20,7 @@ import {
   fail,
   orderDamagingCandidates,
   stateSnapshotSchema,
+  stockTargetsOf,
   summariseResult,
 } from '@melvor-agent/shared';
 import {
@@ -937,6 +938,12 @@ export class Agent {
         {
           prayerPoints: snapshot.combat.prayerPoints,
           bones: readBuriableBones(),
+          // What the running objective is trying to bank, so this reflex cannot
+          // destroy the thing the objective tier is working towards. A Township
+          // task wanting 10,000 Bones held the bank at 0 through a whole grind;
+          // see buryBonesWhenHeld for why the reserve is the *adopted*
+          // objective rather than every task the game could ever offer.
+          reserved: stockTargetsOf(this.settings.objective),
         },
         (itemId, quantity) => buryBones(itemId, quantity, isSuspended),
       ),

@@ -192,6 +192,36 @@ export const townshipStateSchema = z.object({
       cap: z.number(),
     }),
   ),
+  /**
+   * What the town actually pays per hour, and the two multipliers that set it.
+   *
+   * `happiness` above has been in this schema since it existed and nothing has
+   * ever read it as anything but a number to print. It is a percentage bonus on
+   * population; population times health percent is Township XP per tick and is
+   * also what the town taxes into the character's GP. So zero happiness is a
+   * foregone multiplier — the town is not decaying, it is running at 1.0x — and
+   * the only way to say that to the code rather than to a reader is to carry the
+   * rates themselves.
+   *
+   * Optional and nullish so a mod build older than the service still validates:
+   * the mod only reloads with the game, so every field added here has to be
+   * survivable by a snapshot that predates it.
+   */
+  economy: z
+    .object({
+      basePopulation: z.number(),
+      population: z.number(),
+      workingPopulation: z.number(),
+      happiness: z.number(),
+      health: z.number(),
+      xpPerHour: z.number().nonnegative(),
+      gpPerHour: z.number().nonnegative(),
+      ticksPerHour: z.number().positive(),
+      /** Set when the transcribed population formula disagreed with the game. */
+      modelMismatch: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 export type TownshipState = z.infer<typeof townshipStateSchema>;
 
