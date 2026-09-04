@@ -226,6 +226,7 @@ import {
 import { NoMovementWatch, readObjectiveCounter } from './no-movement.js';
 import { QualityWindow } from './quality-window.js';
 import { type LaunchOutcome, canLaunchService, launchPlannerService } from './service-launcher.js';
+import { recallRepoPath } from './service-url-cache.js';
 import { StuckEquipWatch } from './stuck-equip.js';
 import { describeStuckAttention, stuckReplanDelayMs } from './stuck.js';
 import type { Transport } from './transport.js';
@@ -590,7 +591,14 @@ export class Agent {
    * supervisor.
    */
   startPlannerService(): LaunchOutcome {
-    const outcome = launchPlannerService(this.settings.repoPath);
+    // The remembered path, falling back to the configured one.
+    //
+    // `settings.repoPath` arrives *from* the planner service, and this button
+    // exists precisely for when that service is unreachable -- so on the boot
+    // after a crash the configured value is `''` and the launcher refuses. The
+    // remembered copy is written whenever settings do arrive, which makes the
+    // relaunch possible in the one case it is for. See service-url-cache.
+    const outcome = launchPlannerService(recallRepoPath(this.settings.repoPath));
     if (outcome.ok) this.log.info('operator', `planner service: ${outcome.detail}`);
     else this.log.error('operator', `planner service: ${outcome.detail}`);
     this.notify();

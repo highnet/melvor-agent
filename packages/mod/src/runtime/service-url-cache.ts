@@ -16,6 +16,27 @@
  */
 const KEY = 'melvor-agent:service-url';
 
+/**
+ * Where the repository lives, remembered for the same reason and a worse one.
+ *
+ * `launchPlannerService(this.settings.repoPath)` exists so the mod can restart
+ * a planner service that has died. But `repoPath` arrives *from* that service,
+ * and `DEFAULT_SETTINGS.repoPath` is `''`, which the launcher refuses outright.
+ * So the one path capable of restarting the service was only readable while the
+ * service was already up: the relaunch could never fire when it was needed.
+ *
+ * Measured: the service died overnight and stayed dead for about eight hours.
+ * The character kept mining the last thing it had been told to mine -- safe and
+ * productive, and completely unable to replan, because every objective comes
+ * from a session talking to a service that was not there. `Run state: blocked`
+ * the whole time.
+ *
+ * Same store and same best-effort handling as the URL above, for the same
+ * reason: this has to survive a reload and be readable before any character
+ * exists.
+ */
+const REPO_PATH_KEY = 'melvor-agent:repo-path';
+
 /** Remembers a working service URL for the next boot's character-select screen. */
 export function rememberServiceUrl(url: string): void {
   try {
@@ -34,6 +55,30 @@ export function rememberServiceUrl(url: string): void {
 export function recallServiceUrl(fallback: string): string {
   try {
     const stored = localStorage.getItem(KEY);
+    return stored === null || stored === '' ? fallback : stored;
+  } catch {
+    return fallback;
+  }
+}
+
+/** Remembers the repository path so a dead service can be restarted. */
+export function rememberRepoPath(repoPath: string): void {
+  try {
+    if (repoPath !== '') localStorage.setItem(REPO_PATH_KEY, repoPath);
+  } catch {
+    // As above: the fallback is the configured value, which is what shipped.
+  }
+}
+
+/**
+ * The remembered repository path, or the fallback.
+ *
+ * @param fallback - Usually `settings.repoPath`, which is `''` until the
+ *   service has answered at least once.
+ */
+export function recallRepoPath(fallback: string): string {
+  try {
+    const stored = localStorage.getItem(REPO_PATH_KEY);
     return stored === null || stored === '' ? fallback : stored;
   } catch {
     return fallback;

@@ -7,7 +7,11 @@ import {
 } from './adapter/index.js';
 import { Agent, type AgentSettings, DEFAULT_SETTINGS } from './runtime/agent.js';
 import { Logger } from './runtime/logger.js';
-import { recallServiceUrl, rememberServiceUrl } from './runtime/service-url-cache.js';
+import {
+  recallServiceUrl,
+  rememberRepoPath,
+  rememberServiceUrl,
+} from './runtime/service-url-cache.js';
 import { SettingsStore } from './runtime/settings-store.js';
 import { Transport } from './runtime/transport.js';
 import { createPanel } from './ui/panel.js';
@@ -160,6 +164,11 @@ export function setup(ctx: Modding.ModContext): void {
       // operator actually configured, rather than the default it used to
       // hardcode. That screen has no characterStorage and no settings.
       rememberServiceUrl(current.currentSettings.serviceUrl);
+      // And the repo path, so a service that dies can be restarted without it.
+      // `launchPlannerService` reads this and refuses on an empty string, and
+      // the value only ever arrives *from* the service -- so without this the
+      // relaunch could not fire in exactly the case it exists for.
+      rememberRepoPath(current.currentSettings.repoPath);
       sidebarHandle.setAside(current.runState, asideClass(current.runState));
       void settingsStore?.write(current.currentSettings);
     });
