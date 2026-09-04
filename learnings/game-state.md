@@ -1745,3 +1745,77 @@ Recorded because "we checked and it works" is a result, and because the shape of
 the check is the reusable part: the reflex existing proves nothing (this repo
 has shipped four reflexes that fired forever and changed nothing), and the
 `ok` lines with a moved projection are what actually settles it.
+
+## The town's tax rate has no setter, and that was the answer rather than the obstacle
+
+The town line reported `0 GP/h` against 165 working citizens. The formula is
+`currentPopulation * GP_PER_CITIZEN * (taxRate / 100)`, and with the population
+non-zero the only term that can zero it is the tax rate — so the reading was
+that a slider had been left at zero for the life of the character. `taxRate` is
+declared `get taxRate(): number` (township.d.ts:544) with **no setter anywhere
+in `gameTypes/`**, which made it look like exactly the class of thing
+`withTownBiome` and `withBuildQuantity` exist for: a value the game takes off
+the screen through a UI callback the typings cannot express.
+
+It is not that at all. From the shipped v1.3.1 source:
+
+```js
+get taxRate() {
+    const baseRate = this.BASE_TAX_RATE;
+    const modifier = this.game.modifiers.townshipTaxPerCitizen;
+    return Math.min(baseRate + modifier, 80);
+}
+```
+
+`BASE_TAX_RATE` is 0 — and unusually, the typings state the literal
+(township.d.ts:405, `readonly BASE_TAX_RATE = 0`), so this half was checkable
+without the cache and nobody had checked it. The rate *is* the modifier. The
+game data (f_00000c.js) gives **Town Hall** `"modifiers": {
+"townshipTaxPerCitizen": 10 }` with `"maxUpgrades": 8`, which is where the 80 in
+the getter comes from: eight Town Halls is exactly the cap.
+
+Three things follow, and each one closes a question rather than opening one.
+
+**A missing setter is not evidence of a hidden UI callback.** That inference had
+just been right twice in a row — `repairBuilding` and `buildBuilding` both read
+selections their signatures do not mention — and a pattern that has paid off
+twice is exactly when it gets applied without checking. The absence of a setter
+is equally consistent with "this is not settable", and that was the case here.
+The cache answers which in ten seconds; the guess would have sent someone
+hunting for a callback that does not exist, which is most of the way to writing
+a `withTaxRate` helper that scopes nothing.
+
+**There is no trade-off, and the expectation that there would be was reasonable
+and wrong.** Tax-versus-happiness is how such systems usually work, and
+happiness is precisely the scarce term in this town — so the interaction, if it
+existed, would have been the whole answer. Town Hall's `provides` entry is
+`population: 0, happiness: 0, education: 0, storage: 0, resources: []`. It costs
+resources and supplies tax and nothing else. No optimum to find, and the greedy
+mistake ("set it to max") is not even available.
+
+**A correct number with no cause is not a finished number.** Zero GP/h is
+structural: Town Hall is tier 5, which `populationForTier` (township.d.ts:418)
+gates on Township level 80 and 40,000 population, against a town at 33 and 184.
+Nothing is misconfigured and nothing can be done about it for a very long time.
+Reporting the bare zero cost an operator an investigation within a day of the
+line shipping, and it would have cost the next reader the same one. The rule
+this repo already has — *a number computed for a sentence is invisible to the
+code* — has a mirror image: **a number with no explanation is visible to
+everybody and useful to nobody, and it bills every reader the same hour.**
+Explaining a zero is not noise-in-the-normal-case; the unexplained zero was the
+noise, because it read as an alarm.
+
+The corollary that made this cheap to get right: the explanation stops the
+moment the tax rate is above zero, and the building is found from the registry's
+own `stats.modifiers` (statProvider.d.ts:21) rather than hardcoded, so nothing
+here is a fact about the day it was written.
+
+### The half of it that was our own overstatement
+
+The happiness line shipped the day before said every point of happiness is
+`+1% of both figures above` — the XP rate and the GP rate. One percent of a zero
+GP rate is zero, so while the town is untaxed happiness buys Township XP and
+nothing else. The sentence was derived correctly from the formula and was wrong
+about today, which is the same failure as an advertised rate that has never been
+measured. A claim scoped to "in general" and read as "right now" is worth less
+than no claim; the line is now scoped to whatever the town is actually paid in.

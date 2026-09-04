@@ -764,6 +764,29 @@ Township summary reported 0% health while the repair reflex correctly computed
       available building provides 0. Nothing notices when that stops being true,
       and nothing says how far a happiness target is. A blocked-list entry
       naming the cheapest route to +N happiness would be the readable form.
+- [ ] **`valueOfBuilding` is blind to a building that changes a modifier** — M.
+      The GP half is the town's live `getGPGainRate()` scaled by projected
+      population, which is exact for a building that supplies citizens and sees
+      nothing at all when a building changes `taxRate` instead: the rate is
+      `min(BASE_TAX_RATE + townshipTaxPerCitizen, 80)` and a modifier is not a
+      population term. **Town Hall therefore prices at zero, and it is the single
+      largest GP change the town can ever make** — eight of them take the rate
+      from 0% to the 80% cap. This costs nothing today because Town Hall is tier
+      5 against a tier-1 town and `canBuildTierOfBuilding` never offers it, which
+      is exactly why it is recorded now rather than found at Township 80 when the
+      ranking quietly sorts it last. The fix is to project the modifier as well
+      as the population — `stats.modifiers` is already read by `readTaxStanding`,
+      so the data is in hand.
+- [ ] **The town's GP is worth nothing until one building exists, and no goal
+      says so** — S/M. The town pays `population × 15 × taxRate/100` and the tax
+      rate is 0 until Town Hall, tier 5, gated on Township 80 and 40,000
+      population against 33 and 184. So every Township GP figure in this repo —
+      including the one the new town line prints — is structurally zero for the
+      foreseeable run, and Township's payoff is XP and task rewards only.
+      `GOALS.md` ranks Township first partly on "they pay GP, items and Township
+      XP"; the GP third of that is true of *tasks* and false of the town itself.
+      Worth correcting there, because it is the kind of premise that quietly
+      sizes a plan.
 - [ ] **`pnpm check` is nondeterministic at the diagnostic cap** — S. The repo
       carries 23 `noNonNullAssertion` warnings in `packages/planner/test`, which
       is over Biome's default `--max-diagnostics`, and a truncated run exits
