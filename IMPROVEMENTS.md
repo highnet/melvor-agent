@@ -40,6 +40,25 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **The bury reflex destroys bones a Township task is asking for, and the
+      candidate advertises a stock target that can never complete** — S. Live,
+      from one Chicken label: *"STOCK SHORTFALL: pass untilItemId
+      melvorD:Bones, untilQuantity 10000 ... a Township task wants 10,000 and 0
+      are banked"*. Zero are banked because `buryBonesWhenHeld` checks only
+      `prayerPoints >= PRAYER_POINT_RESERVE` and buries whatever it finds; the
+      bank read 0 Bones through an entire Chicken grind.
+      So the agent is simultaneously told to accumulate 10,000 of something and
+      wired to destroy every one of them. Neither half is wrong on its own --
+      Prayer is level 3 against a `prayer-20` goal and trains only by spending
+      points from buried bones, and Township tasks pay GP, items and the XP the
+      skilling outfits sit behind.
+      This is the sell-versus-consume gap again, third instance:
+      `saleExclusionReason` already withholds task-wanted items from *sale*, and
+      already grew a `purpose: 'sell' | 'consume'` split for the Alt Magic fuel,
+      but burying is a third path that consults neither. The reserve the sell
+      guard uses (`readTaskWantedQuantities`) is the number burying should
+      respect too -- keep what a task wants, bury the surplus.
+
 - [ ] **Materials are checked when a fight starts and never again, so combat runs
       dry mid-grind** — M. The operator: *"we should always check that we have
       enough materials before going into combat"* and *"we are deffo not casting
