@@ -1604,3 +1604,144 @@ composing into a cycle, with every individual call verifiable and the composite
 invisible. It is the Steel Scimitar / Staff of Air swap loop again, and the tell
 is the same — **when a feature's payoff requires two actions, the test is
 whether the second one can survive the first.**
+
+## Happiness is a multiplier on everything the town pays, and nothing had asked
+
+`happiness` had been in the snapshot, in the summary, and in the build labels
+for as long as the town has existed. Nothing had ever read it as anything but a
+number to print, and it sat at 0 for a whole run without a single line of code
+noticing. The typings cannot answer why: `currentHappiness` (township.d.ts:479)
+is an undocumented number, and so are `population`, `education` and `health`
+beside it.
+
+The shipped v1.3.1 source answers it in four lines (township.js from the nw.js
+cache, `learnings/mod-api.md` for the how):
+
+```js
+computeTownPopulation() { ... this.townData.population = applyModifier(population, this.townData.happiness); }
+get currentPopulation() { return applyModifier(this.townData.population, this.townData.health, 3); }
+get baseXPRate() { return this.currentPopulation; }
+getGPGainRate() { const gain = this.currentPopulation * this.GP_PER_CITIZEN * (this.taxRate / 100); ... }
+```
+
+with `applyModifier(base, mod, 0)` = `floor(base × (1 + mod/100))` and type 3 =
+`floor(base × (mod/100))` (f_000195.js:42). So the whole town is one chain:
+
+**happiness → population → `currentPopulation` → Township XP per tick, and the
+same figure × 15 × the tax rate → GP.** The GP is *real* GP: `addResources`
+calls `this.game.gp.add(gpToAdd)`, not merely the town's own GP resource. Ticks
+are `TICK_LENGTH` 300 seconds, so twelve an hour. Live, that is 184 population
+at 90% health = 165 working citizens = 1,980 Township xp/h and about 7,400 GP/h,
+none of it costing an action slot.
+
+Three things worth keeping.
+
+**Zero happiness is a foregone multiplier, not a fault.** The honest answer to
+"why is happiness 0 and what is it costing" is that the town is not decaying and
+nothing is being lost against a baseline — it is running at exactly 1.0x, and
+every point is +1% of both rates, permanently and with no action slot spent.
+"It is harmless" would have been wrong and "the town is broken" would have been
+wrong; the useful sentence is the multiplier.
+
+**`health` is the other multiplier and it is a different number from
+`healthPercent`.** `townData.health` is 20..100, decays by one on 25% of ticks
+once Township is level 15 (`applyPreTickTownUpdates`), floors at
+`MINIMUM_HEALTH` 20, and is restored only by `increaseHealth`. It is the one
+`currentPopulation` reads. `townData.healthPercent` is a *display* figure
+computed as `(education + happiness) / 235 × 100` and nothing load-bearing reads
+it — which is why the summary reading it once reported 0 on a healthy town. Two
+fields, similar names, one of them the real thing.
+
+**A per-building figure answers zero for the best move on the board.** Gardens
+provide +0.5 happiness each. Against 184 population, `floor(184 × 1.005)` is
+184 — one Garden is worth *nothing*, two are worth as much as a Wooden Hut, and
+the twelve the town can afford are worth +6% of everything. Pricing a build one
+at a time would have ranked the only source of happiness in reach below
+buildings that provide nothing at all, with impeccable arithmetic the whole way.
+The unit has to be the batch, because the flooring is not rounding noise: it is
+where sub-integer provision disappears entirely.
+
+## `getBuildingCountRemainingForLevelUp` is not about Township level
+
+Every build candidate the agent has ever emitted carried the sentence *"N more
+here reaches the next Township level"*. It was false on every one of them. From
+the shipped source, the method is one line:
+
+```js
+getBuildingCountRemainingForLevelUp(building, biome) {
+    return building.maxUpgrades - biome.getBuildingCount(building);
+}
+```
+
+It counts down to the building being *maxed in that biome*, which is what
+`isBuildingAvailable` gates the next building in the upgrade chain on. A real
+and useful number, and not remotely the one the name promises. `maxUpgrades` is
+20 for most buildings, so seventeen candidates all advertised "20 more here
+reaches the next Township level" and nothing about the town levelled up when one
+maxed. Township level comes from XP, and Township XP is population — an entirely
+different lever, which is what `valueOfBuilding` now measures.
+
+The operator paid for it directly: three Schools went up on the strength of the
+sentence, and the fourth was refused with `melvorF:School is maxed in
+melvorF:Grasslands`. The count was right about maxing the whole time. The
+*sentence* was an inference from the method name, written once and then read as
+a fact by everything downstream.
+
+The rule this repo already has for accessors — verify against the typings — is
+not enough here, because the typings carry the same misleading name and no
+documentation to contradict it. **A name is not a specification, and a method
+whose name makes a claim its signature cannot check is exactly where the shipped
+source pays for itself.** Ten seconds of grep against the cache, against a label
+that had been lying to every planning session for the life of the feature.
+
+The related trap, which did *not* bite: the number does correctly reach 0 for a
+maxed building, and the candidate reader already skips maxed buildings, so it
+never counted anything unbuildable. The figure was accurate and its description
+was wrong, which is the harder failure to see — a wrong number gets caught by
+the next measurement, a wrong noun never does.
+
+## A reservation must expire, or it starves what it protects
+
+The bury reflex destroyed every Bone while a Township task asked for 10,000, and
+the obvious fix was the one the sell guard already uses: withhold whatever
+`readTaskWantedQuantities` names. That fix is wrong, in the shape *a guard that
+can starve its own precondition* describes.
+
+`readTaskWantedQuantities` walks **every task in the game**, not the ones
+currently offered, because tasks rotate — correct for the sell guard, where
+holding stock costs a bank slot and nothing else. Applied to burying it would
+reserve 10,000 Bones permanently, and burying is the only source of prayer
+points, which are the only source of Prayer XP, against a `prayer-20` goal
+sitting at level 3. The guard would have protected a task that may never be
+offered by making a goal unreachable.
+
+What is reserved instead is the stock the **running objective** asked for
+(`stockTargetsOf`). A task's wanted quantity is a hypothesis until a planner
+adopts it; once `item_qty_at_least melvorD:Bones 10000` *is* the objective's own
+success condition, burying them is the reflex tier undoing the objective tier —
+the same failure as the sell reflex eating the raw fish out from under the cook.
+With no such objective, bones are surplus again and Prayer gets them. The
+reserve expires when the objective does, with no bookkeeping and no way to
+forget to release it.
+
+The generalisation, and it is the answer to "which of the three sell-versus-
+consume gaps is this": **the right scope for a reservation is the narrowest one
+that still covers the failure.** "Everything a task might ever want" covers the
+failure and a great deal else; "what the agent is currently trying to bank"
+covers it exactly. Only the surplus above the target is buried, so even an
+adopted objective does not stall Prayer once the target is met.
+
+## Township tasks are claimed, and that was worth checking rather than fixing
+
+Asked whether finished Township tasks are ever actually handed in — producing
+the goods being only half of it — the answer is yes, and the evidence is in the
+logs rather than in the code reading right: `claimFinishedTasks` is wired into
+the reflex tier (agent.ts), routes casual and permanent tasks to their separate
+completion calls, and `data/logs/*.jsonl` holds seven `township.claimTask ok`
+and six `township.claimCasualTask ok` with real before/after evidence
+(`{"claimed":false} -> {"claimed":true}`, `remaining 4 -> 3`).
+
+Recorded because "we checked and it works" is a result, and because the shape of
+the check is the reusable part: the reflex existing proves nothing (this repo
+has shipped four reflexes that fired forever and changed nothing), and the
+`ok` lines with a moved projection are what actually settles it.

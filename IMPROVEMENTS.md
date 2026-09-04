@@ -40,24 +40,26 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
-- [ ] **The bury reflex destroys bones a Township task is asking for, and the
-      candidate advertises a stock target that can never complete** — S. Live,
+- [x] **The bury reflex destroys bones a Township task is asking for** — S. Live,
       from one Chicken label: *"STOCK SHORTFALL: pass untilItemId
       melvorD:Bones, untilQuantity 10000 ... a Township task wants 10,000 and 0
-      are banked"*. Zero are banked because `buryBonesWhenHeld` checks only
-      `prayerPoints >= PRAYER_POINT_RESERVE` and buries whatever it finds; the
-      bank read 0 Bones through an entire Chicken grind.
-      So the agent is simultaneously told to accumulate 10,000 of something and
-      wired to destroy every one of them. Neither half is wrong on its own --
-      Prayer is level 3 against a `prayer-20` goal and trains only by spending
-      points from buried bones, and Township tasks pay GP, items and the XP the
-      skilling outfits sit behind.
-      This is the sell-versus-consume gap again, third instance:
-      `saleExclusionReason` already withholds task-wanted items from *sale*, and
-      already grew a `purpose: 'sell' | 'consume'` split for the Alt Magic fuel,
-      but burying is a third path that consults neither. The reserve the sell
-      guard uses (`readTaskWantedQuantities`) is the number burying should
-      respect too -- keep what a task wants, bury the surplus.
+      are banked"*. Zero were banked because `buryBonesWhenHeld` checked only
+      `prayerPoints >= PRAYER_POINT_RESERVE` and buried whatever it found.
+      **The fix this entry proposed was the wrong one, and worth recording as
+      such.** It said to reuse the sell guard's reserve
+      (`readTaskWantedQuantities`), and that reader walks *every task in the
+      game* rather than the ones offered — so it would have reserved 10,000
+      Bones permanently, and burying is the only source of prayer points, which
+      are the only source of Prayer XP, against `prayer-20` at level 3. It is
+      the *guard that starves its own precondition* shape, proposed inside an
+      entry that names the other two instances of it.
+      What landed instead reserves the stock the **running objective** asked for
+      (`stockTargetsOf`, shared/objective.ts). A task's wanted quantity is a
+      hypothesis until a planner adopts it; once it is the objective's own
+      success condition, burying is the reflex tier undoing the objective tier.
+      The surplus above the target is still buried, so an adopted target does not
+      stall Prayer once it is met, and the reserve expires with the objective.
+      See `learnings/game-state.md`, "A reservation must expire".
 
 - [ ] **Materials are checked when a fight starts and never again, so combat runs
       dry mid-grind** — M. The operator: *"we should always check that we have
@@ -720,6 +722,55 @@ Township summary reported 0% health while the repair reflex correctly computed
       both locations from the same instant the bundle carries, the check reads
       `MELVOR_CT_DIR` first, and stamps are compared as parsed instants with a
       ±5s tolerance.
+
+## Township — what the happiness work left open
+
+- [ ] **Nothing builds the town unattended** — M. The town's rates are now
+      priced (`valueOfBuilding`) and the build candidates are ordered by them,
+      so "which building" is answered. "When" is not: `chooseStopgap` takes
+      `claim_township_task`, `claim_casual_task` and `open_item` as free actions
+      and otherwise only ever adopts `gather_resource`, so a build happens only
+      when a planning session queues one. Building is not obviously free the way
+      claiming is — it spends town resources, and `BUILD_RESERVE_MULTIPLE`
+      exists because "build until broke" is a real failure — but the town
+      regenerates hourly, storage is at 55% and discards everything above it, and
+      an unspent resource at the cap is a resource thrown away. The honest
+      version of this is probably "build the top-valued candidate when storage is
+      above N%", which spends only what would otherwise be lost.
+- [ ] **A build's value does not reach the global ranking** — M. `xpPerHour` and
+      `gpPerHour` are deliberately *not* set on `build_township` candidates: the
+      figures are a permanent rate delta rather than the rate of an activity, and
+      populating them would move township builds in the global sort, which is
+      settled and out of scope for the session that added them. So the numbers
+      reach the label and `get_agent_state` and no comparator. This is the
+      *number computed for a sentence* shape knowingly re-entered, and it is
+      recorded here rather than left implicit. The right fix is probably a
+      distinct field — an unattended, no-action-slot rate is genuinely a
+      different quantity from "what this earns while you do it", and squeezing it
+      into `gpPerHour` would make Township builds compete with Gold Bar smelting
+      on a scale where the comparison is meaningless.
+- [ ] **`increaseHealth` is offered but nothing keeps health topped up** — S.
+      `townData.health` decays by one on 25% of ticks once Township is 15, floors
+      at 20, and multiplies population directly — so it multiplies both the
+      Township XP rate and the GP the town pays. The town is at 90 now, which is
+      a standing 10% discount on everything, and the candidates exist
+      (`readTownHealthCandidates`) with no reflex behind them. The cost is
+      `max(floor(resource.generation / 10), 1)` per point, which is cheap against
+      a resource that is overflowing. Same shape as the repair reflex, and the
+      repair reflex is the precedent for it being safe.
+- [ ] **Happiness has exactly one source in reach and it is not tracked** — S.
+      Gardens (+0.5 each, `maxUpgrades` 100, 12 affordable) are the only
+      happiness-providing building the town can currently build; every other
+      available building provides 0. Nothing notices when that stops being true,
+      and nothing says how far a happiness target is. A blocked-list entry
+      naming the cheapest route to +N happiness would be the readable form.
+- [ ] **`pnpm check` is nondeterministic at the diagnostic cap** — S. The repo
+      carries 23 `noNonNullAssertion` warnings in `packages/planner/test`, which
+      is over Biome's default `--max-diagnostics`, and a truncated run exits
+      non-zero. It passed three times in a row and failed once on an unchanged
+      tree during this session. `--max-diagnostics=200` exits 0 every time.
+      Either raise the cap in `biome.json` or fix the 23 warnings; a gate that
+      fails at random teaches people to re-run gates until they pass.
 
 ## Coverage — systems the agent does not use
 
