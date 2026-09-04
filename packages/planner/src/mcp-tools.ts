@@ -913,10 +913,49 @@ function renderTown(town: StateSnapshot['township'] | undefined): string[] {
     `  Town output: ${Math.round(economy.xpPerHour).toLocaleString()} Township xp/h and ${Math.round(economy.gpPerHour).toLocaleString()} GP/h, unattended and costing no action slot`,
   );
 
+  // Why the GP half is zero, when it is.
+  //
+  // The first version of this line reported "0 GP/h" and nothing else, and it
+  // read as a fault: the town has 165 working citizens and the formula is
+  // `currentPopulation * GP_PER_CITIZEN * (taxRate / 100)`, so the only term
+  // that can zero it is the tax rate — which sounds exactly like a slider
+  // somebody left at zero for the life of the character. There is no slider.
+  // `BASE_TAX_RATE` is 0 and the rate is entirely the `townshipTaxPerCitizen`
+  // modifier, supplied by a building the town is nowhere near being able to put
+  // up. The zero is structural and correct.
+  //
+  // So this is not an alarm that fires every pass for a normal condition; it is
+  // the opposite. An unexplained zero *invites* the investigation on every read,
+  // and it has already cost one. Naming the cause is what makes the line cheap.
+  const tax = economy.tax;
+  if (tax !== undefined && tax.rate === 0) {
+    const source = tax.unbuiltSource;
+    lines.push(
+      source === null
+        ? // Honest about the gap rather than repeating the diagnosis from
+          // memory: if no registered building supplies the modifier, something
+          // has changed and the explanation above no longer applies.
+          '  0 GP/h because the town tax rate is 0, and no building the game registers supplies it — the usual cause no longer applies, so this one is worth looking at.'
+        : `  0 GP/h is structural, not a setting left wrong: the tax rate is 0% and there is nothing to set it with. It is entirely the townshipTaxPerCitizen modifier, and ${source.name} (tier ${source.tier}, +${source.perBuilding}% each) is the only building that supplies it — gated on Township ${source.requiresTownshipLevel} and ${source.requiresPopulation.toLocaleString()} population. Until then the town pays XP and no GP however many citizens it has.`,
+    );
+  }
+
+  // What a point of happiness is worth, in the terms that are actually true
+  // right now.
+  //
+  // This said "+1% of both figures above" and that was an overstatement the
+  // moment the tax finding landed: one percent of a zero GP rate is zero, so
+  // while the town is untaxed happiness buys Township XP and nothing else. The
+  // claim is scoped to whichever figures the town is really being paid in
+  // rather than restated from the formula, because a rate that is right in
+  // general and wrong today is the kind of number this repo keeps planning
+  // hours around.
+  const paidInGp = tax === undefined || tax.rate > 0;
+  const bothFigures = paidInGp ? 'both figures above' : 'the XP figure above (the GP one is 0)';
   lines.push(
     economy.happiness === 0
-      ? '  Happiness 0: not a fault, a foregone multiplier. Happiness is a percentage bonus on population, and population is both the Township XP rate and what the town taxes GP from — so the town is running at exactly 1.0x, and every +1 happiness is +1% of both figures above, permanently. Buildings that provide it say so in their build candidate.'
-      : `  Happiness ${economy.happiness}: +${economy.happiness}% population, which is +${economy.happiness}% on both figures above`,
+      ? `  Happiness 0: not a fault, a foregone multiplier. Happiness is a percentage bonus on population, and population is what the Township XP rate is measured in — so the town is running at exactly 1.0x, and every +1 happiness is +1% of ${bothFigures}, permanently. Buildings that provide it say so in their build candidate.`
+      : `  Happiness ${economy.happiness}: +${economy.happiness}% population, which is +${economy.happiness}% on ${bothFigures}`,
   );
 
   if (economy.health < 100) {

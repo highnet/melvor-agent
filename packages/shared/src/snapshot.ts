@@ -217,6 +217,33 @@ export const townshipStateSchema = z.object({
       xpPerHour: z.number().nonnegative(),
       gpPerHour: z.number().nonnegative(),
       ticksPerHour: z.number().positive(),
+      /**
+       * Why `gpPerHour` is what it is.
+       *
+       * `Township.taxRate` is `min(BASE_TAX_RATE + townshipTaxPerCitizen, 80)`
+       * and `BASE_TAX_RATE` is 0, so the rate is entirely a modifier supplied by
+       * a building — there is no slider and nothing to set. A town with no such
+       * building earns exactly zero GP however many citizens it has, and saying
+       * so is the difference between a correct number and a useful one.
+       *
+       * Optional for the same reason the block around it is: a mod build older
+       * than this field reports none.
+       */
+      tax: z
+        .object({
+          rate: z.number().nonnegative(),
+          unbuiltSource: z
+            .object({
+              buildingId: gameIdSchema,
+              name: z.string(),
+              tier: z.number().int().positive(),
+              perBuilding: z.number(),
+              requiresTownshipLevel: z.number().nonnegative(),
+              requiresPopulation: z.number().nonnegative(),
+            })
+            .nullable(),
+        })
+        .optional(),
       /** Set when the transcribed population formula disagreed with the game. */
       modelMismatch: z.string().nullable(),
     })

@@ -529,6 +529,8 @@ export interface TownshipEconomy {
   gpPerHour: number;
   /** Town ticks per hour, from `TICK_LENGTH` (300s -> 12). */
   ticksPerHour: number;
+  /** Why `gpPerHour` is what it is. See {@link TownshipTaxStanding}. */
+  tax: TownshipTaxStanding;
   /**
    * Set when the transcribed population formula disagreed with the game.
    *
@@ -537,6 +539,118 @@ export interface TownshipEconomy {
    * without anyone reading this field.
    */
   modelMismatch: string | null;
+}
+
+/**
+ * The tax rate, and what supplies it.
+ *
+ * The town reported `0 GP/h` against 165 working citizens, and the formula has
+ * exactly one term that can zero it — so the obvious reading was that the tax
+ * slider had been left at zero for the life of the character. **There is no
+ * slider.** From the shipped v1.3.1 source (township.js, nw.js cache):
+ *
+ *   get taxRate() {
+ *       const baseRate = this.BASE_TAX_RATE;
+ *       const modifier = this.game.modifiers.townshipTaxPerCitizen;
+ *       return Math.min(baseRate + modifier, 80);
+ *   }
+ *
+ * `BASE_TAX_RATE` is 0 — the typings state the literal (township.d.ts:405) — so
+ * the tax rate *is* the modifier, and the modifier comes from a building. The
+ * game data (f_00000c.js) gives Town Hall `"modifiers": {
+ * "townshipTaxPerCitizen": 10 }` with `maxUpgrades: 8`, which is where the 80
+ * cap in the getter comes from.
+ *
+ * Three consequences, and each one closes a question rather than opening it.
+ *
+ * **Nothing sets this.** There is no setter in the typings and no callback in
+ * the source. It is not the "button callback reads a selection it does not
+ * take" class that `withTownBiome` and `withBuildQuantity` exist for, and it is
+ * not one of the operator's UI selections either. It is a stat, earned by
+ * building.
+ *
+ * **There is no trade-off to get wrong.** The worry was that tax would trade
+ * against happiness — which multiplies population, which is already the thing
+ * this town is short of. It does not. Town Hall's `provides` entry is
+ * `population: 0, happiness: 0, education: 0, storage: 0, resources: []`: it
+ * costs resources and supplies nothing but the tax modifier. So there is no
+ * optimum to find and no greedy mistake available.
+ *
+ * **Zero GP/h is structural, not a misconfiguration.** Town Hall is tier 5,
+ * which `populationForTier` (township.d.ts:418) gates on Township level 80 and
+ * 40,000 population against this town's 33 and 184. Reporting the zero without
+ * that is how a correct number costs every future reader the same hour: this
+ * exact figure sent an operator hunting a setting that does not exist.
+ */
+export interface TownshipTaxStanding {
+  /** `Township.taxRate` (township.d.ts:544) — capped at 80. */
+  rate: number;
+  /**
+   * The building that would supply the rate, when none is built yet.
+   *
+   * Found from the registry rather than named here: hardcoding "Town Hall"
+   * would be a fact about today's game data written into code that outlives it.
+   * Null once tax is being collected, or if no registered building provides it.
+   */
+  unbuiltSource: {
+    buildingId: string;
+    name: string;
+    tier: number;
+    /** Percentage points of tax each one of these adds. */
+    perBuilding: number;
+    /** From `populationForTier[tier]`, the game's own tier gate. */
+    requiresTownshipLevel: number;
+    requiresPopulation: number;
+  } | null;
+}
+
+/**
+ * The modifier the tax rate is made of.
+ *
+ * A literal rather than `ModifierIDs.townshipTaxPerCitizen` (idEnums.d.ts:8967)
+ * for the reason this repo has now paid for three times: those are ambient
+ * `declare const enum`s, which compile to a global reference the mod bundle does
+ * not have.
+ */
+const TAX_MODIFIER_ID = 'melvorD:townshipTaxPerCitizen';
+
+/**
+ * Reads the tax rate, and finds what would raise it while it is zero.
+ *
+ * The search is over every registered building's own `stats.modifiers`
+ * (statProvider.d.ts:21, `ModifierValue[]`), taking the lowest tier that
+ * provides the modifier — the cheapest route rather than the first listed.
+ */
+function readTaxStanding(township: typeof game.township): TownshipTaxStanding {
+  const rate = safeNumber('township.taxRate', () => township.taxRate, 0);
+  if (rate > 0) return { rate, unbuiltSource: null };
+
+  let best: TownshipTaxStanding['unbuiltSource'] = null;
+
+  for (const building of township.buildings.allObjects) {
+    try {
+      const provides = building.stats.modifiers?.find(
+        (modifier) => modifier.modifier.id === TAX_MODIFIER_ID,
+      );
+      if (provides === undefined || provides.value <= 0) continue;
+      if (best !== null && building.tier >= best.tier) continue;
+
+      const gate = township.populationForTier[building.tier];
+      best = {
+        buildingId: building.id,
+        name: building.name,
+        tier: building.tier,
+        perBuilding: provides.value,
+        requiresTownshipLevel: gate?.level ?? 0,
+        requiresPopulation: gate?.population ?? 0,
+      };
+    } catch (error) {
+      noteSwallowed('township.readTaxStanding', error);
+      // A building that cannot describe its modifiers is not the answer.
+    }
+  }
+
+  return { rate, unbuiltSource: best };
 }
 
 /**
@@ -618,6 +732,7 @@ export function readTownshipEconomy(): TownshipEconomy | null {
     ),
     gpPerHour: safeNumber('township.gpPerHour', () => township.getGPGainRate() * ticksPerHour, 0),
     ticksPerHour,
+    tax: readTaxStanding(township),
     modelMismatch,
   };
 }
@@ -747,6 +862,16 @@ export function valueOfBuilding(
   // Zero working population makes the ratio undefined rather than infinite, and
   // a town that taxes nobody earns nothing whatever is built, so the honest
   // answer for the GP half is zero and not a division.
+  //
+  // Note what the ratio can and cannot see. It scales the town's live GP rate
+  // by the projected population, which is exact for a building that supplies
+  // citizens. It is *blind* to a building that changes `taxRate` instead — the
+  // rate is `min(BASE_TAX_RATE + townshipTaxPerCitizen, 80)` and a modifier is
+  // not a population term, so Town Hall prices at zero here despite being the
+  // single largest GP change the town can make. That is invisible today because
+  // Town Hall is tier 5 against a tier-1 town and is never a candidate, which is
+  // exactly why it is written down rather than left to be discovered at level
+  // 80. See IMPROVEMENTS.md.
   const gpPerHour =
     economy.workingPopulation > 0
       ? (economy.gpPerHour * projectedWorking) / economy.workingPopulation - economy.gpPerHour

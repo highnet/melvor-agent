@@ -32,7 +32,6 @@ import {
  */
 
 const GP_PER_CITIZEN = 15;
-const TAX_RATE = 25;
 
 /** `applyModifier(base, modifier, 0)`, from the shipped game. */
 function applyPercentBonus(base: number, modifier: number): number {
@@ -50,12 +49,19 @@ interface Provides {
 }
 
 class FakeBuilding {
+  /** `TownshipBuilding.stats` (township.d.ts:128), whose `modifiers` is a
+   * `ModifierValue[]` (statProvider.d.ts:21). The tax source is found through
+   * this rather than by name. */
+  stats: { modifiers?: { modifier: { id: string }; value: number }[] } = {};
+
   constructor(
     readonly id: string,
     readonly name: string,
     readonly provides: Provides,
     /** `maxUpgrades` — what `getBuildingCountRemainingForLevelUp` counts down to. */
     readonly maxUpgrades: number,
+    /** Tier, which `populationForTier` gates on. */
+    readonly tier: number = 1,
   ) {}
 }
 
@@ -87,9 +93,44 @@ const TAILOR = new FakeBuilding(
   20,
 );
 
+/**
+ * The tax source, shaped like the game's own Town Hall.
+ *
+ * From the shipped game data (f_00000c.js): tier 5, Grasslands only,
+ * `maxUpgrades: 8`, `"modifiers": { "townshipTaxPerCitizen": 10 }`, and a
+ * `provides` entry that is zero across the board — it supplies tax and nothing
+ * else, which is why there is no happiness trade-off to get wrong.
+ */
+const TOWN_HALL = new FakeBuilding(
+  'melvorF:Town_Hall',
+  'Town Hall',
+  { population: 0, happiness: 0 },
+  8,
+  5,
+);
+TOWN_HALL.stats.modifiers = [{ modifier: { id: 'melvorD:townshipTaxPerCitizen' }, value: 10 }];
+
+/**
+ * A second, dearer source of the same modifier.
+ *
+ * Listed *before* Town Hall so "the reader names the cheapest route" cannot pass
+ * by accident from registry order. Nothing in the shipped data has two tax
+ * sources today; the preference exists because a future one would otherwise be
+ * chosen by whichever the registry happened to hold first, which is the failure
+ * the build ordering was just fixed for.
+ */
+const GRAND_HALL = new FakeBuilding(
+  'melvorF:Grand_Hall',
+  'Grand Hall',
+  { population: 0, happiness: 0 },
+  4,
+  7,
+);
+GRAND_HALL.stats.modifiers = [{ modifier: { id: 'melvorD:townshipTaxPerCitizen' }, value: 20 }];
+
 // Registry order is deliberately worst-first, so the ordering test below cannot
 // pass by the reader simply preserving the order it read them in.
-const ALL_BUILDINGS = [TAILOR, GARDENS, HUT];
+const ALL_BUILDINGS = [TAILOR, GARDENS, HUT, GRAND_HALL, TOWN_HALL];
 
 class FakeBiome {
   readonly realm = { id: 'melvorD:Melvor' };
@@ -133,11 +174,25 @@ class FakeTownship {
   };
 
   readonly biomes = { allObjects: [GRASSLANDS] };
-  readonly buildings = { allObjects: ALL_BUILDINGS };
+  /** Mutable, so a test can prove the reader does not depend on registry order. */
+  buildings = { allObjects: [...ALL_BUILDINGS] };
   readonly resources = { allObjects: [] };
 
+  readonly BASE_TAX_RATE = 0;
+
+  /** How many percentage points of tax the built buildings supply. */
+  taxModifier = 0;
+
+  /** `Township.populationForTier` (township.d.ts:418), the game's own table. */
+  readonly populationForTier: Record<number, { population: number; level: number }> = {
+    1: { population: 0, level: 1 },
+    5: { population: 40_000, level: 80 },
+    7: { population: 175_000, level: 110 },
+  };
+
+  /** `Township.taxRate`, transcribed from the shipped v1.3.1 source. */
   get taxRate(): number {
-    return TAX_RATE;
+    return Math.min(this.BASE_TAX_RATE + this.taxModifier, 80);
   }
 
   /** `computeTownPopulation`, transcribed. The test calls it after building. */
@@ -190,7 +245,7 @@ class FakeTownship {
   }
 
   getGPGainRate(): number {
-    return Math.floor(this.currentPopulation * GP_PER_CITIZEN * (TAX_RATE / 100));
+    return Math.floor(this.currentPopulation * GP_PER_CITIZEN * (this.taxRate / 100));
   }
 
   getBuildingCountRemainingForLevelUp(building: FakeBuilding, biome: FakeBiome): number {
@@ -213,8 +268,11 @@ class FakeTownship {
     return biome.getBuildingCount(building) >= building.maxUpgrades;
   }
 
-  canBuildTierOfBuilding(): boolean {
-    return true;
+  /** `checkTierLevelReqs && checkTierPopulationReqs`, so tier 5 is refused. */
+  canBuildTierOfBuilding(building: FakeBuilding): boolean {
+    const gate = this.populationForTier[building.tier];
+    if (gate === undefined) return true;
+    return this.currentPopulation >= gate.population;
   }
 
   canAffordBuilding(_b: FakeBuilding, _biome: FakeBiome, quantity: number): boolean {
@@ -267,7 +325,7 @@ describe('what the town is worth per hour', () => {
     expect(economy?.population).toBe(184);
     expect(economy?.workingPopulation).toBe(165);
     expect(economy?.xpPerHour).toBe(165 * 12);
-    expect(economy?.gpPerHour).toBe(Math.floor(165 * 15 * 0.25) * 12);
+    expect(economy?.gpPerHour).toBe(0);
   });
 
   it('reads zero happiness as a multiplier of one, not as a fault', () => {
@@ -333,7 +391,9 @@ describe('what a build is worth', () => {
     // 12 more huts is 196 raw population -> floor(196 * 0.9) = 176.
     expect(value?.populationGain).toBe(12);
     expect(value?.xpPerHour).toBe((176 - 165) * 12);
-    expect(value?.gpPerHour).toBeGreaterThan(0);
+    // Zero, and correctly so: an untaxed town earns nothing per citizen, so
+    // adding citizens adds no GP. The GP half comes alive with the tax rate.
+    expect(value?.gpPerHour).toBe(0);
   });
 
   it('prices a building the town is not paid for at zero', () => {
@@ -392,5 +452,85 @@ describe('which building the town should put up', () => {
 
     expect(label).toContain('Township xp/h');
     expect(label).toContain('happiness');
+  });
+});
+
+describe('why the town pays no GP', () => {
+  it('reports a tax rate of zero rather than leaving the GP figure unexplained', () => {
+    // The town reported "0 GP/h" against 165 working citizens, and the only
+    // term in `currentPopulation * GP_PER_CITIZEN * (taxRate / 100)` that can
+    // zero it is the tax rate — which reads exactly like a slider left at zero.
+    // Carrying the rate as a number is what turns that inference into evidence.
+    const economy = readTownshipEconomy();
+    expect(economy?.gpPerHour).toBe(0);
+    expect(economy?.tax.rate).toBe(0);
+  });
+
+  it('names the building that supplies the rate, found from the registry', () => {
+    // There is no setter. `taxRate` is
+    // `min(BASE_TAX_RATE + townshipTaxPerCitizen, 80)` with BASE_TAX_RATE 0
+    // (township.d.ts:405), so the rate is entirely a modifier and the modifier
+    // comes from a building. Naming it from `stats.modifiers` rather than
+    // hardcoding "Town Hall" keeps this a fact about the game rather than a
+    // fact about the day it was written.
+    const source = readTownshipEconomy()?.tax.unbuiltSource;
+
+    expect(source?.buildingId).toBe(TOWN_HALL.id);
+    expect(source?.perBuilding).toBe(10);
+    // The gate, from the game's own `populationForTier`, not from a constant.
+    expect(source?.requiresTownshipLevel).toBe(80);
+    expect(source?.requiresPopulation).toBe(40_000);
+  });
+
+  it('stops explaining once tax is actually being collected', () => {
+    // The explanation is for a zero. A town earning GP does not need to be told
+    // why it is not, and a line that survives its own condition is how a real
+    // diagnostic becomes wallpaper.
+    township.taxModifier = 30;
+
+    const economy = readTownshipEconomy();
+    expect(economy?.tax.rate).toBe(30);
+    expect(economy?.tax.unbuiltSource).toBeNull();
+    expect(economy?.gpPerHour).toBe(Math.floor(165 * 15 * 0.3) * 12);
+  });
+
+  it('reads the rate off the game rather than recomputing it', () => {
+    // Eight Town Halls at +10 each is exactly the 80 in the getter, and the cap
+    // belongs to the game. The adapter reading `taxRate` rather than summing
+    // the modifier itself is what keeps the two from drifting -- the fake
+    // transcribes the clamp, and a reader that did its own arithmetic would
+    // report 120 here.
+    township.taxModifier = 120;
+    expect(readTownshipEconomy()?.tax.rate).toBe(80);
+  });
+
+  it('names the cheapest source whichever order the registry lists them in', () => {
+    // Two buildings supply the modifier here, tier 5 and tier 7. Naming the
+    // dearer one would send a planner at a gate 30 Township levels further away
+    // than the real one.
+    //
+    // Asserted under both orders on purpose. "Take the first match" and "take
+    // the last match" are each correct for exactly one arrangement, so a single
+    // ordering cannot tell either of them apart from the rule that is actually
+    // wanted -- which is the same mistake the build ordering was just fixed for,
+    // one level up.
+    expect(readTownshipEconomy()?.tax.unbuiltSource?.buildingId).toBe(TOWN_HALL.id);
+    expect(readTownshipEconomy()?.tax.unbuiltSource?.tier).toBe(5);
+
+    township.buildings = { allObjects: [...ALL_BUILDINGS].reverse() };
+    expect(readTownshipEconomy()?.tax.unbuiltSource?.buildingId).toBe(TOWN_HALL.id);
+  });
+
+  it('never offers the tax building while its tier is out of reach', () => {
+    // Town Hall is tier 5 against a town of 184 people, so
+    // `canBuildTierOfBuilding` refuses it and it is not a candidate. This is why
+    // the GP blindness in `valueOfBuilding` costs nothing today: the one
+    // building the population ratio cannot price is the one building that is
+    // never offered.
+    const ids = readTownshipCandidates()
+      .filter((c) => c.kind === 'build_township')
+      .map((c) => (c.params as { buildingId: string }).buildingId);
+
+    expect(ids).not.toContain(TOWN_HALL.id);
   });
 });
