@@ -1,4 +1,9 @@
-import type { Candidate } from '@melvor-agent/shared';
+import {
+  type Candidate,
+  type DamageRisk,
+  describeDamageRisk,
+  orderDamagingCandidates,
+} from '@melvor-agent/shared';
 import { readShortSeedIds } from './farming.js';
 import { FISHING_ID, MINING_ID, THIEVING_ID, WOODCUTTING_ID } from './gathering.js';
 import { gpValue } from './pricing.js';
@@ -374,7 +379,12 @@ export function thievingCandidates(): Candidate[] {
     ...readShortSeedIds(),
   ]);
 
-  return (
+  // Ordered by danger before rate, the same way fights are; see
+  // `orderDamagingCandidates`. Thieving is named in the operator's instruction
+  // alongside combat -- *"we should never be greedy with combat, or thieving"*
+  // -- and it is the one skill outside combat that damages the character, so
+  // sorting it purely on XP/h picked the hardest-hitting NPC of every tier.
+  return orderDamagingCandidates(
     skill.actions.allObjects
       .filter((npc) => npc.level <= skill.level)
       // Dropped while the NPC hits too hard for the health on hand; see
@@ -426,6 +436,9 @@ export function thievingCandidates(): Candidate[] {
           // `quantity` is the maximum roll, so the mean is about half of it.
           .reduce((sum, drop) => sum + drop.quantity / 2, 0);
 
+        const xpPerHour = actionsPerHour * npc.baseExperience * successRate;
+        const risk = thievingRisk(npc.maxHit, xpPerHour);
+
         return {
           kind: 'gather_resource' as const,
           params: {
@@ -444,16 +457,61 @@ export function thievingCandidates(): Candidate[] {
           // a fifteenth of a full bar is a different proposition at half health,
           // and Thieving damage accrues over many failures rather than resolving
           // in one fight.
-          label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)${describeNpcDrops(npc, wantedByNeed)}`,
-          xpPerHour: actionsPerHour * npc.baseExperience * successRate,
+          label: `Thieving: ${npc.name} — hits up to ${npc.maxHit} (${hpShare(npc.maxHit)} of current HP)${
+            risk === null ? '' : describeDamageRisk(risk)
+          }${describeNpcDrops(npc, wantedByNeed)}`,
+          xpPerHour,
           gpPerHour: actionsPerHour * gpPerAction * successRate,
           // Coins into the balance, not items that would fetch coins.
           gpIsEarned: true,
+          ...(risk === null ? {} : { damageRisk: risk }),
           requiresLevel: npc.level,
           available: true as const,
         };
-      })
+      }),
   );
+}
+
+/**
+ * Prices one NPC's danger against the gate that would refuse it.
+ *
+ * `pressure` is the hit as a share of {@link THIEVING_MAX_HIT_FRACTION} of
+ * *current* health -- i.e. of the very allowance `hitsTooHardForNow` refuses
+ * on. So 1 is the refusal line by construction rather than by a threshold
+ * invented here, which is the one property that makes it comparable, by band,
+ * with the danger figure a fight carries.
+ *
+ * `basis` is `measured` because `ThievingNPC.maxHit` (thieving2.d.ts:35) is a
+ * stated field on the NPC and not an inference from its level. That is the
+ * fact the old ordering threw away: Golbin Chief hits 10.1 at level 16 while
+ * Marauder hits 6.8 at 21, so damage is not proportional to level and an XP
+ * sort picks the hardest hitter of each tier without ever seeing the number.
+ *
+ * @returns Null when health could not be read, in which case the candidate is
+ *   still offered and simply keeps its arrival position. Withholding Thieving
+ *   over an unreadable player object would delete the skill that funds the run
+ *   -- this is an ordering, and an ordering that cannot be computed is a
+ *   missing opinion, not a refusal.
+ */
+function thievingRisk(maxHit: number, xpPerHour: number): DamageRisk | null {
+  const current = safeNumber(
+    'candidates.thievingRiskHitpoints',
+    () => game.combat.player.hitpoints,
+    0,
+  );
+  if (!(current > 0)) return null;
+
+  const allowance = current * THIEVING_MAX_HIT_FRACTION;
+  if (!(allowance > 0)) return null;
+
+  return {
+    pressure: maxHit / allowance,
+    basis: 'measured',
+    guard: 'thieving_damage_gate',
+    ratePerHour: xpPerHour,
+    rateUnit: 'xp_per_hour',
+    why: `worst hit ${maxHit} against the ${Math.round(allowance)} this gate allows at ${Math.round(current)} HP`,
+  };
 }
 
 /**

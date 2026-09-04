@@ -4,6 +4,8 @@ import type {
   BlockedOpportunity,
   Candidate,
   Command,
+  DamageRisk,
+  DamageRiskBasis,
   JournalEntry,
   Objective,
   Outcome,
@@ -12,7 +14,14 @@ import type {
   StalledCounter,
   StateSnapshot,
 } from '@melvor-agent/shared';
-import { checkArmHealth, fail, stateSnapshotSchema, summariseResult } from '@melvor-agent/shared';
+import {
+  checkArmHealth,
+  describeDamageRisk,
+  fail,
+  orderDamagingCandidates,
+  stateSnapshotSchema,
+  summariseResult,
+} from '@melvor-agent/shared';
 import {
   type StockDemand,
   Subscriptions,
@@ -174,8 +183,10 @@ import {
 } from '../adapter/index.js';
 import {
   assessSurvivability,
+  levelScreenPressure,
   normaliseFraction,
   screenByCombatSkillLevels,
+  survivabilityPressure,
 } from '../policy/combat-gate.js';
 import { progressMarker } from '../policy/criteria.js';
 import { executorFor, isSupportedKind } from '../policy/index.js';
@@ -2705,15 +2716,32 @@ export class Agent {
         target.kind === 'run_dungeon' ? readDungeonPricing(target.id) : readFightPricing(target.id);
       const priced = pricing?.note ?? '';
 
-      const refusal = this.gateRefusal(target.id);
-      if (refusal !== null) {
+      const verdict = this.gateVerdict(target.id);
+      if (verdict.refusal !== null) {
         blocked.push({
-          label: `Fight ${target.name} (combat level ${target.combatLevel})${priced}${slayer} — ${refusal}`,
+          label: `Fight ${target.name} (combat level ${target.combatLevel})${priced}${slayer} — ${verdict.refusal}`,
           xpPerHour: 0,
           missing: [],
         });
         continue;
       }
+
+      // How narrowly the gate passed, carried onto the candidate so the board
+      // can be ordered safest-first. Absent when the fight could not be priced,
+      // because the tie-break inside a danger band is damage/hour and a fight
+      // with no rate would sort as zero -- last among equals, which is a
+      // judgement nobody made. Absent leaves it where it arrived instead.
+      const damageRisk: DamageRisk | undefined =
+        pricing === null
+          ? undefined
+          : {
+              pressure: verdict.pressure,
+              basis: verdict.basis,
+              guard: verdict.guard,
+              ratePerHour: pricing.damagePerHour,
+              rateUnit: 'damage_per_hour',
+              why: verdict.why,
+            };
 
       const where =
         target.kind === 'run_dungeon'
@@ -2726,7 +2754,9 @@ export class Agent {
         target.kind === 'run_dungeon' ? [] : readMonsterDropsOfInterest(target.id, wantedItemIds);
       const wanted =
         drops.length === 0 ? '' : ` — drops ${drops.join(', ')}, which you are short of`;
-      const label = `Fight ${target.name} (${where})${slayer}${priced}${wanted}`;
+      const label = `Fight ${target.name} (${where})${slayer}${priced}${
+        damageRisk === undefined ? '' : describeDamageRisk(damageRisk)
+      }${wanted}`;
 
       // Coins into the balance, not items that would fetch coins. What the
       // drops are worth is in the label and deliberately not in this number:
@@ -2743,6 +2773,7 @@ export class Agent {
           params: { kind: 'run_dungeon', dungeonId: target.id },
           label,
           ...earnings,
+          ...(damageRisk === undefined ? {} : { damageRisk }),
           ...(target.requiresLevel === undefined ? {} : { requiresLevel: target.requiresLevel }),
           available: true,
         });
@@ -2754,12 +2785,34 @@ export class Agent {
         params: { kind: 'fight_monster', monsterId: target.id, areaId: target.areaId ?? '' },
         label,
         ...earnings,
+        ...(damageRisk === undefined ? {} : { damageRisk }),
+        // Bones are the only input Prayer has, and `prayer-20` is open at
+        // Prayer 2. Carried as `produces` and not only as a phrase in the label
+        // so a stock objective can name the item and be sized against the rate
+        // -- the same gap `suggestedStock` closed for crafting materials.
+        ...(pricing?.bonesPerHour == null
+          ? {}
+          : {
+              produces: {
+                itemId: pricing.bonesPerHour.itemId,
+                name: pricing.bonesPerHour.name,
+                perHour: pricing.bonesPerHour.perHour,
+              },
+            }),
         ...(target.requiresLevel === undefined ? {} : { requiresLevel: target.requiresLevel }),
         available: true,
       });
     }
 
-    this.combatCache = { at: now, candidates, blocked };
+    // Safest first, then rate among the comparably safe. The list used to come
+    // out in enumeration order and be read as a leaderboard on the damage rates
+    // in the labels, which is how `Sweaty Monster` at ~17,085 damage/h was
+    // queued over `Chicken` at ~12,000 and killed the character twice in eight
+    // minutes -- deaths 56 and 57, and a Jeweled Necklace to
+    // `applyDeathPenalty`. See `orderDamagingCandidates`: this is an ordering
+    // and never a refusal, because refusing combat would starve `hp-40`,
+    // `defence-20` and `prayer-20`, which only combat advances.
+    this.combatCache = { at: now, candidates: orderDamagingCandidates(candidates), blocked };
     return this.combatCache;
   }
 
@@ -2770,9 +2823,21 @@ export class Agent {
    * enforcing path in {@link assessTarget}, but logs nothing: enumerating every
    * fight in the game on each snapshot would otherwise bury the journal.
    *
-   * @returns The refusal reason, or null when the fight is safe.
+   * @returns The refusal reason, or null when the fight is safe, together with
+   *   how narrowly it passed and on what evidence. The second half used to be
+   *   thrown away: the gate answered a boolean, sixty fights all answered yes,
+   *   and the board could not tell a Chicken from the Sweaty Monster that
+   *   killed the character twice. See {@link survivabilityPressure} and
+   *   {@link levelScreenPressure}, which turn the workings both verdicts
+   *   already carried into the number that ranks them.
    */
-  private gateRefusal(targetId: string): string | null {
+  private gateVerdict(targetId: string): {
+    refusal: string | null;
+    pressure: number;
+    basis: DamageRiskBasis;
+    guard: string;
+    why: string;
+  } {
     const sessionMinutes = this.settings.objective?.abortWhen.minutesExceed ?? 30;
 
     const gathered = readCombatGateInputs(targetId, sessionMinutes);
@@ -2784,10 +2849,29 @@ export class Agent {
       // brief forbids. This must stay the same call the enforcing path makes,
       // or a fight is offered as a candidate and then refused when chosen.
       const screenInputs = readCombatLevelScreenInputs(targetId);
-      if (screenInputs === null) return gathered.detail;
+      if (screenInputs === null) {
+        return {
+          refusal: gathered.detail,
+          // A target that cannot be screened at all is refused above and never
+          // reaches an ordering, so the band here is only what a caller that
+          // ignored the refusal would see. It is the most dangerous one.
+          pressure: 1,
+          basis: 'levels_only',
+          guard: 'unmeasurable',
+          why: gathered.detail,
+        };
+      }
 
       const screen = screenByCombatSkillLevels(screenInputs);
-      return screen.ok ? null : screen.detail;
+      return {
+        refusal: screen.ok ? null : screen.detail,
+        pressure: levelScreenPressure(screen),
+        basis: 'levels_only',
+        guard: 'combat_level_screen',
+        why:
+          `attacks at combat skill level ${screen.workings.monsterOffensiveLevel} ` +
+          `against a ceiling of ${screen.workings.ceiling.toFixed(1)}`,
+      };
     }
 
     const verdict = assessSurvivability({
@@ -2797,8 +2881,15 @@ export class Agent {
       autoEatEfficiencyFraction: normaliseFraction(gathered.inputs.autoEatEfficiencyFraction),
     });
 
-    if (verdict.safe) return null;
-    return verdict.refusals.map((refusal) => refusal.detail).join('; ');
+    return {
+      refusal: verdict.safe ? null : verdict.refusals.map((refusal) => refusal.detail).join('; '),
+      pressure: survivabilityPressure(verdict),
+      basis: 'measured',
+      guard: 'survivability_gate',
+      why:
+        `hits ${verdict.workings.effectiveEnemyMaxHit.toFixed(1)} against a one-shot ceiling of ` +
+        `${verdict.workings.oneShotCeiling.toFixed(1)}`,
+    };
   }
 
   /** Applies one operator command from the TUI or the panel. */

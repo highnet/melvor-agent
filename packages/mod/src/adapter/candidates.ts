@@ -2,7 +2,11 @@ import { readAgilityLapRate } from './agility.js';
 
 /** Agility's skill id; see readAgilityLapRate for why it is special-cased. */
 const AGILITY_ID = 'melvorD:Agility';
-import type { BlockedSeverity, Candidate } from '@melvor-agent/shared';
+import {
+  type BlockedSeverity,
+  type Candidate,
+  orderDamagingCandidates,
+} from '@melvor-agent/shared';
 import { readActiveRecipeIds } from './active.js';
 import { canAfford, missingInputs } from './affordability.js';
 import { readFoodReserve } from './equipment.js';
@@ -50,16 +54,29 @@ import { readShopCandidates, readShopGoals } from './shop.js';
  * recipes are not emitted at all, which is what makes `available` a literal
  * `true`: an unavailable candidate is simply absent.
  *
- * @returns Candidates with XP/hr and GP/hr attached, best XP first.
+ * @returns Candidates with XP/hr and GP/hr attached, best XP first — except
+ *   among the ones that can hurt the character, which are ordered by danger
+ *   first. See {@link orderDamagingCandidates}.
  */
 export function readGatherCandidates(): Candidate[] {
-  return [
+  const sorted = [
     ...safeCandidates('woodcutting', woodcuttingCandidates),
     ...safeCandidates('mining', miningCandidates),
     ...safeCandidates('fishing', fishingCandidates),
     ...safeCandidates('thieving', thievingCandidates),
     ...safeCandidates('other-skills', genericSkillCandidates),
   ].sort((a, b) => (b.xpPerHour ?? 0) - (a.xpPerHour ?? 0));
+
+  // Applied *after* the XP sort, which would otherwise undo the ordering
+  // `thievingCandidates` already gave its own list -- the reason it is applied
+  // in both places rather than one. The operation is idempotent and touches
+  // only candidates carrying a `damageRisk`, so running it twice costs a pass
+  // over the array and changes nothing a second time.
+  //
+  // The XP sort still decides *where* the damaging slots sit among the trees
+  // and the rocks; this only decides which damaging candidate occupies which of
+  // them. Nothing about a Yew tree's position moves.
+  return orderDamagingCandidates(sorted);
 }
 
 /**

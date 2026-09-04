@@ -938,6 +938,29 @@ export interface FightPricing {
    * candidate's `gpIsEarned` flag exists to keep those two claims apart.
    */
   gpPerHour: number;
+  /**
+   * Damage dealt per hour, which is the unit combat XP is paid in.
+   *
+   * Carried as a number and not only inside {@link note}, because it is the
+   * tie-break that ranks equally dangerous fights against each other and the
+   * ordering runs in code with nobody reading labels. This is the specific
+   * shape of *a number computed for a sentence is invisible to the code*: on
+   * 2026-09-03 damage/h existed on every fight label on the board and reached
+   * nothing that sorts.
+   */
+  damagePerHour: number;
+  /**
+   * The bones the fight banks, and how fast.
+   *
+   * Null when the target drops none. It is here because Prayer trains only by
+   * spending prayer points, prayer points come only from buried bones, and
+   * `prayer-20` is open at Prayer 2 — so "how many bones an hour" is the whole
+   * question for the nearest combat goal, and it is a question a damage rate
+   * cannot answer. Chicken at ~400 kills/h banks more of them than Sweaty
+   * Monster at ~61, which is the second and quieter reason the safe target was
+   * also the better one.
+   */
+  bonesPerHour: { itemId: string; name: string; perHour: number } | null;
 }
 
 /**
@@ -974,11 +997,25 @@ export function readFightPricing(monsterId: string): FightPricing | null {
     `~${round(rate.damagePerHour)} damage/h${describeTrainedSkills()}`,
   ];
 
-  if (value.bones !== null) {
-    // Prayer has exactly one input and this is it, so a fight that supplies it
-    // is a different offer from one that does not -- and `prayer-20` is open.
+  // Prayer has exactly one input and this is it, so a fight that supplies it is
+  // a different offer from one that does not -- and `prayer-20` is open.
+  //
+  // Stated per hour as well as per kill, because per kill is not the comparison
+  // anyone makes: Cow drops the same one Bone as Chicken and kills less than
+  // half as fast, so on the per-kill phrasing alone the two read identically.
+  const bonesPerHour =
+    value.bones === null
+      ? null
+      : {
+          itemId: value.bones.itemId,
+          name: value.bones.name,
+          perHour: value.bones.quantity * rate.killsPerHour,
+        };
+  if (value.bones !== null && bonesPerHour !== null) {
     const each = value.bones.quantity === 1 ? '' : `${value.bones.quantity}x `;
-    parts.push(`${each}${value.bones.name} every kill`);
+    parts.push(
+      `${each}${value.bones.name} every kill, ~${round(bonesPerHour.perHour)} ${value.bones.name}/h for Prayer`,
+    );
   }
 
   const lootPerHour = value.lootGpPerKill * rate.killsPerHour;
@@ -987,6 +1024,8 @@ export function readFightPricing(monsterId: string): FightPricing | null {
   return {
     note: ` — ${parts.join(', ')}`,
     gpPerHour: value.gpPerKill * rate.killsPerHour,
+    damagePerHour: rate.damagePerHour,
+    bonesPerHour,
   };
 }
 
@@ -1033,7 +1072,16 @@ export function readDungeonPricing(dungeonId: string): FightPricing | null {
   ];
   if (loot > 0) parts.push(`drops worth ~${round(loot * runsPerHour)} gp/h if sold`);
 
-  return { note: ` — ${parts.join(', ')}`, gpPerHour: gp * runsPerHour };
+  return {
+    note: ` — ${parts.join(', ')}`,
+    gpPerHour: gp * runsPerHour,
+    damagePerHour: damage * runsPerHour,
+    // Not summed over the dungeon's monsters, deliberately. A dungeon is a
+    // commitment that either completes or restarts, so "bones per hour" would
+    // be a rate for something that may bank nothing at all; the fight path is
+    // where the Prayer question has an honest answer.
+    bonesPerHour: null,
+  };
 }
 
 /** Rounded and grouped, the way every other rate on the board is written. */

@@ -110,12 +110,25 @@ describe('pricing a fight is not a route to taking it', () => {
   });
 
   it('returns nothing a caller could read as permission', () => {
-    // The structural half. A pricing result carries a description and a GP
-    // rate, and no `available`, `safe` or `ok` that could be spread into a
-    // candidate. If a future change adds one, this fails before the character
-    // walks into the fight rather than after.
+    // The structural half. A pricing result carries a description and rates,
+    // and no `available`, `safe` or `ok` that could be spread into a candidate.
+    // If a future change adds one, this fails before the character walks into
+    // the fight rather than after.
+    //
+    // `damagePerHour` and `bonesPerHour` were added when the board learned to
+    // order fights by danger, and they are deliberately in this list rather
+    // than exempted from it: both are rates, both describe how big a fight is
+    // and neither says anything about whether it may be taken. The danger
+    // figure that *does* rank a fight is built beside the gate's verdict in
+    // `combatEnumeration`, not here -- pricing still cannot form an opinion
+    // about safety, which is the property this test exists to hold.
     const pricing = priceIt();
 
-    expect(Object.keys(pricing ?? {}).sort()).toEqual(['gpPerHour', 'note']);
+    expect(Object.keys(pricing ?? {}).sort()).toEqual([
+      'bonesPerHour',
+      'damagePerHour',
+      'gpPerHour',
+      'note',
+    ]);
   });
 });

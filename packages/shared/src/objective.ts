@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { damageRiskSchema } from './damage-risk.js';
 import { gameIdSchema } from './snapshot.js';
 
 /**
@@ -570,6 +571,21 @@ export const candidateSchema = z.object({
       why: z.string(),
     })
     .optional(),
+  /**
+   * How dangerous this candidate is, when it can damage the character at all.
+   *
+   * Absent means "this cannot hurt you" — a tree, a purchase, an equip — never
+   * "the danger is unknown". A fight or a Thieving NPC that could not be priced
+   * for danger is not emitted as a candidate; the gate refuses it and it
+   * appears in the blocked list with its reason instead.
+   *
+   * It exists because rate was the only key the board sorted on, and on
+   * 2026-09-03 that put `Sweaty Monster` (~17,085 damage/h) above `Chicken`
+   * (~12,000). Queuing the top of that list produced deaths 56 and 57 eight
+   * minutes apart and cost a Jeweled Necklace to `applyDeathPenalty`. See
+   * {@link orderDamagingCandidates}, which is the thing that reads it.
+   */
+  damageRisk: damageRiskSchema.optional(),
   /** Requirements that are currently met. Candidates with unmet ones are not emitted. */
   requiresLevel: z.number().int().nonnegative().optional(),
   available: z.literal(true),
