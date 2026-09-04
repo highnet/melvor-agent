@@ -563,6 +563,45 @@ export function penalisesAttackStyle(
 }
 
 /**
+ * The two slots a familiar may occupy, in the order a first pick should try.
+ *
+ * Every one of the game's 53 familiars lists both (`EquipmentItem.validSlots`,
+ * item.d.ts:245), which is what makes a synergy possible at all — and what made
+ * the bug below possible too.
+ */
+const SUMMON_SLOTS = ['melvorD:Summon1', 'melvorD:Summon2'] as const;
+
+/**
+ * Where to put one half of a pair so it does not displace the other half.
+ *
+ * This is the whole of {@link readSynergyCandidates}'s correctness. The slot
+ * was hardcoded to `Summon1`, so the reader offered the first tablet into
+ * Summon1 and then, on the next pass, offered the second tablet into Summon1 as
+ * well — evicting the one it had just placed. Both `equip_item` calls returned
+ * ok and both were the right item; the pair simply could never exist at the
+ * same time, which is the only state in which a synergy does anything. A
+ * feature written to make Summoning pay could not, as written, ever pay.
+ *
+ * The partner's current slot is the answer whenever it has one, because that is
+ * the only constraint that matters. Otherwise the first free slot: displacing
+ * an unrelated familiar is a deliberate trade the planner is making, and on the
+ * following pass the partner sees this half in place and takes the other slot.
+ *
+ * @param targetId - The tablet about to be equipped.
+ * @param partnerId - The other half of the synergy, if the pair names one.
+ */
+function synergySlotFor(targetId: string, partnerId: string | undefined): string {
+  const occupant = (slotId: string): string | null => projectSlot(slotId).itemId;
+
+  if (partnerId !== undefined && partnerId !== targetId) {
+    if (occupant(SUMMON_SLOTS[0]) === partnerId) return SUMMON_SLOTS[1];
+    if (occupant(SUMMON_SLOTS[1]) === partnerId) return SUMMON_SLOTS[0];
+  }
+
+  return SUMMON_SLOTS.find((slotId) => occupant(slotId) === null) ?? SUMMON_SLOTS[0];
+}
+
+/**
  * Familiar pairs that would combine into a synergy.
  *
  * Summoning's real payoff is not the familiars individually — it is the
@@ -581,7 +620,7 @@ export function readSynergyCandidates(): Candidate[] {
 
   const player = game.combat.player;
   const equipped = new Set<string>();
-  for (const slotId of ['melvorD:Summon1', 'melvorD:Summon2']) {
+  for (const slotId of SUMMON_SLOTS) {
     const item = projectSlot(slotId).itemId;
     if (item !== null) equipped.add(item);
   }
@@ -610,10 +649,13 @@ export function readSynergyCandidates(): Candidate[] {
       if (target === undefined || seen.has(target.id)) continue;
       seen.add(target.id);
 
+      const partner = products.find((product) => product.id !== target.id);
+      const slotId = synergySlotFor(target.id, partner?.id);
+
       candidates.push({
         kind: 'equip_item',
-        params: { kind: 'equip_item', itemId: target.id, slotId: 'melvorD:Summon1' },
-        label: `Equip ${target.name} for the ${synergy.name} synergy: ${synergy.description}`,
+        params: { kind: 'equip_item', itemId: target.id, slotId },
+        label: `Equip ${target.name} in ${slotId === SUMMON_SLOTS[0] ? 'the first' : 'the second'} summon slot for the ${synergy.name} synergy: ${synergy.description}`,
         available: true,
       });
     } catch (error) {

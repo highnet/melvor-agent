@@ -45,6 +45,7 @@ import {
   convertItemToTownship,
   convertTownshipToItem,
   createDigSiteMap,
+  describeMatchup,
   disengageCombat,
   dumpRegistries,
   eatFood,
@@ -141,6 +142,7 @@ import {
   readTownshipGoodsCandidates,
   readTraderCandidates,
   readTravelCandidates,
+  readTriangleMatchup,
   readUnfightableCombat,
   readUnsellableNotice,
   readUpgradeCandidates,
@@ -2754,9 +2756,28 @@ export class Agent {
         target.kind === 'run_dungeon' ? [] : readMonsterDropsOfInterest(target.id, wantedItemIds);
       const wanted =
         drops.length === 0 ? '' : ` — drops ${drops.join(', ')}, which you are short of`;
+      // Which way the combat triangle points, which nothing has ever said.
+      //
+      // The kill rate in `priced` and the combat level in `where` are both
+      // computed before the triangle is applied, so on an unfavourable matchup
+      // they overstate the fight in the two places a planner looks. Six of this
+      // character's thirty-two fight candidates are ranged monsters against a
+      // Magic caster, and their labels are currently indistinguishable from the
+      // melee ones the triangle rewards.
+      //
+      // Monsters only. A dungeon holds monsters of several attack types and no
+      // single clause is true of the run, so `run_dungeon` deliberately gets
+      // nothing rather than an average nobody can act on.
+      const triangle =
+        target.kind === 'run_dungeon'
+          ? ''
+          : describeMatchup(readTriangleMatchup(target.id, target.areaId));
+
+      // Risk before the triangle: the operator's rule is never to be greedy
+      // with combat, so how hard it hits reads ahead of how the matchup leans.
       const label = `Fight ${target.name} (${where})${slayer}${priced}${
         damageRisk === undefined ? '' : describeDamageRisk(damageRisk)
-      }${wanted}`;
+      }${wanted}${triangle}`;
 
       // Coins into the balance, not items that would fetch coins. What the
       // drops are worth is in the label and deliberately not in this number:
