@@ -2502,6 +2502,42 @@ export class Agent {
    * planner with no report does not.
    */
   /**
+   * How many minutes the run has committed to each skill, objective first.
+   *
+   * The only thing in the mod that knows what the run is *about to do*, and it
+   * is what makes "is this upgrade worth saving for" answerable rather than a
+   * matter of taste: a -5% Fishing interval is worth about forty minutes
+   * against fourteen hours of queued fishing and nothing at all to a run that
+   * is mining. See {@link readShopGoalNotice}, which ranks with it.
+   *
+   * `minutesExceed` is a *budget* and not an estimate -- a step may finish
+   * early on its success criterion -- so this is an upper bound on the
+   * committed time and is stated as one wherever it is printed. It is still
+   * the only figure the plan actually carries, and an upper bound that
+   * distinguishes "hours of fishing are queued" from "none is" is exactly the
+   * discrimination the ordering needs.
+   *
+   * A fight has no `skillId` and contributes nothing, which is honest: which
+   * skill a fight trains depends on the equipped weapon and the attack style,
+   * and naming one would be the guessed id this repo has paid for before.
+   */
+  private plannedMinutesBySkill(): Map<string, number> {
+    const minutes = new Map<string, number>();
+    const objective = this.settings.objective;
+
+    for (const step of objective === null
+      ? this.settings.plan
+      : [objective, ...this.settings.plan]) {
+      const skillId = (step.params as { skillId?: string }).skillId;
+      if (skillId === undefined) continue;
+
+      minutes.set(skillId, (minutes.get(skillId) ?? 0) + step.abortWhen.minutesExceed);
+    }
+
+    return minutes;
+  }
+
+  /**
    * Blocked opportunities, or nothing if enumeration throws.
    *
    * Never fatal: this is planning context, and losing it should not cost the
@@ -2550,7 +2586,7 @@ export class Agent {
         // readModifierGear for why a number would be a guess dressed up.
         ...readModifierGearNotice(),
         ...readUnsellableNotice(),
-        ...readShopGoalNotice(),
+        ...readShopGoalNotice(this.plannedMinutesBySkill()),
         ...readBlockedOpportunities(),
         // A level requirement is the least urgent thing on this list and there
         // are around twenty of them, one per skill. Marked low rather than

@@ -1,8 +1,17 @@
 import { readActiveRecipeIds } from './active.js';
 import { readFarmPlots } from './farming.js';
 import { noteSwallowed, safeList, safeNumber } from './safe.js';
+import { readMoneyBlockedUpgrades } from './shop.js';
 import type { ActiveActionState, SkillState, StateSnapshot } from './surface.js';
 import { readTownshipSummary } from './township.js';
+
+/**
+ * How many saving targets ride on the heartbeat.
+ *
+ * The funding fallback takes the cheapest, so one would do; a few more let a
+ * reader see what is behind it without turning the snapshot into a shop.
+ */
+const MONEY_BLOCKED_UPGRADES_CARRIED = 5;
 
 /**
  * Raw read of the game's online-loop flag.
@@ -146,6 +155,18 @@ export function readSnapshot(): StateSnapshot {
         }))
         .filter((entry) => entry.owned > 0),
     ),
+    // The saving targets, as numbers rather than as a sentence in the blocked
+    // list. `readMoneyBlockedUpgrades` guards its own reads and returns [] on
+    // failure, so no site is named here; the cap is what keeps a heartbeat from
+    // carrying a catalogue.
+    moneyBlockedUpgrades: readMoneyBlockedUpgrades()
+      .slice(0, MONEY_BLOCKED_UPGRADES_CARRIED)
+      .map((upgrade) => ({
+        id: upgrade.purchaseId,
+        name: upgrade.name,
+        gpCost: upgrade.gpCost,
+        shortfall: upgrade.shortfall,
+      })),
     combat: {
       inCombat: manager.isActive,
       hitpoints: player.hitpoints,

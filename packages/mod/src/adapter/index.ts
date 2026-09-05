@@ -118,7 +118,9 @@ export {
 export {
   buyShopPurchase,
   readCheapPermanentUpgrades,
+  readMoneyBlockedUpgrades,
   readShopCandidates,
+  type MoneyBlockedUpgrade,
   type PurchaseProjection,
 } from './shop.js';
 export {

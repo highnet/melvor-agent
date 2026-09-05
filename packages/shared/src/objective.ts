@@ -605,6 +605,19 @@ export const candidateSchema = z.object({
       have: z.number().nonnegative(),
       /** How the figure was derived, so it can be argued with rather than trusted. */
       why: z.string(),
+      /**
+       * Which kind of consumer wants it, as data rather than as a phrase in
+       * `why`.
+       *
+       * `township_task` is the one the operator named — *otherwise do township
+       * tasks* — and it is what lets an unattended stopgap build the town
+       * instead of only grinding levels. Defaulted so a mod build older than
+       * the service still validates, and defaulted to the *recipe* side
+       * because that is the reading that changes no behaviour: a stopgap
+       * treats an unlabelled demand exactly as it did before this field
+       * existed.
+       */
+      source: z.enum(['township_task', 'recipe_input']).default('recipe_input'),
     })
     .optional(),
   /**

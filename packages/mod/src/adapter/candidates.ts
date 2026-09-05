@@ -44,7 +44,7 @@ import {
   safeRecipes,
 } from './recipes.js';
 import { noteSwallowed, recordFallback, safeList } from './safe.js';
-import { readShopCandidates, readShopGoals } from './shop.js';
+import { readShopCandidates } from './shop.js';
 
 /**
  * Enumerates the gathering objectives the mod can execute right now.
@@ -416,8 +416,28 @@ function batchSizeFor(purchase: { purchaseId: string; gpCost: number; owned: num
   // held 178,000 GP and slots cost under a hundred.
   if (!shopPurchase.allowQuantityPurchase) return 1;
 
-  const affordable = purchase.gpCost > 0 ? Math.floor(game.gp.amount / purchase.gpCost) : 1;
-  return Math.max(1, Math.min(CONSUMABLE_BATCH, affordable));
+  // Priced by asking the game for the cost of the *batch*, not by multiplying
+  // the price of one.
+  //
+  // `Buy 5x Extra Bank Slot (63,857 GP each)` was offered at a balance covering
+  // five times 63,857 and then refused as unaffordable, because a bank slot
+  // gets dearer with every purchase: its cost is a `BankSlotCost`
+  // (shop.d.ts:38) and `Shop.getCurrencyCost(cost, buyQuantity, boughtQuantity)`
+  // (shop.d.ts:266) takes how many are already owned. So an escalating purchase
+  // has no per-unit price at all, and `floor(gp / firstUnitPrice)` overstates
+  // the batch by exactly the amount the price climbs.
+  //
+  // `getPurchaseCosts(purchase, n)` (shop.d.ts:258) is the game's own answer
+  // for the whole batch, and `checkIfOwned` (skill.d.ts:1123) is the same test
+  // `buyShopPurchase` will apply — so what is offered is what will go through.
+  // Walking down from the cap costs at most 25 cheap calls once per pass, and
+  // the alternative is reimplementing three cost formulas.
+  const capped = Math.max(1, game.shop.capPurchaseQuantity(shopPurchase, CONSUMABLE_BATCH));
+  for (let quantity = Math.min(CONSUMABLE_BATCH, capped); quantity > 1; quantity -= 1) {
+    if (game.shop.getPurchaseCosts(shopPurchase, quantity).checkIfOwned()) return quantity;
+  }
+
+  return 1;
 }
 
 /**
@@ -430,18 +450,38 @@ function batchSizeFor(purchase: { purchaseId: string; gpCost: number; owned: num
  * @returns Affordable, permitted purchases, cheapest first.
  */
 export function readShopObjectiveCandidates(): Candidate[] {
-  return readShopCandidates().map((purchase) => ({
-    kind: 'buy_shop_upgrade' as const,
-    params: {
+  return readShopCandidates().map((purchase) => {
+    const quantity = batchSizeFor(purchase);
+
+    return {
       kind: 'buy_shop_upgrade' as const,
-      purchaseId: purchase.purchaseId,
-      quantity: batchSizeFor(purchase),
-      // A floor of zero here means "the objective sets no reserve"; the planner
-      // is expected to raise it. Defaulting higher would silently make cheap
-      // early upgrades unbuyable.
-      gpFloor: 0,
-    },
-    label: `Buy ${batchSizeFor(purchase)}x ${purchase.name} (${purchase.gpCost.toLocaleString()} GP each, owned ${purchase.owned})`,
-    available: true as const,
-  }));
+      params: {
+        kind: 'buy_shop_upgrade' as const,
+        purchaseId: purchase.purchaseId,
+        quantity,
+        // A floor of zero here means "the objective sets no reserve"; the
+        // planner is expected to raise it. Defaulting higher would silently
+        // make cheap early upgrades unbuyable.
+        gpFloor: 0,
+      },
+      // The batch total, not a per-unit price times a count. "63,857 GP each"
+      // is false for every escalating purchase, and a planner weighing a batch
+      // against a GP floor was reading a figure the shop would never charge.
+      label: `Buy ${quantity}x ${purchase.name} (${batchGpCost(purchase.purchaseId, quantity).toLocaleString()} GP for all ${quantity}, owned ${purchase.owned})`,
+      available: true as const,
+    };
+  });
+}
+
+/** What the game will actually charge in GP for `quantity` of a purchase. */
+function batchGpCost(purchaseId: string, quantity: number): number {
+  const purchase = game.shop.purchases.getObjectByID(purchaseId);
+  if (purchase === undefined) return 0;
+
+  return (
+    game.shop
+      .getPurchaseCosts(purchase, quantity)
+      .getCurrencyQuantityArray()
+      .find((entry) => entry.currency === game.gp)?.quantity ?? 0
+  );
 }

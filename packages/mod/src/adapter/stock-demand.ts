@@ -41,6 +41,18 @@ export interface StockDemand {
   have: number;
   /** How the figure was derived, in a sentence the planner can argue with. */
   why: string;
+  /**
+   * Which kind of consumer wants it.
+   *
+   * The two are told apart in `why` and nowhere else, which made the
+   * distinction readable by a person and invisible to code — the same failure
+   * this whole module was written to fix, one field further in. The stopgap
+   * needs it: the operator's rule is *otherwise do township tasks*, and "a
+   * town task wants 5,000 fish" is a job worth adopting unattended, while "a
+   * blocked recipe wants an hour of Earth Runes" is a production chain whose
+   * consumer a planner chose and the stopgap did not.
+   */
+  source: 'township_task' | 'recipe_input';
 }
 
 /**
@@ -82,6 +94,7 @@ export function demandFromShortfall(
     quantity,
     have: missing.have,
     why: `${consumerLabel} consumes ${missing.need} per action at about ${Math.round(actionsPerHour).toLocaleString()} actions/h, so ${quantity.toLocaleString()} is one hour of it; ${missing.have.toLocaleString()} banked`,
+    source: 'recipe_input',
   };
 }
 
@@ -112,6 +125,7 @@ export function readTaskStockDemands(bankQty: (itemId: string) => number): Stock
         quantity,
         have,
         why: `a Township task wants ${quantity.toLocaleString()} and ${have.toLocaleString()} are banked — tasks pay GP, items and the Township XP the skilling outfits sit behind`,
+        source: 'township_task',
       });
     }
   } catch (error) {
@@ -186,6 +200,7 @@ export function annotateStockDemand(
         quantity: demand.quantity,
         have: demand.have,
         why: demand.why,
+        source: demand.source,
       },
     };
   });

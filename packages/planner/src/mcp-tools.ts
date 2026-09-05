@@ -1167,6 +1167,12 @@ function noOpReason(
  * and a `blocked` one authorises nothing because the operator's own ordering
  * says it is not the work in front of the agent yet.
  *
+ * Failing that, {@link upgradeFundingTarget} — the operator's standing rule
+ * that a qualified-for upgrade blocked only on money is what to earn toward.
+ * That is a decision the game's own data supports rather than one this code
+ * invented, and it is still the operator's: the rule was stated out loud, and
+ * encoding it here is what stops it having to be restated every session.
+ *
  * @returns The goal to fund, or undefined — which leaves the objective with no
  *          funding target at all, and the mod then never sells for money.
  */
@@ -1190,8 +1196,74 @@ async function fundingTargetFor(
     nearest = { goalId: status.goal.id, currencyId: done.currencyId, amount: done.amount };
   }
 
-  return nearest;
+  return nearest ?? upgradeFundingTarget(snapshot);
 }
+
+/**
+ * The cheapest upgrade the character has qualified for and cannot afford.
+ *
+ * The operator's rule, encoded: *whenever we can unlock a skill upgrade but we
+ * don't have enough money for it we should prioritize getting the money for
+ * it.* An upgrade in this state was completely invisible to the agent — every
+ * shop reader filtered on affordability, so `Rune Fishing Rod` at 300,000
+ * against a balance of 174,154, requirement met, sat unreachable while the
+ * candidate list offered twenty consumables at 4 to 600 GP each.
+ *
+ * A second source for `fundingTarget` rather than a second mechanism, because
+ * the mechanism already exists and is already bounded the way an irreversible
+ * action must be: it authorises the sell reflex to convert surplus toward a
+ * stated figure, it expires the instant the balance reaches it, and the sale
+ * is capped at `ceil(shortfall / unitValue)` so only what the goal needs is
+ * sold. What changes is where the figure comes from.
+ *
+ * **After the operator's own goals, never instead of them.** A number written
+ * in `GOALS.md` is a decision a person made; this is one the game's data
+ * supports. When both exist the person's wins, and this fills the case that
+ * used to authorise nothing at all.
+ *
+ * **The snapshot's list is already the safe one.** `readMoneyBlockedUpgrades`
+ * admits only purchases that are unowned, requirement-met, and short of
+ * nothing but GP — so this cannot fund `Mahogany Cooking Fire`, which wants
+ * Firemaking 55 against 32 and would have the run earning toward a price it
+ * could never pay.
+ *
+ * **It cannot starve its own precondition.** A funding target does not
+ * withhold spending: nothing consults it before eating, casting, burning or
+ * buying, and the food reserve, the Alt Magic fuel guard and the bones reserve
+ * are untouched. All it does is licence a sale, and every sale still passes
+ * `saleExclusionReason`, which remains the single source of truth on what may
+ * not be sold.
+ *
+ * The cheapest, by price, so the authorisation is the smallest one currently
+ * true — the same argument the goal branch above makes for taking the nearest
+ * target rather than the largest.
+ */
+function upgradeFundingTarget(
+  snapshot: StateSnapshot,
+): { goalId: string; currencyId: string; amount: number } | undefined {
+  let cheapest: StateSnapshot['moneyBlockedUpgrades'][number] | undefined;
+  // Defaulted at the point of use, not only in the schema. The two halves ship
+  // independently — the service reloads on save, the mod only when the game is
+  // reloaded — so a running mod that predates this field reports a snapshot
+  // without it, and the schema's default only applies to what the service
+  // parses. An absent list authorises nothing, which is the right direction
+  // for something that licences an irreversible sale.
+  for (const upgrade of snapshot.moneyBlockedUpgrades ?? []) {
+    if (upgrade.gpCost <= 0) continue;
+    if (cheapest !== undefined && upgrade.gpCost >= cheapest.gpCost) continue;
+    cheapest = upgrade;
+  }
+
+  if (cheapest === undefined) return undefined;
+
+  // Prefixed so a journalled sale names an upgrade rather than pointing at a
+  // threshold, and so nothing mistakes it for an id from `GOALS.md` — the
+  // operator may not mark it done, because the agent decided it.
+  return { goalId: `upgrade:${cheapest.id}`, currencyId: GP_CURRENCY_ID, amount: cheapest.gpCost };
+}
+
+/** GP, the currency every shop price in this fallback is quoted in. */
+const GP_CURRENCY_ID = 'melvorD:GP';
 
 function successFor(
   candidate: { kind: string; params: Record<string, unknown> },

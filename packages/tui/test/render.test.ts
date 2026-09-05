@@ -49,6 +49,7 @@ const snapshot = {
   },
   township: null,
   shopPurchases: [],
+  moneyBlockedUpgrades: [],
 };
 
 function dashboard(overrides: Partial<Dashboard> = {}): Dashboard {

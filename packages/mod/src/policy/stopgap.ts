@@ -40,6 +40,11 @@ const STOPGAP_MINUTES = 30;
  * behaviour this project exists to avoid; a stopgap that bought things would
  * spend the bank on whatever was cheapest.
  *
+ * The one ranking that outranks levels per hour is a Township task, on the
+ * operator's stated rule *"otherwise do township tasks"*. That is still not a
+ * decision this function makes: the task is the game's own advice about what
+ * to do next and it states its own quantity. See the comment at the filter.
+ *
  * @param candidates - What the mod has proven it can do right now.
  * @param skillXp - Current XP per skill, to compare candidates in levels rather
  *   than in XP. An unknown skill is treated as zero XP, which flatters an
@@ -48,6 +53,24 @@ const STOPGAP_MINUTES = 30;
  * @param now - Wall clock, for the objective id.
  * @returns An objective to run, or null when nothing sustained is available.
  */
+/**
+ * Hours of work still owed on the Township task a candidate would fill.
+ *
+ * `quantity` is an absolute bank target and `have` is what is banked, so the
+ * difference is the work left; `produces.perHour` is the candidate's own
+ * expectation, carrying the same mastery and yield terms as the rate printed
+ * beside it. Infinity for anything that is not both — the callers filter those
+ * out first, and a sentinel that sorts last is the safe reading if one slips
+ * through.
+ */
+function hoursLeft(candidate: Candidate): number {
+  const wanted = candidate.suggestedStock;
+  const perHour = candidate.produces?.perHour ?? 0;
+  if (wanted === undefined || perHour <= 0) return Number.POSITIVE_INFINITY;
+
+  return Math.max(0, wanted.quantity - wanted.have) / perHour;
+}
+
 export function chooseStopgap(
   candidates: readonly Candidate[],
   skillXp: ReadonlyMap<string, number>,
@@ -114,6 +137,61 @@ export function chooseStopgap(
   // consuming what a planner may have been saving.
   const earners = sustained.filter((candidate) => (candidate.gpPerHour ?? 0) > 0);
   const pool = earners.length > 0 ? earners : sustained;
+
+  // Township tasks before levels, which is the operator's rule stated plainly:
+  // "otherwise do township tasks".
+  //
+  // The stopgap has only ever adopted gathering ranked by levels per hour, so
+  // nothing built the town unattended — and Township is the skill the skilling
+  // outfits sit behind, which is a permanent multiplier on every skill the run
+  // will spend the rest of its life training. A task also states its own
+  // finish line, so this is the one stopgap that can end on an achievement
+  // rather than on its budget expiring.
+  //
+  // It stays inside the pool above rather than beside it, so every guard the
+  // pool applies still holds: the inputs must last the half hour, and a
+  // consumer is still not adopted over a producer. This reorders a filtered
+  // list; it does not widen it.
+  //
+  // Not a decision the stopgap invented. The task is the *game's* own advice
+  // about what to do next, the quantity is the task's own, and the candidate
+  // was already carrying both — `suggestedStock` reached nothing but a label.
+  //
+  // Restricted to candidates that price their own output, because the ranking
+  // below is in hours and a candidate with no `produces.perHour` cannot say
+  // how long its task would take. Ranking those by units left instead would
+  // put 100 Bones above 5,000 fish without knowing that the fish arrive seven
+  // times faster — a comparison across two different units, which is how this
+  // repo got a mining rate that advertised 120,000 GP/h and realised 10,800.
+  const forTown = pool.filter(
+    (candidate) =>
+      candidate.suggestedStock?.source === 'township_task' &&
+      (candidate.produces?.perHour ?? 0) > 0,
+  );
+  if (forTown.length > 0) {
+    // The one nearest done, in hours of work left. Finishing a task pays;
+    // being a third of the way through three of them pays nothing.
+    const nearest = forTown.reduce((leader, candidate) =>
+      hoursLeft(candidate) < hoursLeft(leader) ? candidate : leader,
+    );
+    const wanted = nearest.suggestedStock;
+
+    if (wanted !== undefined) {
+      return {
+        id: `stopgap-town-${now}`,
+        kind: nearest.kind,
+        params: nearest.params,
+        // A real finish line, unlike every other stopgap objective. The
+        // criterion doubles as a sale guard: `stockTargetsOf` reserves exactly
+        // what the objective named, so the liquidation reflex cannot sell the
+        // fish out from under the task that wants them.
+        successWhen: [{ type: 'item_qty_at_least', itemId: wanted.itemId, qty: wanted.quantity }],
+        abortWhen: { minutesExceed: STOPGAP_MINUTES },
+        expectedDurationMin: STOPGAP_MINUTES,
+        rationale: `stopgap: no planning session answered, so working the Township task nearest to done (${nearest.label}) — ${wanted.quantity.toLocaleString()}x ${wanted.name} wanted, ${wanted.have.toLocaleString()} banked. A real plan should replace this.`,
+      };
+    }
+  }
 
   const rate = (candidate: Candidate): number => {
     const skillId = (candidate.params as { skillId?: string }).skillId;

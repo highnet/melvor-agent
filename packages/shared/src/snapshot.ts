@@ -111,6 +111,36 @@ export const shopPurchaseStateSchema = z.object({
   owned: z.number().int().nonnegative(),
 });
 
+/**
+ * An upgrade the character has qualified for and cannot afford.
+ *
+ * Requirements met, unowned, and short only of GP — so earning the shortfall
+ * buys it. A level-blocked purchase is deliberately not here: `Mahogany
+ * Cooking Fire` at Firemaking 55 against 32 is not bought by any amount of
+ * money, and a saving target that money cannot clear is a plan that cannot
+ * finish.
+ *
+ * It is in the snapshot because the shortfall had to become a *number* the
+ * code could act on. It was already being computed and spent entirely on a
+ * sentence in the blocked list — `Rune Fishing Rod costs 300,000 GP — 125,846
+ * GP short` — readable by a planning session and invisible to the tier that
+ * decides what to sell at 3am. See `fundingTargetFor`, which reads this to
+ * authorise funding when `GOALS.md` names no currency goal.
+ *
+ * Only the nearest few, ordered cheapest shortfall first, for the reason the
+ * owned-purchases list is filtered: the shop holds 434 entries and a heartbeat
+ * is not a catalogue.
+ *
+ * Defaulted so a mod build older than the service still validates.
+ */
+export const moneyBlockedUpgradeSchema = z.object({
+  id: gameIdSchema,
+  name: z.string(),
+  gpCost: z.number().nonnegative(),
+  shortfall: z.number().nonnegative(),
+});
+export type MoneyBlockedUpgradeState = z.infer<typeof moneyBlockedUpgradeSchema>;
+
 export const activeActionStateSchema = z
   .object({
     id: gameIdSchema,
@@ -286,6 +316,8 @@ export const stateSnapshotSchema = z.object({
   township: townshipStateSchema.nullable().default(null),
   /** Owned shop purchases only; see {@link shopPurchaseStateSchema}. */
   shopPurchases: z.array(shopPurchaseStateSchema).default([]),
+  /** Qualified-for but unaffordable upgrades; see {@link moneyBlockedUpgradeSchema}. */
+  moneyBlockedUpgrades: z.array(moneyBlockedUpgradeSchema).default([]),
 });
 export type StateSnapshot = z.infer<typeof stateSnapshotSchema>;
 

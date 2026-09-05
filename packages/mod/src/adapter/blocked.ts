@@ -17,7 +17,7 @@ import {
   safeRecipes,
 } from './recipes.js';
 import { noteSwallowed } from './safe.js';
-import { readShopGoals } from './shop.js';
+import { type MoneyBlockedUpgrade, readMoneyBlockedUpgrades } from './shop.js';
 import { type StockDemand, demandFromShortfall } from './stock-demand.js';
 
 /**
@@ -551,28 +551,81 @@ export function readUnfightableCombat(withheld: number): {
 }
 
 /**
- * The nearest shop purchases the character is saving toward.
+ * The nearest upgrades the character has qualified for and cannot afford.
  *
- * Surfaced beside the blocked list because "you are 107,054 GP from the upgrade
- * that stops you starving" is a planning fact of exactly the same kind as "this
- * recipe needs five bars you do not have" -- a known, priced thing standing
- * between the run and something it wants.
+ * Surfaced beside the blocked list because "you are 125,846 GP from the rod
+ * that makes the next fourteen hours of fishing 5% shorter" is a planning fact
+ * of exactly the same kind as "this recipe needs five bars you do not have" --
+ * a known, priced thing standing between the run and something it wants. The
+ * operator's rule is that this outranks ordinary work: *whenever we can unlock
+ * a skill upgrade but we don't have enough money for it we should prioritize
+ * getting the money for it.*
+ *
+ * **Ordered by whether the run is about to use it.** An upgrade's worth is not
+ * a property of the upgrade; a -5% Fishing interval is worth about forty
+ * minutes against two 5,000-fish Township tasks and worth nothing at all to a
+ * run that is mining. So the ordering key is a fact rather than a score: the
+ * game says which skill each upgrade's modifiers are scoped to
+ * (modifiers.d.ts:56), the objective and plan say which skills the run will
+ * spend its budgeted minutes in, and the ones that intersect come first.
+ *
+ * **What is deliberately not computed is the payback in minutes.** That needs
+ * the interval percentage as a number, and the only place it exists is inside
+ * a localised description string; recovering it would mean matching on a
+ * modifier id the typings do not carry and parsing prose into arithmetic. This
+ * repo has paid twice for a guessed multiplier sitting where a measurement
+ * belongs -- Crystal's 120,000 GP/h against a realised 10,800 -- so the label
+ * states the committed minutes, which are real, and leaves the conversion to
+ * whoever can price it.
  *
  * Only the nearest few, so this stays a horizon rather than a catalogue.
+ *
+ * @param plannedMinutesBySkill - Budgeted minutes per skill id, from the
+ *   objective now running and the steps queued behind it. Empty is the honest
+ *   reading when nothing is planned, and then the order falls back to the
+ *   cheapest shortfall -- which is what the operator's rule says to fund when
+ *   there is nothing to weigh it against.
  */
-export function readShopGoalNotice(): {
+export function readShopGoalNotice(
+  plannedMinutesBySkill: ReadonlyMap<string, number> = new Map(),
+): {
   label: string;
   xpPerHour: number;
   missing: { itemId: string; name: string; need: number; have: number }[];
 }[] {
   try {
-    return readShopGoals()
-      .slice(0, SHOP_GOAL_NOTICES)
-      .map((goal) => ({
-        label: `${goal.name} costs ${goal.gpCost.toLocaleString()} GP — ${goal.shortfall.toLocaleString()} GP short.`,
-        xpPerHour: 0,
-        missing: [],
-      }));
+    const committed = (upgrade: MoneyBlockedUpgrade): number =>
+      upgrade.skillIds.reduce(
+        (total, skillId) => total + (plannedMinutesBySkill.get(skillId) ?? 0),
+        0,
+      );
+
+    return (
+      readMoneyBlockedUpgrades()
+        .map((upgrade) => ({ upgrade, minutes: committed(upgrade) }))
+        // Relevance first, then the cheapest shortfall within each group. Sorting
+        // on minutes alone would put a marginal upgrade to a busy skill above a
+        // near-free one; sorting on shortfall alone is what buried the rod under
+        // twenty consumables.
+        .sort((a, b) =>
+          a.minutes === b.minutes
+            ? a.upgrade.shortfall - b.upgrade.shortfall
+            : b.minutes - a.minutes,
+        )
+        .slice(0, SHOP_GOAL_NOTICES)
+        .map(({ upgrade, minutes }) => ({
+          label:
+            `${upgrade.name} costs ${upgrade.gpCost.toLocaleString()} GP — ${upgrade.shortfall.toLocaleString()} GP short, and every requirement is already met, so this is blocked purely on money.` +
+            `${upgrade.effect === '' ? '' : ` Grants: ${upgrade.effect}.`}` +
+            `${
+              minutes === 0
+                ? ''
+                : ` The plan commits about ${Math.round(minutes).toLocaleString()} minutes to the skill(s) it modifies, so buying it before that work rather than after is worth more than the price suggests.`
+            }`,
+          xpPerHour: 0,
+          missing: [],
+        }))
+    );
   } catch (error) {
     noteSwallowed('candidates.readShopGoalNotice', error);
     return [];

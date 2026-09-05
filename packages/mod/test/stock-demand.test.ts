@@ -324,8 +324,22 @@ describe('two demands for one item collapse to the one that covers both', () => 
     // smaller — the same argument readTaskWantedQuantities makes for taking the
     // largest single ask rather than every task in the game added together.
     const merged = mergeDemands([
-      { itemId: 'melvorD:Earth_Rune', name: 'Earth Rune', quantity: 250, have: 0, why: 'task' },
-      { itemId: 'melvorD:Earth_Rune', name: 'Earth Rune', quantity: 5_400, have: 0, why: 'craft' },
+      {
+        itemId: 'melvorD:Earth_Rune',
+        name: 'Earth Rune',
+        quantity: 250,
+        have: 0,
+        why: 'task',
+        source: 'township_task',
+      },
+      {
+        itemId: 'melvorD:Earth_Rune',
+        name: 'Earth Rune',
+        quantity: 5_400,
+        have: 0,
+        why: 'craft',
+        source: 'recipe_input',
+      },
     ]);
 
     expect(merged.get('melvorD:Earth_Rune')?.quantity).toBe(5_400);

@@ -18,7 +18,7 @@ Two invariants hold across the whole surface:
 - **Nothing acts during offline progress.** Actions take an `isSuspended` guard and
   fail with reason `suspended` rather than acting mid catch-up.
 
-251 exports.
+253 exports.
 
 ## `act`
 
@@ -1073,6 +1073,25 @@ Owned gear whose value is in modifiers rather than in equipment stats.
 
 ```ts
 ModifierGear: any
+```
+
+## `MoneyBlockedUpgrade`
+
+`interface`
+
+An unowned purchase whose every requirement is met and whose only obstacle
+is money.
+
+The distinction in that sentence is the whole point of the type. `Rune
+Fishing Rod` costs 300,000 against a balance of 174,154 and its sole
+requirement, `Fishing 60`, is **met** — so earning 125,846 GP buys it, and
+that is an objective. `Mahogany Cooking Fire` is also unaffordable and its
+requirement is `Firemaking 55` against 32 — so no amount of earning buys it,
+and offering it as something to save for would send the run after money it
+could not spend. Conflating the two is how a saving list becomes noise.
+
+```ts
+MoneyBlockedUpgrade: any
 ```
 
 ## `newSlayerTask`
@@ -2291,6 +2310,44 @@ wrong about its own system is worse than no notice.
 readModifierGearNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
+## `readMoneyBlockedUpgrades`
+
+`function`
+
+Purchases the character has qualified for and cannot yet afford, cheapest
+shortfall first.
+
+Every other shop reader filters on affordability, which means the things
+worth *saving for* do not exist until the saving is already done. Auto Eat at
+1,000,000 GP was the case that proved it: the single upgrade that removes the
+failure mode which has killed this character twice, and it appears on no list
+anywhere until the million is banked. An operator had to carry the target in
+their head and check it by hand every pass.
+
+Reported as goals rather than candidates, deliberately. A candidate is
+something the agent has proven it can do right now, and keeping that
+guarantee absolute is what makes choosing by index safe. These are the
+opposite: known, priced, and out of reach — which is exactly the information
+a planner needs to decide what to earn.
+
+Three filters make the list actionable rather than merely long, and each
+excludes a different kind of unreachable:
+
+- `checkRequirements` — a level-blocked purchase is not bought by earning.
+- {@link gpIsTheOnlyObstacle} — nor is one blocked on Slayer Coins or stock.
+- `getPurchaseCount === 0` — an owned upgrade is not an opportunity, and the
+  operator's rule is about upgrades the character has *qualified for* and
+  does not have.
+
+This does **not** withhold spending anywhere. It is a list of things to
+earn toward; nothing downstream refuses a purchase because a target exists,
+which is what keeps it clear of the failure the bank-slot cap had — a guard
+whose only replenishment was the thing it blocked.
+
+```ts
+readMoneyBlockedUpgrades: () => MoneyBlockedUpgrade[]
+```
+
 ## `readMonsterDropsOfInterest`
 
 `function`
@@ -2525,17 +2582,37 @@ readShopCandidates: () => { purchaseId: string; name: string; gpCost: number; ow
 
 `function`
 
-The nearest shop purchases the character is saving toward.
+The nearest upgrades the character has qualified for and cannot afford.
 
-Surfaced beside the blocked list because "you are 107,054 GP from the upgrade
-that stops you starving" is a planning fact of exactly the same kind as "this
-recipe needs five bars you do not have" -- a known, priced thing standing
-between the run and something it wants.
+Surfaced beside the blocked list because "you are 125,846 GP from the rod
+that makes the next fourteen hours of fishing 5% shorter" is a planning fact
+of exactly the same kind as "this recipe needs five bars you do not have" --
+a known, priced thing standing between the run and something it wants. The
+operator's rule is that this outranks ordinary work: *whenever we can unlock
+a skill upgrade but we don't have enough money for it we should prioritize
+getting the money for it.*
+
+**Ordered by whether the run is about to use it.** An upgrade's worth is not
+a property of the upgrade; a -5% Fishing interval is worth about forty
+minutes against two 5,000-fish Township tasks and worth nothing at all to a
+run that is mining. So the ordering key is a fact rather than a score: the
+game says which skill each upgrade's modifiers are scoped to
+(modifiers.d.ts:56), the objective and plan say which skills the run will
+spend its budgeted minutes in, and the ones that intersect come first.
+
+**What is deliberately not computed is the payback in minutes.** That needs
+the interval percentage as a number, and the only place it exists is inside
+a localised description string; recovering it would mean matching on a
+modifier id the typings do not carry and parsing prose into arithmetic. This
+repo has paid twice for a guessed multiplier sitting where a measurement
+belongs -- Crystal's 120,000 GP/h against a realised 10,800 -- so the label
+states the committed minutes, which are real, and leaves the conversion to
+whoever can price it.
 
 Only the nearest few, so this stays a horizon rather than a catalogue.
 
 ```ts
-readShopGoalNotice: () => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
+readShopGoalNotice: (plannedMinutesBySkill?: ReadonlyMap<string, number>) => { label: string; xpPerHour: number; missing: { itemId: string; name: string; need: number; have: number; }[]; }[]
 ```
 
 ## `readShopObjectiveCandidates`
