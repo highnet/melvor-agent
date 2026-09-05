@@ -540,7 +540,7 @@ export interface TownshipEconomy {
   xpPerHour: number;
   /** GP per hour the town pays the character, through `getGPGainRate`. */
   gpPerHour: number;
-  /** Town ticks per hour, from `TICK_LENGTH` (300s -> 12). */
+  /** Town ticks per hour, from `TICK_LENGTH` — one on any loaded save. */
   ticksPerHour: number;
   /** Why `gpPerHour` is what it is. See {@link TownshipTaxStanding}. */
   tax: TownshipTaxStanding;
@@ -832,9 +832,13 @@ export function readTownshipEconomy(): TownshipEconomy | null {
   const ticksPerHour = safeNumber(
     'township.ticksPerHour',
     () => 3600 / township.TICK_LENGTH,
-    // 300s ticks are the game's own default; a zero here would erase the rate
-    // rather than fall back to it.
-    12,
+    // One, not twelve. `TICK_LENGTH` is initialised to 300 and then overwritten
+    // in `preLoad` with `PASSIVE_TICK_LENGTH`, which the typings state as the
+    // literal 3600 (township.d.ts:403) — and nothing anywhere sets it back. So
+    // a loaded save always ticks once an hour, and the live town confirms it.
+    // A fallback of 12 would have quietly multiplied every advertised Township
+    // rate by twelve at exactly the moment the read stopped working.
+    1,
   );
 
   return {

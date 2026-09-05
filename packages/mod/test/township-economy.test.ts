@@ -425,6 +425,25 @@ describe('what the town is worth per hour', () => {
     expect(readAdapterFailures().some((f) => f.site === 'township.populationModel')).toBe(true);
   });
 
+  it('falls back to one tick an hour, not twelve, when the tick length cannot be read', () => {
+    // `TICK_LENGTH` is initialised to 300 and then overwritten in `preLoad`
+    // with `PASSIVE_TICK_LENGTH`, stated as the literal 3600 in the typings
+    // (township.d.ts:403), and nothing sets it back — so every loaded save
+    // ticks once an hour. The fixture keeps 300 on purpose, to prove the reader
+    // takes the figure off the game rather than assuming either number; the
+    // *fallback* is the one place a constant has to be chosen, and the old 12
+    // would have multiplied every advertised Township rate by twelve at exactly
+    // the moment the read stopped working.
+    Object.defineProperty(township, 'TICK_LENGTH', {
+      get() {
+        throw new Error('TICK_LENGTH renamed');
+      },
+    });
+
+    expect(readTownshipEconomy()?.ticksPerHour).toBe(1);
+    expect(readAdapterFailures().some((f) => f.site === 'township.ticksPerHour')).toBe(true);
+  });
+
   it('does not report a game figure that is merely one decay round ahead', () => {
     // The failure this band was built for. `tick()` writes `townData.population`
     // and *then* degrades efficiency:
