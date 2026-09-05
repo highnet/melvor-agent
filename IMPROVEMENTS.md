@@ -40,7 +40,7 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
-- [ ] **A shop candidate advertises a per-unit price for a cost that escalates** — S.
+- [x] **A shop candidate advertises a per-unit price for a cost that escalates** — S.
       Live: `112. Buy 5x Extra Bank Slot (63,857 GP each, owned 46)` followed
       immediately by `shop.buy refused: cannot afford 5x melvorD:Extra_Bank_Slot`
       at a balance of 335,058 -- which comfortably covers the 319,285 that
@@ -56,6 +56,14 @@ Township summary reported 0% health while the repair reflex correctly computed
       is a planner trap" -- `canAfford`, affordability.ts).
       Note the shape: a number that is correct for one unit, presented as though
       it composes. Same family as the yield sample priced as an hour's rate.
+      Both halves fixed. `batchSizeFor` walks down from the batch cap asking
+      `getPurchaseCosts(purchase, n).checkIfOwned()` — the game's own answer for
+      the whole batch, and the same test `buyShopPurchase` will apply, so what
+      is offered is what will go through — and the label prices the batch as a
+      total rather than saying "each", because for an escalating cost there is
+      no "each". Twenty-five cheap calls once per pass, against reimplementing
+      three cost formulas (`FixedCost`, `LinearCost`, `BankSlotCost`,
+      shop.d.ts:27-40).
 
 - [x] **The bury reflex destroys bones a Township task is asking for** — S. Live,
       from one Chicken label: *"STOCK SHORTFALL: pass untilItemId
@@ -568,6 +576,54 @@ Township summary reported 0% health while the repair reflex correctly computed
       the pass where every sample doubled, and then it is wrong by exactly 2x,
       which is the same defect one level down. See `learnings/game-state.md`.
 
+## Money-blocked upgrades — what was left open
+
+- [x] **An upgrade the character has qualified for and cannot afford is
+      invisible** — M. Every shop reader filtered on affordability, so the one
+      thing worth saving for did not exist until the saving was done.
+      `readMoneyBlockedUpgrades` surfaces it and refuses the three shapes that
+      look identical and are not — level-blocked, blocked on another currency,
+      blocked on banked stock — because only the money-blocked one is fixed by
+      earning. The shortfall rides on the snapshot as a number, and
+      `fundingTargetFor` falls back to the cheapest of them when `GOALS.md`
+      names no currency goal. Ranked by whether the objective and plan commit
+      minutes to a skill the upgrade's modifiers are scoped to. See
+      `learnings/README.md`.
+
+- [ ] **The payback is not priced, only the relevance** — M. An upgrade the plan
+      will use sorts above one it will not, which is a fact; how much it is
+      worth is still a judgement a human makes. Pricing it needs the modifier's
+      own value — a `-5` on a percentage interval modifier scoped to Fishing —
+      and `ModifierValue.value` is right there (modifiers.d.ts:135). What is
+      missing is a way to know *which* modifiers are percentage interval
+      reductions without matching on a runtime id string the typings do not
+      carry. The dump is the place to settle it: record each purchase's
+      `contains.stats.modifiers` as `{modifierId, value, skillId}` rows
+      alongside the `effect` prose it already captures, and then the question is
+      answerable offline against real data rather than guessed at in the mod.
+      Until then the label states the committed minutes and stops.
+
+- [ ] **Nothing buys the upgrade once it becomes affordable** — S. The chain is
+      one link short. `readMoneyBlockedUpgrades` names the target,
+      `fundingTarget` earns toward it, the sell reflex converts stock, and then
+      the upgrade simply appears in `readShopObjectiveCandidates` and waits for
+      a planning session to pick it. `buyTrivialUpgrades` will not: its band is
+      deliberately for purchases cheap enough that not owning them is an
+      oversight, and a 300,000 GP rod is not that. The honest options are a
+      reflex that buys the *specific* purchase the funding target named — which
+      is narrow enough to be defensible, since the target is the operator's rule
+      and the price is already known — or leaving it to the planner and
+      accepting that an unattended night ends with the money banked and the
+      upgrade unbought. Worth deciding rather than drifting into.
+
+- [ ] **A funding target is chosen but never reported as such** — S. The
+      objective carries `fundingTarget: {goalId: "upgrade:melvorD:Rune_Fishing_Rod"}`
+      and nothing renders it, so an operator watching the sell reflex convert a
+      stack sees the sale and not the reason. `goalId` was carried precisely so
+      a sale could be explained by naming what licensed it; the panel and
+      `get_agent_state` should say which upgrade is being funded and how far
+      the balance has got.
+
 ## Stock-shaped objectives — what was left open
 
 - [x] **Every goal and every plan step was level-shaped, and the stock shape had
@@ -777,6 +833,18 @@ Township summary reported 0% health while the repair reflex correctly computed
       an unspent resource at the cap is a resource thrown away. The honest
       version of this is probably "build the top-valued candidate when storage is
       above N%", which spends only what would otherwise be lost.
+      Half of this is now done, and it is the half that does not spend. The
+      operator's rule — *"otherwise do township tasks"* — is encoded:
+      `chooseStopgap` works the Township task nearest to done, in hours of work
+      left, before falling back to levels per hour. The demand was already on
+      the candidates (`suggestedStock`, now carrying a `source` so a task can be
+      told from a recipe input as data rather than by its prose) and reached
+      nothing but a label. It stays inside the existing pool, so the
+      sustain-minutes and producer-over-consumer guards are unchanged, and it is
+      the one stopgap that ends on an achievement rather than on its budget.
+      **Building** is still untouched, and it is still the harder half for the
+      reason above: gathering for a task spends nothing, and a build spends the
+      town's resources.
 - [ ] **A build's value does not reach the global ranking** — M. `xpPerHour` and
       `gpPerHour` are deliberately *not* set on `build_township` candidates: the
       figures are a permanent rate delta rather than the rate of an activity, and

@@ -85,14 +85,29 @@ const ROD = upgrade('melvorD:Rune_Fishing_Rod', 'Rune Fishing Rod', 300_000, {
   },
 });
 
-/** Requirement *unmet*. Firemaking 55 against 32; earning buys nothing here. */
-const FIRE = upgrade('melvorD:Mahogany_Cooking_Fire', 'Mahogany Cooking Fire', 100_000, {
+/**
+ * Requirement *unmet*. Firemaking 55 against 32; earning buys nothing here.
+ *
+ * Priced at 200,000 — above the 174,154 held, and deliberately so. An earlier
+ * version of this fixture cost 100,000, which the character could simply
+ * afford, so the price filter removed it before the requirement filter was ever
+ * consulted and a mutant that deleted `checkRequirements` outright survived.
+ * The whole point of this purchase is that it is unaffordable *and*
+ * unreachable, and only a fixture that is both can tell the two filters apart.
+ */
+const FIRE = upgrade('melvorD:Mahogany_Cooking_Fire', 'Mahogany Cooking Fire', 200_000, {
   purchaseRequirements: [{ met: false }],
   contains: { items: [], stats: grants(['melvorD:Cooking'], '+15% Cooking Success') },
 });
 
-/** Cheaper than the rod in GP, and blocked on a currency GP cannot become. */
-const SLAYER_GEAR = upgrade('melvorD:Slayer_Helmet', 'Slayer Helmet', 10_000, {
+/**
+ * Blocked on a currency GP cannot become, and unaffordable in GP as well.
+ *
+ * Cheaper than the rod, so if the wrong-currency check were dropped this would
+ * lead the list — which is exactly what the ordering assertion catches. At
+ * 10,000 GP it was affordable outright and the price filter hid the defect.
+ */
+const SLAYER_GEAR = upgrade('melvorD:Slayer_Helmet', 'Slayer Helmet', 250_000, {
   slayerCoins: 5_000,
 });
 

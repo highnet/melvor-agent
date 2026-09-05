@@ -379,3 +379,111 @@ wrong: "inputs held ÷ inputs per craft" understated Mind Runes by a factor of
 four, because Runecrafting yields four runes per essence at this mastery. The
 multiplier has to come from `productYieldFor`, which samples the game's own
 rolling accessor until it can identify the un-doubled quantity.
+
+## "Cannot afford" is four different problems wearing one answer
+
+`Rune Fishing Rod` cost 300,000 GP at a balance of 174,154, its only
+requirement — Fishing 60 — was met, and roughly fourteen hours of Township
+fishing were queued behind it. A permanent 5% cut to the fishing interval,
+bought before that work rather than after, is worth about forty minutes and
+then keeps paying. It appeared on no list anywhere. Every shop reader filtered
+on affordability, so the board showed twenty consumables at 4 to 600 GP each
+and the one thing worth saving for did not exist until the saving was done.
+
+The correction is not "also show what we cannot afford". `Mahogany Cooking
+Fire` is equally unaffordable and its requirement is Firemaking 55 against 32 —
+no amount of earning buys it, and a saving list that includes it sends the run
+after money it cannot spend. There are four ways to be unable to buy something
+and only one of them is fixed by working:
+
+| Blocked on | Fixed by | Belongs on a saving list |
+|---|---|---|
+| GP | earning | **yes** |
+| a level | training that skill | no |
+| another currency | Slayer, not GP | no |
+| banked stock | gathering or crafting | no |
+
+The game's own `getPurchaseCosts(...).checkIfOwned()` (shop.d.ts:258,
+skill.d.ts:1123) returns the same `false` for all four. It answers "can this be
+bought", which is not the question, and a reader that used it alone could not
+tell an objective from a dead end. The separation has to be built: check
+requirements, check every *other* currency against what is held, check the item
+costs against the bank, and only then is the remainder a number to earn.
+
+The general form is worth keeping because the accessor is not at fault. **A
+boolean that collapses several causes is fine for the decision it was written
+for and useless for any decision that has to act on the cause.** The same shape
+is already recorded twice in this file: `canAfford` answers "is one action
+possible" and cannot size a thirty-minute objective, and a cost that escalates
+has no per-unit price to quote at all.
+
+The second half was the same lesson this file already records about numbers
+computed for a sentence. The shortfall *was* being printed — `Rune Fishing Rod
+costs 300,000 GP — 125,846 GP short` — in a blocked-list label, where a
+planning session could read it and nothing at 3am could. It reaches the
+snapshot as a number now, and `fundingTarget` — the one authorisation the sell
+reflex has — falls back to it when `GOALS.md` names no currency goal.
+
+Two boundaries that made the generalisation safe rather than merely convenient,
+both checked rather than assumed:
+
+- **It authorises, it does not withhold.** Nothing consults a funding target
+  before eating, casting, burning or buying, so saving for an upgrade cannot
+  starve the reflexes that keep the character alive. That is the difference
+  from the bank-slot cap, whose only replenishment was the gathering it was
+  blocking.
+- **The target is the price, not the shortfall.** `fundingTarget.amount` is
+  compared against the balance held, so a target of 125,846 is already met at
+  174,154 and expires before selling anything. The figure that reads like the
+  answer is off by everything already banked.
+
+## Rank on a fact the game states, or say you could not
+
+The rod is worth about forty minutes with fourteen hours of fishing queued and
+worth nothing to a run that is mining, so "which upgrade should we save for" has
+no answer that is a property of the upgrade. The temptation is to price the
+payback: 5% of the queued minutes is arithmetic a child could do.
+
+It is also arithmetic with a guess in the middle. The 5% exists in exactly one
+place — inside a localised description string — and recovering it means matching
+a modifier id the typings do not carry and parsing prose into a number. This
+repo has already paid for a multiplier sitting where a measurement belongs:
+Crystal advertised 120,000 GP/h and realised 10,800.
+
+What the game *does* state, plainly and structurally, is which skill a modifier
+is scoped to (`ModifierValue.skill`, modifiers.d.ts:56, inherited from
+`ModifierScope` at :55). And what the run states is where its budgeted minutes
+go. Intersecting the two is a fact, not a score: upgrades the plan will actually
+use come first, cheapest shortfall within each group. The committed minutes are
+printed beside them as an upper bound and labelled as one — `minutesExceed` is a
+budget, and a step may finish early on its criterion.
+
+So the useful discipline is not "always compute the number". It is: name the
+fact the game gives you, use it, and say out loud which conversion you declined
+to invent. A ranking a planner can argue with beats one it has to trust, and an
+absent number that is admitted is worth more than a present one that is made up.
+
+## A fixture can hide the filter it was written to test
+
+Six purchases, three registry orders, thirty-three assertions, all green — and
+deleting the `checkRequirements` filter outright did not fail one of them. The
+level-blocked fixture was priced at 100,000 against a balance of 174,154, so it
+was *affordable*, and the price filter above removed it before the filter under
+test was ever consulted. The same flaw hid the wrong-currency check.
+
+Neither test was wrong about what it asserted. Both were wrong about what they
+exercised, and nothing in a passing run can tell you which. The mutation check
+is what said so, and it said so twice in one pass.
+
+The reusable question, and it is sharper than "vary the order": **for each guard,
+does the fixture reach it?** A fixture that fails an earlier filter proves the
+earlier filter works and says nothing at all about the later one. Write the
+negative case so that *only* the guard under test can reject it — here, unaffordable
+**and** level-blocked, which is what the live purchase actually was.
+
+One harness note, recorded because it cost twenty minutes. Mutating a source
+file and immediately running vitest from the same Node process reported two
+genuinely-killed mutants as survivors; the same mutations applied by hand and
+run in a fresh shell failed as they should. A mutation harness that writes and
+runs back-to-back needs its survivors re-checked by hand before they are
+believed — a false survivor sends you rewriting a test that was already correct.
