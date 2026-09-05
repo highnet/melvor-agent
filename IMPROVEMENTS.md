@@ -40,6 +40,23 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **A shop candidate advertises a per-unit price for a cost that escalates** — S.
+      Live: `112. Buy 5x Extra Bank Slot (63,857 GP each, owned 46)` followed
+      immediately by `shop.buy refused: cannot afford 5x melvorD:Extra_Bank_Slot`
+      at a balance of 335,058 -- which comfortably covers the 319,285 that
+      "63,857 each" implies for five. Extra Bank Slot gets dearer with every
+      purchase, so there is no per-unit price to quote: buying four one at a time
+      cost about 292,000 against the ~256,000 the label implies for four.
+      Two things to fix, and the second matters more. The label should price the
+      *batch* it is offering rather than multiplying a first-unit cost. And the
+      batch size should be chosen against what is affordable -- `5x` was picked
+      with no reference to the balance, so the candidate was unbuyable at the
+      moment it was offered, which is the planner trap the codebase elsewhere
+      goes to some length to avoid ("a candidate the adapter would then refuse
+      is a planner trap" -- `canAfford`, affordability.ts).
+      Note the shape: a number that is correct for one unit, presented as though
+      it composes. Same family as the yield sample priced as an hour's rate.
+
 - [x] **The bury reflex destroys bones a Township task is asking for** — S. Live,
       from one Chicken label: *"STOCK SHORTFALL: pass untilItemId
       melvorD:Bones, untilQuantity 10000 ... a Township task wants 10,000 and 0
