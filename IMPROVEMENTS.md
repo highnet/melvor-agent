@@ -40,6 +40,21 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Done
 
+- [ ] **The dashboard's `gp` field is stale and has misled two decisions** — S.
+      `GET /dashboard` reported `"gp":174154` while `get_agent_state` reported
+      **257,835** at the same moment, the second being correct. It is not a
+      different quantity -- 174,154 was the true balance some minutes earlier --
+      so it reads as a plausible number rather than an obvious fault.
+      It has cost real mistakes twice. Buying bank slots, the dashboard held
+      335,058 across four purchases that actually spent ~292,000, so the
+      remaining balance looked untouched. Funding the Rune Fishing Rod, it hid
+      an 83,681 GP sale the funding reflex had already made, and the shortfall
+      looked unchanged when it had nearly closed.
+      Same family as the reporting defects already fixed -- a number that is
+      correct-looking and not current. The fix is either to refresh it with the
+      rest of the snapshot or to drop it, since `get_agent_state` carries the
+      authoritative figure and a second stale copy earns nothing.
+
 - [x] **A shop candidate advertises a per-unit price for a cost that escalates** — S.
       Live: `112. Buy 5x Extra Bank Slot (63,857 GP each, owned 46)` followed
       immediately by `shop.buy refused: cannot afford 5x melvorD:Extra_Bank_Slot`
