@@ -54,6 +54,16 @@ class FakeBuilding {
    * this rather than by name. */
   stats: { modifiers?: { modifier: { id: string }; value: number }[] } = {};
 
+  /**
+   * `TownshipBuilding.canDegrade` (township.d.ts:130). Default true, as the
+   * game data's own default is. A stack that cannot degrade is one the decay
+   * tolerance must not widen for.
+   */
+  canDegrade = true;
+
+  /** `TownshipBuilding.upgradesTo` (township.d.ts:124). */
+  upgradesTo: FakeBuilding | undefined = undefined;
+
   constructor(
     readonly id: string,
     readonly name: string,
@@ -135,6 +145,12 @@ const ALL_BUILDINGS = [TAILOR, GARDENS, HUT, GRAND_HALL, TOWN_HALL];
 class FakeBiome {
   readonly realm = { id: 'melvorD:Melvor' };
   readonly built = new Map<FakeBuilding, number>();
+  /**
+   * `TownshipBiome.buildingEfficiency` (township.d.ts:33) — one entry per
+   * *building*, not per copy. That is the whole reason a single point of decay
+   * can move the town's population by two: twenty huts share one number.
+   */
+  readonly efficiency = new Map<FakeBuilding, number>();
   readonly availableBuildings = ALL_BUILDINGS;
 
   constructor(
@@ -147,8 +163,14 @@ class FakeBiome {
   }
 
   /** The game's default for a building with no recorded efficiency is 100. */
-  getBuildingEfficiency(): number {
-    return 100;
+  getBuildingEfficiency(building: FakeBuilding): number {
+    return this.efficiency.get(building) ?? 100;
+  }
+
+  /** `reduceBuildingEfficiency`, transcribed including its floor. */
+  reduceBuildingEfficiency(building: FakeBuilding, amount: number, minimumModifier: number): void {
+    const next = Math.max(20 + minimumModifier, this.getBuildingEfficiency(building) - amount);
+    this.efficiency.set(building, next);
   }
 
   getCurrentBuildingInUpgradeChain(building: FakeBuilding): FakeBuilding {
@@ -201,7 +223,7 @@ class FakeTownship {
     for (const biome of this.biomes.allObjects) {
       for (const building of this.buildings.allObjects) {
         population +=
-          biome.getBuildingCount(building) * this.getPopulationProvidesForBiome(building);
+          biome.getBuildingCount(building) * this.getPopulationProvidesForBiome(building, biome);
       }
     }
     this.townData.population = applyPercentBonus(population, this.townData.happiness);
@@ -212,19 +234,60 @@ class FakeTownship {
     let happiness = 0;
     for (const biome of this.biomes.allObjects) {
       for (const building of this.buildings.allObjects) {
-        happiness += biome.getBuildingCount(building) * this.getHappinessProvidesForBiome(building);
+        happiness +=
+          biome.getBuildingCount(building) * this.getHappinessProvidesForBiome(building, biome);
       }
     }
     this.townData.happiness = happiness;
   }
 
-  getPopulationProvidesForBiome(building: FakeBuilding): number {
-    // applyModifier(base, efficiency, 4) — the unfloored variant, efficiency 100.
+  getBasePopulationProvidesForBiome(building: FakeBuilding): number {
     return building.provides.population;
   }
 
-  getHappinessProvidesForBiome(building: FakeBuilding): number {
-    return building.provides.happiness;
+  getPopulationProvidesForBiome(building: FakeBuilding, biome: FakeBiome = GRASSLANDS): number {
+    // applyModifier(base, efficiency, 4) — the unfloored variant.
+    return (
+      building.provides.population *
+      (this.getBuildingEfficiencyInBiome(biome.getCurrentBuildingInUpgradeChain(building), biome) /
+        100)
+    );
+  }
+
+  getHappinessProvidesForBiome(building: FakeBuilding, biome: FakeBiome = GRASSLANDS): number {
+    return (
+      building.provides.happiness *
+      (this.getBuildingEfficiencyInBiome(biome.getCurrentBuildingInUpgradeChain(building), biome) /
+        100)
+    );
+  }
+
+  getBuildingEfficiencyInBiome(building: FakeBuilding, biome: FakeBiome | undefined): number {
+    if (biome === undefined) return 100;
+    return biome.getBuildingEfficiency(building);
+  }
+
+  /**
+   * `hasBuildingBeenUpgraded`, transcribed: a maxed building with an upgrade
+   * above it is frozen and never degrades.
+   */
+  hasBuildingBeenUpgraded(building: FakeBuilding, biome: FakeBiome | undefined): boolean {
+    return building.upgradesTo !== undefined && this.isBuildingMaxed(building, biome as FakeBiome);
+  }
+
+  /**
+   * `reduceAllBuildingEfficiency`, transcribed *without* its 25% roll — the
+   * roll is what makes the live drift unpredictable, and a test that reproduced
+   * it could not assert anything. The gates it applies are kept, because those
+   * are what the tolerance has to respect.
+   */
+  reduceAllBuildingEfficiency(amount: number): void {
+    for (const biome of this.biomes.allObjects) {
+      for (const [building] of biome.built) {
+        if (this.hasBuildingBeenUpgraded(building, biome) || !building.canDegrade) continue;
+        biome.reduceBuildingEfficiency(building, amount, 0);
+      }
+    }
   }
 
   getProvidesForBiome(building: FakeBuilding): Provides {
@@ -298,6 +361,9 @@ beforeEach(() => {
   resetAdapterFailures();
   affordable = 12;
   GRASSLANDS.built.clear();
+  GRASSLANDS.efficiency.clear();
+  HUT.canDegrade = true;
+  HUT.upgradesTo = undefined;
   township = new FakeTownship();
   // 184 population, exactly the live town this was written against.
   GRASSLANDS.built.set(HUT, 184);
@@ -305,7 +371,7 @@ beforeEach(() => {
   township.computeTownPopulation();
   (globalThis as Record<string, unknown>).game = {
     township,
-    modifiers: { flatTownshipPopulation: 0 },
+    modifiers: { flatTownshipPopulation: 0, minimumTownshipBuildingEfficiency: 0 },
   };
 });
 
@@ -359,6 +425,75 @@ describe('what the town is worth per hour', () => {
     expect(readAdapterFailures().some((f) => f.site === 'township.populationModel')).toBe(true);
   });
 
+  it('does not report a game figure that is merely one decay round ahead', () => {
+    // The failure this band was built for. `tick()` writes `townData.population`
+    // and *then* degrades efficiency:
+    //
+    //   computeWorshipAndStats();        // townData.population = 184
+    //   reduceAllBuildingEfficiency(1);  // and only now, efficiency 100 -> 99
+    //
+    // so the stored figure is permanently one round stale. Efficiency is per
+    // *stack* — 184 huts behind one map entry (township.d.ts:33) — so one point
+    // of decay is 1.84 citizens, and the old flat +/-1 tolerance fired on every
+    // single read of a live town, refusing to price any build at all.
+    township.reduceAllBuildingEfficiency(1);
+
+    const economy = readTownshipEconomy();
+    expect(economy?.basePopulation).toBeCloseTo(182.16);
+    expect(economy?.population).toBe(184);
+    expect(economy?.modelMismatch).toBeNull();
+    expect(readAdapterFailures().some((f) => f.site === 'township.populationModel')).toBe(false);
+  });
+
+  it('still reports a gap wider than one decay round can explain', () => {
+    // The band has to stay tight enough to catch a real drift. Two rounds of
+    // decay is not a state the game can be in — it recomputes every tick — so a
+    // model two rounds below the stored figure means the transcription, not the
+    // clock.
+    township.reduceAllBuildingEfficiency(1);
+    township.reduceAllBuildingEfficiency(1);
+
+    expect(readTownshipEconomy()?.modelMismatch).toContain('184');
+  });
+
+  it('does not widen the band for a stack that cannot degrade', () => {
+    // `reduceAllBuildingEfficiency` skips `canDegrade === false`
+    // (township.d.ts:130), so such a stack contributes no staleness and must
+    // buy the transcription no tolerance. Counting every stack regardless would
+    // have been simpler and would have hidden a real 1% drift.
+    HUT.canDegrade = false;
+    township.townData.population = 186;
+
+    expect(readTownshipEconomy()?.modelMismatch).toContain('186');
+  });
+
+  it('does not widen the band for a stack already at the efficiency floor', () => {
+    // `reduceBuildingEfficiency` clamps at `20 + minimumTownshipBuildingEfficiency`
+    // (modifierTable.d.ts:520), so a stack sitting on the floor has no round
+    // left to be stale by. A town at 20% efficiency is where this town is
+    // heading if nothing repairs, and it is also where a tolerance that assumed
+    // a full point of decay would be at its loosest.
+    GRASSLANDS.efficiency.set(HUT, 20);
+    township.computeTownPopulation();
+    township.townData.population = 38;
+
+    expect(readTownshipEconomy()?.modelMismatch).toContain('38');
+  });
+
+  it('does not widen the band for a stack frozen by its own upgrade', () => {
+    // The other gate: `hasBuildingBeenUpgraded` (township.d.ts:558) is
+    // `upgradesTo !== undefined && isBuildingMaxed`, and a frozen stack never
+    // decays. Asserted with a *maxed* stack so the two halves of that condition
+    // are both live — a fixture that only set `upgradesTo` would pass whether
+    // or not the maxed half were read at all.
+    GRASSLANDS.built.set(HUT, HUT.maxUpgrades);
+    HUT.upgradesTo = TAILOR;
+    township.computeTownPopulation();
+    township.townData.population = HUT.maxUpgrades + 2;
+
+    expect(readTownshipEconomy()?.modelMismatch).toContain(`${HUT.maxUpgrades + 2}`);
+  });
+
   it('refuses to price a build while the model is disagreeing', () => {
     // A projection built on a formula the game just contradicted would rank
     // buildings against each other on a wrong scale, and nothing downstream
@@ -394,6 +529,40 @@ describe('what a build is worth', () => {
     // Zero, and correctly so: an untaxed town earns nothing per citizen, so
     // adding citizens adds no GP. The GP half comes alive with the tax rate.
     expect(value?.gpPerHour).toBe(0);
+  });
+
+  it('measures the delta model-against-model, not against the stale live rate', () => {
+    // The half of the staleness that survives the guard. Even with the band
+    // widened, differencing a modelled projection against the game's own rate
+    // charges every build for the decay round the game has not applied yet.
+    //
+    // After one round: the model is 182.16 raw -> 182 -> 163 working citizens,
+    // while the game still says 184 -> 165. One hut takes the model to 183 ->
+    // 164, which is +1 citizen against the model and *-1* against the game — so
+    // the old arithmetic clamped a real gain to zero and the town could not see
+    // that building anything was worth doing.
+    township.reduceAllBuildingEfficiency(1);
+    affordable = 1;
+
+    const value = valueOfBuilding(HUT as never, GRASSLANDS as never);
+    expect(value?.quantity).toBe(1);
+    expect(value?.xpPerHour).toBe(1 * 12);
+  });
+
+  it('measures the GP delta against the model too, once the town is taxed', () => {
+    // The same failure on the money half, and it needs its own case: with no
+    // tax the GP figure is zero however the delta is computed, so an untaxed
+    // fixture cannot tell the two apart. The town's live rate over its own
+    // working population is exact GP per citizen; only the *delta* it is
+    // multiplied by has to come from the model.
+    township.taxModifier = 30;
+    township.reduceAllBuildingEfficiency(1);
+    affordable = 1;
+
+    // The game still says 165 working citizens and pays for them; the model
+    // says 163, and one hut takes it to 164.
+    const perCitizen = (Math.floor(165 * GP_PER_CITIZEN * 0.3) * 12) / 165;
+    expect(valueOfBuilding(HUT as never, GRASSLANDS as never)?.gpPerHour).toBeCloseTo(perCitizen);
   });
 
   it('prices a building the town is not paid for at zero', () => {
