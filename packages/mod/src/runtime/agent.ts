@@ -2308,7 +2308,25 @@ export class Agent {
     // Total level and GP are what the *current objective* is supposed to move.
     // Completion is what the character accumulates by existing, and mixing the
     // two makes the check unable to tell working from merely running.
-    const marker = progressMarker(snapshot.totalLevel, gp);
+    // The objective's own counter when it has one, and total level plus GP only
+    // as the fallback.
+    //
+    // `progressMarker(totalLevel, gp)` alone raised a false alarm the operator
+    // caught: "no total level or GP movement for 22min" while Woodcutting was
+    // earning 34,560 xp/h. Woodcutting was level 60, where a level costs about
+    // three hours -- so twenty-two minutes without a *total level* is the normal
+    // condition of working a high skill, not a stall. The proxy is far too
+    // coarse at the top of a skill, and it gets coarser the further the run
+    // progresses, which is exactly backwards.
+    //
+    // The comment below states the right intent -- watch what the current
+    // objective is supposed to move -- and `readObjectiveCounter` is the honest
+    // implementation of it, already written and already used by NoMovementWatch:
+    // skill XP for a level target, bank quantity for a stock target. Using it
+    // here fixes the false alarm and the opposite failure in one change, since a
+    // fight producing no Hitpoints XP now reads as flat where total level hid it.
+    const counter = readObjectiveCounter(snapshot, this.settings.objective?.successWhen ?? []);
+    const marker = counter === null ? progressMarker(snapshot.totalLevel, gp) : counter.value;
 
     if (marker !== this.lastProgressMarker) {
       this.lastProgressMarker = marker;
@@ -2335,7 +2353,7 @@ export class Agent {
       this.stuckReported = true;
       this.log.warn(
         'reflex',
-        `no total level or GP movement for 15min while running "${this.settings.objective?.rationale ?? 'no objective'}"; escalating`,
+        `${counter?.label ?? 'total level and GP'} has not moved for 15min while running "${this.settings.objective?.rationale ?? 'no objective'}"; escalating`,
       );
     }
 
@@ -2360,6 +2378,7 @@ export class Agent {
       this.stuckEscalations,
       stuckFor,
       this.settings.objective?.rationale ?? null,
+      counter?.label ?? null,
     );
     if (escalation !== null && this.attention !== escalation) {
       this.attention = escalation;

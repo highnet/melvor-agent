@@ -57,16 +57,22 @@ export function stuckReplanDelayMs(escalations: number): number {
  * @param escalations - Replans issued for this stuck episode.
  * @param stuckForMs - How long progress has been flat.
  * @param objective - What the agent believes it is doing, for the message.
+ * @param counterLabel - What was actually watched, e.g. "Woodcutting xp". Naming
+ *   it matters: the message used to say "no total level or GP movement", which
+ *   was both the wrong measure and an unfalsifiable claim to the reader -- an
+ *   operator saw it while Woodcutting earned 34,560 xp/h and reasonably replied
+ *   "this warning seems wrong". A stall report has to say what it watched.
  * @returns A sentence for a human, or null while retrying is still reasonable.
  */
 export function describeStuckAttention(
   escalations: number,
   stuckForMs: number,
   objective: string | null,
+  counterLabel?: string | null,
 ): string | null {
   if (escalations < STUCK_ESCALATIONS_BEFORE_ATTENTION) return null;
 
-  return `no total level or GP movement for ${Math.round(stuckForMs / 60_000)}min across ${escalations} replan requests, all of which returned nothing. The agent is running and achieving nothing; it is doing "${
+  return `${counterLabel ?? 'progress'} has not moved for ${Math.round(stuckForMs / 60_000)}min across ${escalations} replan requests, all of which returned nothing. The agent is running and achieving nothing; it is doing "${
     objective ?? 'no objective'
   }". Attach a planning session, or set an objective directly.`;
 }
