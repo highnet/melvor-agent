@@ -742,6 +742,29 @@ Township summary reported 0% health while the repair reflex correctly computed
 
 ## Township — what the happiness work left open
 
+- [ ] **Every Township rate in the repo's prose is twelve times too high** — S.
+      `TICK_LENGTH` is initialised to 300 but `preLoad` overwrites it with
+      `PASSIVE_TICK_LENGTH`, which the typings state as the literal 3600
+      (township.d.ts:403), and nothing anywhere sets it back — so a loaded save
+      ticks **once an hour**, not twelve times. The adapter always read the
+      figure live and was right; its *fallback* said 12 and is now 1, and the
+      live town confirms `ticksPerHour: 1`. What is left is prose:
+      `learnings/game-state.md` says "Ticks are `TICK_LENGTH` 300 seconds, so
+      twelve an hour" and derives "1,980 Township xp/h and about 7,400 GP/h",
+      and any planning note quoting those figures is out by 12×. The general
+      shape: a constant that is *reassigned at load* reads as a constant in both
+      the typings and the class initialiser, and only the running game or the
+      one line in `preLoad` says otherwise.
+- [ ] **The town's stale population is only handled where it is compared** — S.
+      `townData.population` is written before efficiency decays each tick, so it
+      always sits a decay round above what the buildings compute to now. The
+      economy reader now bounds that (`degradationDrift`) and `valueOfBuilding`
+      measures its deltas model-against-model. **Nothing else does.** Every other
+      consumer of `townData.population` — the snapshot's `population`, the town
+      line, `canBuildTierOfBuilding`'s population gate — reads the stale figure,
+      which is correct in the sense that it is the game's own number, but means
+      two readers of the same town can differ by a citizen or two with no
+      explanation on offer. Worth a single named accessor rather than a habit.
 - [ ] **Nothing builds the town unattended** — M. The town's rates are now
       priced (`valueOfBuilding`) and the build candidates are ordered by them,
       so "which building" is answered. "When" is not: `chooseStopgap` takes

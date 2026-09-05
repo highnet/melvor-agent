@@ -1819,3 +1819,81 @@ nothing else. The sentence was derived correctly from the formula and was wrong
 about today, which is the same failure as an advertised rate that has never been
 measured. A claim scoped to "in general" and read as "right now" is worth less
 than no claim; the line is now scoped to whatever the town is actually paid in.
+
+## The town's population is always one decay round stale, and the guard was right
+
+`valueOfBuilding` refused to price anything on the live town: the transcribed
+model read 176 against the game's 178, happiness was 0 so there was no
+percentage to round, and the flat ±1 tolerance called it a drift. The
+transcription was correct the whole time. `computeTownPopulation` in the shipped
+v1.3.1 source is character-for-character what the adapter does.
+
+The answer is in the tick, three lines down (township.js, nw.js cache — see
+`learnings/mod-api.md`):
+
+```js
+tick() {
+    ...
+    this.computeWorshipAndStats();     // writes townData.population
+    this.reduceAllBuildingEfficiency(1);
+    this.updateAllBuildingProvidedStatsMultiplier();
+```
+
+**The game recomputes the town's stats and then degrades efficiency, in that
+order, and there is exactly one decay call site in the whole file.** So
+`townData.population` permanently describes the efficiencies of one tick ago,
+and anything that recomputes from *current* efficiency is always the lower of
+the two. The model was not drifting; it was ahead.
+
+Two off, rather than a fraction, because of the second half:
+
+```js
+reduceBuildingEfficiency(building, amount, game) {
+    let newEfficiency = this.getBuildingEfficiency(building) - amount;
+    newEfficiency = Math.max(20 + game.modifiers.minimumTownshipBuildingEfficiency, newEfficiency);
+```
+
+`buildingEfficiency` is a `Map<TownshipBuilding, number>` on the *biome*
+(township.d.ts:33) — **one entry per building type, not per copy.** Every hut in
+a biome shares a single efficiency number, so one point of decay is 1% of the
+whole stack at once. 184 huts at +1 population each is 1.84 citizens gone in one
+roll; twenty at +10 each would be two. A per-instance mental model predicts a
+drift of hundredths and would have sent the next reader hunting for a missing
+population source that does not exist — a season, a worship bonus, a modifier
+from outside Township. None of them contribute. There is exactly one writer of
+`townData.population` in the entire shipped file, and its inputs are the loop
+the adapter already had.
+
+Three things worth keeping.
+
+**A tolerance is a claim about a mechanism, and a constant cannot make one.**
+The ±1 was chosen for a rounding argument and then asked to absorb a
+degradation round, which is a different quantity and one that scales with the
+town. The band is now computed in the same walk that sums the population — how
+much a single decay round could remove, respecting the same three gates the game
+applies (`canDegrade` township.d.ts:130, `hasBuildingBeenUpgraded` :558, and the
+`20 + minimumTownshipBuildingEfficiency` floor) — so it tightens as stacks reach
+the floor instead of staying loose forever. A guard whose tolerance does not
+know why it is tolerating will either fire on the normal case or miss the
+abnormal one, and this one did the first for a day.
+
+**The half that survives the guard is the arithmetic downstream of it.** Even
+with the band widened, `valueOfBuilding` was still differencing a *modelled*
+projection against the game's *stale* live rate. At this town that is a two
+citizen head start the build has to pay off before it prices at anything, and
+one Wooden Hut is worth one citizen — so a real gain clamped to zero, silently,
+with the guard green. Both ends of a delta have to come from the same model;
+mixing a projection with a live reading is the same class of error as comparing
+an advertised rate against a measured one and calling the difference profit.
+
+**`TICK_LENGTH` is 3600, not 300, and the entry above says otherwise.** Found
+while checking the rate arithmetic: the class initialises `TICK_LENGTH = 300`,
+then `preLoad` does `this.TICK_LENGTH = this.PASSIVE_TICK_LENGTH` — stated as
+the literal 3600 in the typings (township.d.ts:403) — and nothing anywhere sets
+it back. A loaded save ticks **once an hour**. The adapter read it live and was
+right; the happiness entry above did the arithmetic by hand and is out by
+twelve, so its "1,980 Township xp/h and about 7,400 GP/h" should read 165 and
+about 620. The reusable part: a constant that is *reassigned at load* looks like
+a constant in both the initialiser and the `.d.ts`, and only the running game or
+the one line in `preLoad` contradicts it — which is why the dashboard's
+`ticksPerHour: 1` was worth reading before trusting either.

@@ -3956,12 +3956,19 @@ Both halves are derived from the game's own accessors rather than replicated:
 
 - **XP** through `modifyXP` (skill.d.ts:371), which carries whatever mastery
   and modifier terms the game applies, evaluated at the projected population
-  instead of the current one. `baseXPRate` *is* `currentPopulation`, so
-  substituting the projection is exact.
-- **GP** by scaling the live `getGPGainRate()` by the population ratio.
-  `getGPGainRate` is linear in `currentPopulation` — `pop * GP_PER_CITIZEN *
-  taxRate/100` — so the ratio needs neither the tax rate nor the GP modifier,
-  both of which would have had to be read and could each be wrong.
+  and again at the modelled one. `baseXPRate` *is* `currentPopulation`, so
+  substituting either figure is exact.
+- **GP** by the town's own GP per working citizen — its live
+  `getGPGainRate()` over its live working population. `getGPGainRate` is
+  linear in `currentPopulation` — `pop * GP_PER_CITIZEN * taxRate/100` — so
+  that ratio needs neither the tax rate nor the GP modifier, both of which
+  would have had to be read and could each be wrong.
+
+Both deltas are model-against-model. The game's stored population lags its
+own buildings by one efficiency-decay round (see {@link PopulationModel}),
+and differencing a modelled projection against a stale live rate would hand
+every building the bill for that decay — which at this town's scale is two
+citizens, more than a Wooden Hut is worth.
 
 The one thing genuinely transcribed is the two nested roundings between raw
 population and `currentPopulation`, and {@link readTownshipEconomy} checks

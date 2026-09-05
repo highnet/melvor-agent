@@ -516,6 +516,19 @@ export function readTownshipCandidates(): Candidate[] {
 export interface TownshipEconomy {
   /** Raw population from buildings and flat modifiers, before happiness. */
   basePopulation: number;
+  /**
+   * `basePopulation` scaled by happiness — what the game will store at its next
+   * tick, and the baseline every build delta is measured against.
+   */
+  modelledPopulation: number;
+  /** `modelledPopulation` scaled by health: the model's working citizens. */
+  modelledWorking: number;
+  /**
+   * How far {@link population} may sit above {@link modelledPopulation} purely
+   * because the game has not recomputed since its last efficiency decay. Zero
+   * on a town whose every stack is already at the efficiency floor or frozen.
+   */
+  degradationDrift: number;
   /** The game's `townData.population`: `basePopulation` scaled by happiness. */
   population: number;
   /** `currentPopulation`: population scaled by health. XP per tick, and taxed. */
@@ -527,16 +540,21 @@ export interface TownshipEconomy {
   xpPerHour: number;
   /** GP per hour the town pays the character, through `getGPGainRate`. */
   gpPerHour: number;
-  /** Town ticks per hour, from `TICK_LENGTH` (300s -> 12). */
+  /** Town ticks per hour, from `TICK_LENGTH` — one on any loaded save. */
   ticksPerHour: number;
   /** Why `gpPerHour` is what it is. See {@link TownshipTaxStanding}. */
   tax: TownshipTaxStanding;
   /**
-   * Set when the transcribed population formula disagreed with the game.
+   * Set when the transcribed population formula disagreed with the game by
+   * more than one tick's efficiency decay can account for.
    *
-   * Null is the normal case. A sentence here means every derived figure below
-   * is suspect, and it is also recorded as an adapter failure so it is visible
-   * without anyone reading this field.
+   * Null is the normal case, including while the two figures differ: the game
+   * writes `townData.population` before it degrades efficiency, so a live town
+   * is *expected* to read a citizen or two above this model. Only a difference
+   * outside that band means the transcription has drifted from the engine, and
+   * a sentence here means every derived figure below is suspect. It is also
+   * recorded as an adapter failure so it is visible without anyone reading
+   * this field.
    */
   modelMismatch: string | null;
 }
@@ -654,15 +672,70 @@ function readTaxStanding(township: typeof game.township): TownshipTaxStanding {
 }
 
 /**
- * Population before happiness, summed the way `computeTownPopulation` does.
+ * `reduceBuildingEfficiency`'s floor, from the shipped v1.3.1 source
+ * (township.js, nw.js cache — `learnings/mod-api.md` for the how):
+ *
+ *   newEfficiency = Math.max(20 + game.modifiers.minimumTownshipBuildingEfficiency, newEfficiency);
+ *
+ * The 20 is a literal in the method rather than one of the class's named
+ * constants, so it cannot be read off the live object and is transcribed here.
+ * The modifier half *is* readable (modifierTable.d.ts:520) and is added live.
+ */
+const MINIMUM_BUILDING_EFFICIENCY = 20;
+
+/**
+ * How far one tick's decay can move a building stack, from `tick()`:
+ * `this.reduceAllBuildingEfficiency(1)`. One percentage point, and there is
+ * exactly one call site in the whole shipped file.
+ */
+const EFFICIENCY_DECAY_PER_TICK = 1;
+
+/** The live model of the town's population, and how far the game's may lag it. */
+interface PopulationModel {
+  /** Raw population from buildings and flat modifiers, before happiness. */
+  basePopulation: number;
+  /**
+   * The most population the game's stored figure can be holding that a
+   * recomputation from *current* efficiencies no longer sees.
+   *
+   * `tick()` recomputes the town's stats and only then degrades efficiency:
+   *
+   *   computeWorshipAndStats();        // writes townData.population
+   *   reduceAllBuildingEfficiency(1);  // and only now lowers efficiency
+   *
+   * so `townData.population` is always one degradation round stale, and this
+   * model — which reads efficiency as it is *now* — is always the lower of the
+   * two. See {@link readTownshipEconomy} for why that is not a defect.
+   */
+  degradationDrift: number;
+}
+
+/**
+ * Population before happiness, summed the way `computeTownPopulation` does,
+ * plus the bound on how far the game's stored figure can sit above it.
  *
  * Every biome and every building, not just unlocked biomes and available
  * buildings: the game's own loop is `this.biomes.forEach` over
  * `this.buildings.forEach`, and narrowing it would undercount a town whose
  * biome later locked behind a requirement.
+ *
+ * The drift is accumulated in the same walk because it is per *stack*, not per
+ * building: `buildingEfficiency` is a `Map<TownshipBuilding, number>` on the
+ * biome (township.d.ts:33), so `reduceBuildingEfficiency` moves every copy of a
+ * building in a biome at once. Twenty Wooden Huts at +10 population each are
+ * 200 base population behind one efficiency entry, and a single point of decay
+ * takes two whole citizens off a fresh recomputation. That is where the town
+ * line's "off by two" came from.
  */
-function sumBasePopulation(township: typeof game.township): number {
+function modelTownPopulation(township: typeof game.township): PopulationModel {
   let population = 0;
+  let degradationDrift = 0;
+
+  const efficiencyFloor = safeNumber(
+    'township.minimumBuildingEfficiency',
+    () => MINIMUM_BUILDING_EFFICIENCY + game.modifiers.minimumTownshipBuildingEfficiency,
+    MINIMUM_BUILDING_EFFICIENCY,
+  );
 
   for (const biome of township.biomes.allObjects) {
     for (const building of township.buildings.allObjects) {
@@ -670,15 +743,43 @@ function sumBasePopulation(township: typeof game.township): number {
         const count = biome.getBuildingCount(building);
         if (count <= 0) continue;
         population += count * township.getPopulationProvidesForBiome(building, biome);
+
+        // The two gates `reduceAllBuildingEfficiency` applies before it touches
+        // a stack. A maxed building with an upgrade above it is frozen
+        // (`hasBuildingBeenUpgraded`, township.d.ts:558) and a building can opt
+        // out entirely (`canDegrade`, township.d.ts:130) — either way that
+        // stack cannot move, and counting it would widen the tolerance band far
+        // enough to hide a real drift in the transcription.
+        if (!building.canDegrade) continue;
+        if (township.hasBuildingBeenUpgraded(building, biome)) continue;
+
+        const efficiency = township.getBuildingEfficiencyInBiome(
+          biome.getCurrentBuildingInUpgradeChain(building),
+          biome,
+        );
+        const drop = Math.min(EFFICIENCY_DECAY_PER_TICK, Math.max(0, efficiency - efficiencyFloor));
+        // `Math.max(0, ...)` rather than a signed sum: nothing in the shipped
+        // data provides negative population (197 `provides` entries across
+        // f_00000c/d/f, none negative), and a stack that somehow did would
+        // *gain* population as it decayed — the opposite direction from the one
+        // this bound is widening, so folding it in would loosen the guard
+        // against a case that does not exist.
+        degradationDrift += Math.max(
+          0,
+          count * township.getBasePopulationProvidesForBiome(building, biome) * (drop / 100),
+        );
       } catch (error) {
-        noteSwallowed('township.sumBasePopulation', error);
+        noteSwallowed('township.modelTownPopulation', error);
         // One unreadable building understates the total, which the mismatch
         // check below turns into a report rather than a quiet wrong answer.
       }
     }
   }
 
-  return population + game.modifiers.flatTownshipPopulation;
+  return {
+    basePopulation: population + game.modifiers.flatTownshipPopulation,
+    degradationDrift,
+  };
 }
 
 /** `applyModifier(base, modifier, 0)` — the game's percentage bonus. */
@@ -697,30 +798,54 @@ export function readTownshipEconomy(): TownshipEconomy | null {
 
   const happiness = township.townData.happiness;
   const health = township.townData.health;
-  const basePopulation = sumBasePopulation(township);
+  const { basePopulation, degradationDrift } = modelTownPopulation(township);
 
-  // The proof that the transcription still matches the engine. Off-by-one is
-  // tolerated because `getPopulationProvidesForBiome` is unfloored (applyModifier
-  // type 4) and the game floors only once at the end, so summing per-building
-  // can land a fraction either side of the game's single rounding.
+  // The proof that the transcription still matches the engine — and the band it
+  // is allowed, which is not a guess.
+  //
+  // The game recomputes `townData.population` at the *top* of each tick and
+  // degrades building efficiency at the bottom of the same tick, so its stored
+  // figure is always one degradation round behind the efficiencies this model
+  // reads. `degradationDrift` is exactly how much that round can be worth. The
+  // one point either side is the two floors: both sides floor once, on sums of
+  // unfloored per-building terms (`applyModifier` type 4), so a last-bit
+  // difference in the sum can land the two floors one apart.
+  //
+  // This band replaced a flat +/-1, which fired continuously on a live town:
+  // twenty Wooden Huts share one efficiency entry, so a single point of decay
+  // moved the game's figure two citizens clear of the model and the guard
+  // refused to price any build at all.
   const modelled = applyPercentBonus(basePopulation, happiness);
+  const staleCeiling = applyPercentBonus(basePopulation + degradationDrift, happiness);
   const actual = township.townData.population;
   let modelMismatch: string | null = null;
-  if (Math.abs(modelled - actual) > 1) {
-    modelMismatch = `modelled population ${modelled} against the game's ${actual} (base ${basePopulation}, happiness ${happiness})`;
+  if (actual < modelled - 1 || actual > staleCeiling + 1) {
+    modelMismatch = `modelled population ${modelled}..${staleCeiling} against the game's ${actual} (base ${basePopulation}, happiness ${happiness})`;
     recordFallback('township.populationModel', modelMismatch);
   }
+
+  // The delta a build is worth is measured against this, not against the game's
+  // stale figure: mixing the two would charge (or credit) the build with a
+  // decay round it had nothing to do with. See {@link valueOfBuilding}.
+  const modelledWorking = applyPercentOf(modelled, health);
 
   const ticksPerHour = safeNumber(
     'township.ticksPerHour',
     () => 3600 / township.TICK_LENGTH,
-    // 300s ticks are the game's own default; a zero here would erase the rate
-    // rather than fall back to it.
-    12,
+    // One, not twelve. `TICK_LENGTH` is initialised to 300 and then overwritten
+    // in `preLoad` with `PASSIVE_TICK_LENGTH`, which the typings state as the
+    // literal 3600 (township.d.ts:403) — and nothing anywhere sets it back. So
+    // a loaded save always ticks once an hour, and the live town confirms it.
+    // A fallback of 12 would have quietly multiplied every advertised Township
+    // rate by twelve at exactly the moment the read stopped working.
+    1,
   );
 
   return {
     basePopulation,
+    modelledPopulation: modelled,
+    modelledWorking,
+    degradationDrift,
     population: actual,
     workingPopulation: township.currentPopulation,
     happiness,
@@ -765,12 +890,19 @@ export interface BuildValue {
  *
  * - **XP** through `modifyXP` (skill.d.ts:371), which carries whatever mastery
  *   and modifier terms the game applies, evaluated at the projected population
- *   instead of the current one. `baseXPRate` *is* `currentPopulation`, so
- *   substituting the projection is exact.
- * - **GP** by scaling the live `getGPGainRate()` by the population ratio.
- *   `getGPGainRate` is linear in `currentPopulation` — `pop * GP_PER_CITIZEN *
- *   taxRate/100` — so the ratio needs neither the tax rate nor the GP modifier,
- *   both of which would have had to be read and could each be wrong.
+ *   and again at the modelled one. `baseXPRate` *is* `currentPopulation`, so
+ *   substituting either figure is exact.
+ * - **GP** by the town's own GP per working citizen — its live
+ *   `getGPGainRate()` over its live working population. `getGPGainRate` is
+ *   linear in `currentPopulation` — `pop * GP_PER_CITIZEN * taxRate/100` — so
+ *   that ratio needs neither the tax rate nor the GP modifier, both of which
+ *   would have had to be read and could each be wrong.
+ *
+ * Both deltas are model-against-model. The game's stored population lags its
+ * own buildings by one efficiency-decay round (see {@link PopulationModel}),
+ * and differencing a modelled projection against a stale live rate would hand
+ * every building the bill for that decay — which at this town's scale is two
+ * citizens, more than a Wooden Hut is worth.
  *
  * The one thing genuinely transcribed is the two nested roundings between raw
  * population and `currentPopulation`, and {@link readTownshipEconomy} checks
@@ -854,27 +986,42 @@ export function valueOfBuilding(
   );
   const projectedWorking = applyPercentOf(projectedPopulation, economy.health);
 
+  // Both ends of the delta come from the *model*, never from the game's stored
+  // figure. The game recomputes population before it degrades efficiency, so
+  // `economy.population` is routinely a citizen or two above what the same
+  // buildings compute to now; subtracting the game's rate from a modelled
+  // projection would silently charge every build for that decay round — enough,
+  // at this town's scale, to price a Wooden Hut at nothing.
+  const baselineXp =
+    safeNumber('township.baselineXp', () => township.modifyXP(economy.modelledWorking), 0) *
+    economy.ticksPerHour;
   const xpPerHour =
     safeNumber('township.projectedXp', () => township.modifyXP(projectedWorking), 0) *
       economy.ticksPerHour -
-    economy.xpPerHour;
+    baselineXp;
 
-  // Zero working population makes the ratio undefined rather than infinite, and
-  // a town that taxes nobody earns nothing whatever is built, so the honest
-  // answer for the GP half is zero and not a division.
+  // Zero working population makes the per-citizen rate undefined rather than
+  // infinite, and a town that taxes nobody earns nothing whatever is built, so
+  // the honest answer for the GP half is zero and not a division.
   //
-  // Note what the ratio can and cannot see. It scales the town's live GP rate
-  // by the projected population, which is exact for a building that supplies
-  // citizens. It is *blind* to a building that changes `taxRate` instead — the
-  // rate is `min(BASE_TAX_RATE + townshipTaxPerCitizen, 80)` and a modifier is
-  // not a population term, so Town Hall prices at zero here despite being the
-  // single largest GP change the town can make. That is invisible today because
-  // Town Hall is tier 5 against a tier-1 town and is never a candidate, which is
-  // exactly why it is written down rather than left to be discovered at level
-  // 80. See IMPROVEMENTS.md.
+  // `getGPGainRate` is linear in `currentPopulation` — `pop * GP_PER_CITIZEN *
+  // taxRate/100` — so the town's live rate over its own working population is
+  // exactly GP per working citizen, and neither the tax rate nor the GP
+  // modifier has to be read. Only the *delta* is modelled, for the reason
+  // above.
+  //
+  // Note what that rate can and cannot see. It is exact for a building that
+  // supplies citizens. It is *blind* to a building that changes `taxRate`
+  // instead — the rate is `min(BASE_TAX_RATE + townshipTaxPerCitizen, 80)` and
+  // a modifier is not a population term, so Town Hall prices at zero here
+  // despite being the single largest GP change the town can make. That is
+  // invisible today because Town Hall is tier 5 against a tier-1 town and is
+  // never a candidate, which is exactly why it is written down rather than left
+  // to be discovered at level 80. See IMPROVEMENTS.md.
   const gpPerHour =
     economy.workingPopulation > 0
-      ? (economy.gpPerHour * projectedWorking) / economy.workingPopulation - economy.gpPerHour
+      ? (economy.gpPerHour / economy.workingPopulation) *
+        (projectedWorking - economy.modelledWorking)
       : 0;
 
   return {
