@@ -8,38 +8,50 @@ Final version. Post text, then the two images in order.
 
 I gave Fable 5.1 one instruction: **"play this game while I sleep."**
 
-Not a script. Not fifty rules. One sentence.
+Then I went to sleep. As one does.
 
-It's an idle RPG — you pick a skill, it grinds away on its own, you come back
-later. The game already plays 24 hours of that for you automatically. So an agent
-that just keeps something running is worth exactly zero.
+Quick context: it's an idle RPG. You click a tree. It chops the tree. Forever.
+That's the genre, and I say that with love. The game is so committed to playing
+itself that it'll run 24 hours of chopping while you're at work and hand you the
+logs when you get back.
 
-Everything that matters happens in the **switches**: sell the loot, buy the
-upgrade you can suddenly afford, change gear, change skill when the current one
-stops paying, walk away from a fight you'd lose.
+Which is the awkward part. If the game already grinds for you, an agent that
+grinds for you has accomplished... nothing. Very impressive nothing. It's a robot
+that watches a robot.
 
-Eight hours later I opened the dashboard.
+The actual job is the **switches**. Sell the junk. Buy the upgrade you can
+suddenly afford. Swap the gear. Change skill when this one stops paying. And
+occasionally: do not walk into that cave.
+
+Eight hours later I opened the dashboard, fully expecting a small fire.
 
 It had switched skills when the returns dropped. Bought an upgrade nobody told
-it to buy. Sold 1,204 items — and quietly excluded the ones it would need later.
+it to buy. Sold 1,204 items — and quietly held back the ones it would need later,
+which I'd like to point out is more foresight than I show at a supermarket.
 
 Then it refused a fight. On its own. Because the enemy hit harder than it could
 heal through.
 
-That's the whole thing. Not that it played well.
+I did not teach it that fight. I taught it how to be scared.
+
+And that's the bit I keep thinking about. Not that it played well.
 
 That it knew when not to.
 
-Three rules got it there:
+Three rules did most of the work:
 
-→ Never believe a return value. Check what actually changed in the world.
-→ When it misses something, don't tell it — give it a reflex. Any sentence
-starting with "we should" is a missing guard, because tomorrow nobody's watching.
-→ Fail closed. Empty permission list = refuse. No practice mode.
+→ **Never believe a return value.** The API says "sure, equipped ✅" and means
+nothing by it. Go look at the world. "It didn't crash" is not "it worked."
+→ **Don't tell it what it missed — give it a reflex.** Any sentence starting
+with "we should" is a missing guard in disguise, because tomorrow nobody is
+watching.
+→ **Fail closed.** Empty permission list = refuse. No practice mode, no
+almost-armed, no vibes.
 
-TypeScript monorepo. Code in the comments.
+TypeScript monorepo, three processes, an unreasonable number of learnings files.
+Code in the comments.
 
-Would you let one run unsupervised?
+So: would you let one run unsupervised overnight? Be honest.
 
 #AI #Agents #LLM #SoftwareEngineering
 
