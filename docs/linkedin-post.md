@@ -1,64 +1,18 @@
 # LinkedIn post — melvor-agent
 
-## What the game looks like (for readers who've never seen it)
-
-Two official Steam store screenshots, saved here so the post can show a reader
-what "an idle RPG" actually means before making a point about it.
-
-`melvor-idle-skill-screen.jpg` — the skill screen. Best single image for a
-non-gamer: 20+ skills down the left, and a grid of trees to cut, each with its
-XP and its seconds-per-action. This is the whole game in one frame — pick a
-thing, it repeats, you come back later.
-
-`melvor-idle-combat-screen.jpg` — the combat screen. Worth pairing with the post
-because it shows the numbers the agent's gate actually reads: your HP, the
-enemy's HP, max hit, and the food slot. "Refused the fight because the enemy hit
-harder than it could heal" is legible here in a way it isn't in prose.
-
-**Suggested carousel order:** game screenshot first (here's the world), agent
-dashboard second (here's what it did in it).
-
-⚠️ These are Melvor Idle's own store screenshots — Games by Malcs' copyright, not
-mine. Fine for editorial/commentary use with credit ("Screenshot: Melvor Idle,
-Games by Malcs"), but they are not my artwork and the post shouldn't imply they
-are. A capture from your own save avoids the question entirely.
-
-Source: https://store.steampowered.com/app/1267910/Melvor_Idle/
+Final version. Post text, then the two images in order.
 
 ---
 
-## Screenshot of the agent
-
-![The melvor-agent terminal dashboard: run state RUNNING, mod connected, the current objective, a levels/h and gp/h rate, the validated character snapshot, and an activity log showing a skill switch, a bank, a reflex shop purchase, a combat gate refusal, and an objective accepted from a planning session.](linkedin-tui.png)
-
-Attach `docs/linkedin-tui.png` to the post. It is the real `packages/tui`
-renderer (`render()` called directly, same code path as `pnpm tui`) with a
-representative dashboard payload — not a capture of a live run, so no real save
-data is in it.
-
-**Suggested caption for the image:**
-
-> The whole agent in one pane: what it's doing, whether that's beating a single
-> skill left running, and every transition it made in the last 15 minutes —
-> including the fight it refused.
-
-Why this frame earns its place: the log tells the story the post makes. A skill
-switch when the rate fell below band. A reflex buying an upgrade nobody asked it
-to buy. The gate refusing a dungeon because max hit exceeded the auto-eat
-threshold. An objective arriving from a planning session. That's transitions,
-reflexes, and failing closed — visible in eight lines.
-
----
-
-## Main version (short / hook-first)
+## Post text
 
 I gave Fable 5.1 one instruction: **"play this game while I sleep."**
 
-Not "here's a script." Not fifty rules. One sentence.
+Not a script. Not fifty rules. One sentence.
 
-The game is an idle RPG — you pick a skill, it grinds by itself, you come back
-later. It already plays 24 hours of that for you automatically. So an agent that
-just keeps something running is worth exactly zero.
+It's an idle RPG — you pick a skill, it grinds away on its own, you come back
+later. The game already plays 24 hours of that for you automatically. So an agent
+that just keeps something running is worth exactly zero.
 
 Everything that matters happens in the **switches**: sell the loot, buy the
 upgrade you can suddenly afford, change gear, change skill when the current one
@@ -68,21 +22,22 @@ Eight hours later I opened the dashboard.
 
 It had switched skills when the returns dropped. Bought an upgrade nobody told
 it to buy. Sold 1,204 items — and quietly excluded the ones it would need later.
-Then refused a fight, on its own, because the enemy's max hit was above what it
-could heal through.
 
-That last line is the whole thing. Not that it played well.
+Then it refused a fight. On its own. Because the enemy hit harder than it could
+heal through.
+
+That's the whole thing. Not that it played well.
 
 That it knew when not to.
 
-The three rules that made it work:
+Three rules got it there:
 
 → Never believe a return value. Check what actually changed in the world.
-→ When it misses an opportunity, don't tell it — give it a reflex. Anything
+→ When it misses something, don't tell it — give it a reflex. Any sentence
 starting with "we should" is a missing guard, because tomorrow nobody's watching.
-→ Fail closed. Empty permission list = refuse. No "practice mode."
+→ Fail closed. Empty permission list = refuse. No practice mode.
 
-Built as a TypeScript monorepo. Full writeup + code in the comments.
+TypeScript monorepo. Code in the comments.
 
 Would you let one run unsupervised?
 
@@ -90,28 +45,57 @@ Would you let one run unsupervised?
 
 ---
 
-## Even shorter (if the above still feels long)
+## Image 1 — `melvor-idle-skill-screen.jpg`
 
-I gave Fable 5.1 one instruction: **"play this game while I sleep."**
+The game itself. Leads, because the reader needs to see the world before the
+agent's behaviour in it means anything: 20+ skills down the left, a grid of trees
+to cut, each with its XP and its seconds-per-action.
 
-It's an idle RPG. The game already grinds for you 24 hours at a time, so keeping
-something running is worth nothing. All the value is in the switches — sell,
-upgrade, re-gear, change skill, walk away from a fight you'd lose.
+**Caption:** This is the game. You pick a thing, it repeats, you come back later.
+Twenty-odd skills, and the game will happily run one of them for 24 hours
+without you.
 
-Eight hours later: it had switched skills when returns dropped, bought an
-upgrade nobody told it to buy, sold 1,204 items while excluding the ones it'd
-need later — and refused a fight because the enemy hit harder than it could heal.
+**Alt text:** The Melvor Idle interface — a sidebar listing 20+ skills with
+levels, and a grid of tree types to cut, each showing XP earned and seconds per
+action.
 
-Not that it played well. That it knew when not to.
+⚠️ Melvor Idle's official store screenshot — Games by Malcs' copyright, not mine.
+Credit it in the caption ("Screenshot: Melvor Idle, Games by Malcs"), or replace
+it with a capture from your own save to avoid the question.
 
-Three rules got it there:
-→ Never believe a return value — check what actually changed.
-→ Don't tell it what it missed. Give it a reflex.
-→ Fail closed. Empty permission list = refuse.
+## Image 2 — `linkedin-tui.png`
 
-Would you let one run unsupervised?
+The agent's dashboard. Lands the post: every claim in the text is a line in this
+log.
 
-#AI #Agents #LLM
+**Caption:** Eight hours of decisions in one pane. Bottom to top: switched skill
+when returns dropped, banked, bought an upgrade it wasn't told to buy, refused a
+fight it couldn't survive.
+
+**Alt text:** A terminal dashboard showing run state RUNNING, the current
+objective, a levels-per-hour and gp-per-hour rate, a character snapshot, and an
+activity log of skill switches, a purchase, a sale, and a refused fight.
+
+Rendered through the real `packages/tui` `render()` — the same code path as
+`pnpm tui` — with a representative payload, so it's the true layout and carries
+no real save data.
 
 ---
 
+## Before you post
+
+- The specifics in the text and the dashboard (eight hours, 1,204 items, the
+  rates) are illustrative, not from a logged run. Swap in real numbers, or soften
+  to "I came back to" — a rate figure is exactly what someone will ask about in
+  the comments.
+- "One instruction" is true of the objective you hand it, not of the system: the
+  reflexes and the survivability gate are code you wrote. Fine as a hook, but
+  that's where a sharp reader will push.
+- LinkedIn cuts at ~3 lines before "see more". The hook survives that; check on
+  mobile before publishing.
+
+## Also kept
+
+`melvor-idle-combat-screen.jpg` — the game's combat screen, showing the HP, max
+hit and food slot the gate actually reads. Not in the final two, but the image to
+reach for if a commenter asks how the refusal works.
