@@ -1,6 +1,33 @@
 # LinkedIn post — melvor-agent
 
-## Screenshot
+## What the game looks like (for readers who've never seen it)
+
+Two official Steam store screenshots, saved here so the post can show a reader
+what "an idle RPG" actually means before making a point about it.
+
+`melvor-idle-skill-screen.jpg` — the skill screen. Best single image for a
+non-gamer: 20+ skills down the left, and a grid of trees to cut, each with its
+XP and its seconds-per-action. This is the whole game in one frame — pick a
+thing, it repeats, you come back later.
+
+`melvor-idle-combat-screen.jpg` — the combat screen. Worth pairing with the post
+because it shows the numbers the agent's gate actually reads: your HP, the
+enemy's HP, max hit, and the food slot. "Refused the fight because the enemy hit
+harder than it could heal" is legible here in a way it isn't in prose.
+
+**Suggested carousel order:** game screenshot first (here's the world), agent
+dashboard second (here's what it did in it).
+
+⚠️ These are Melvor Idle's own store screenshots — Games by Malcs' copyright, not
+mine. Fine for editorial/commentary use with credit ("Screenshot: Melvor Idle,
+Games by Malcs"), but they are not my artwork and the post shouldn't imply they
+are. A capture from your own save avoids the question entirely.
+
+Source: https://store.steampowered.com/app/1267910/Melvor_Idle/
+
+---
+
+## Screenshot of the agent
 
 ![The melvor-agent terminal dashboard: run state RUNNING, mod connected, the current objective, a levels/h and gp/h rate, the validated character snapshot, and an activity log showing a skill switch, a bank, a reflex shop purchase, a combat gate refusal, and an objective accepted from a planning session.](linkedin-tui.png)
 
