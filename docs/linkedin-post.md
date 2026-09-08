@@ -1,5 +1,28 @@
 # LinkedIn post — melvor-agent
 
+## Screenshot
+
+![The melvor-agent terminal dashboard: run state RUNNING, mod connected, the current objective, a levels/h and gp/h rate, the validated character snapshot, and an activity log showing a skill switch, a bank, a reflex shop purchase, a combat gate refusal, and an objective accepted from a planning session.](linkedin-tui.png)
+
+Attach `docs/linkedin-tui.png` to the post. It is the real `packages/tui`
+renderer (`render()` called directly, same code path as `pnpm tui`) with a
+representative dashboard payload — not a capture of a live run, so no real save
+data is in it.
+
+**Suggested caption for the image:**
+
+> The whole agent in one pane: what it's doing, whether that's beating a single
+> skill left running, and every transition it made in the last 15 minutes —
+> including the fight it refused.
+
+Why this frame earns its place: the log tells the story the post makes. A skill
+switch when the rate fell below band. A reflex buying an upgrade nobody asked it
+to buy. The gate refusing a dungeon because max hit exceeded the auto-eat
+threshold. An objective arriving from a planning session. That's transitions,
+reflexes, and failing closed — visible in eight lines.
+
+---
+
 ## Main version
 
 I spent a few months building an LLM agent that plays an idle game, and the
