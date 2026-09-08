@@ -23,88 +23,68 @@ reflexes, and failing closed — visible in eight lines.
 
 ---
 
-## Main version
+## Main version (short / hook-first)
 
-I spent a few months building an LLM agent that plays an idle game, and the
-most useful thing I learned had nothing to do with the game.
+I gave Fable 5.1 one instruction: **"play this game while I sleep."**
 
-Melvor Idle already simulates 24 hours of offline progress for whatever action
-you left running. So an agent that keeps one skill going is worth exactly
-nothing — the game does that for free. All of the value sits in the
-**transitions**: banking, selling, buying the upgrade you can now afford,
-re-equipping for a fight, switching skill when the current one goes dry.
+Not "here's a script." Not fifty rules. One sentence.
 
-That reframing changed the whole architecture. The metric is good transitions
-per day, not uptime.
+The game is an idle RPG — you pick a skill, it grinds by itself, you come back
+later. It already plays 24 hours of that for you automatically. So an agent that
+just keeps something running is worth exactly zero.
 
-Three things that turned out to generalise well beyond a game mod:
+Everything that matters happens in the **switches**: sell the loot, buy the
+upgrade you can suddenly afford, change gear, change skill when the current one
+stops paying, walk away from a fight you'd lose.
 
-**1. Never trust a return value — observe the state.**
-The game's own API is inconsistent: `equipItem` returns a boolean, `equipFood`
-returns `boolean | undefined`, `removeItemQuantity` returns `void`. A truthiness
-check is wrong in one case and impossible in another. So every action goes
-through an `ActionResult` that diffs observed state before and after, and the
-raw return value is only extra evidence. Any agent acting on a real system needs
-this: "the call didn't throw" is not "the thing happened".
+Eight hours later I opened the dashboard.
 
-**2. The right fix for a missed opportunity is a reflex, not an instruction.**
-When a session noticed a 50 GP axe unbought while sitting on 43,000 GP, the
-wrong fix was buying the axe. The right fix was a reflex that buys cheap
-permanent upgrades without being told. The tell is any sentence starting with
-"we should" — if it's true now, it's true tomorrow, and tomorrow nobody is
-watching. Prefer the guard that makes the mistake *unavailable* over the fix
-that makes it undone.
+It had switched skills when the returns dropped. Bought an upgrade nobody told
+it to buy. Sold 1,204 items — and quietly excluded the ones it would need later.
+Then refused a fight, on its own, because the enemy's max hit was above what it
+could heal through.
 
-**3. Fail closed, at a named boundary.**
-The agent refuses to arm unless the character is on an explicit allowlist (empty
-list fails closed on purpose), the knowledge dump matches the running game
-version, and the realm isn't one it can't reason about. Every combat encounter
-goes through a survivability gate that refuses anything it can't prove
-survivable. There's no dry-run mode — arming means it really plays, and the gate
-is what keeps that safe, not a toggle.
+That last line is the whole thing. Not that it played well.
 
-The stack: a TypeScript monorepo — a sandboxed in-game mod, a local Hono
-service holding everything durable, a terminal dashboard, and zod schemas as the
-contract between them. Planning objectives arrive from a Claude Code session
-over MCP; when no session is attached the agent keeps executing its current
-objective rather than stopping. It never stops playing, it just stops changing
-its mind.
+That it knew when not to.
 
-There's also a `learnings/` directory of things that bit me, read at the start
-of every session, and an `IMPROVEMENTS.md` that's now 75k of "here's what went
-wrong and why". Honestly the most valuable files in the repo.
+The three rules that made it work:
 
-Building an agent for a game that doesn't matter is a very cheap way to learn
-what agents get wrong when it does.
+→ Never believe a return value. Check what actually changed in the world.
+→ When it misses an opportunity, don't tell it — give it a reflex. Anything
+starting with "we should" is a missing guard, because tomorrow nobody's watching.
+→ Fail closed. Empty permission list = refuse. No "practice mode."
 
-#AI #LLM #Agents #TypeScript #SoftwareEngineering
+Built as a TypeScript monorepo. Full writeup + code in the comments.
+
+Would you let one run unsupervised?
+
+#AI #Agents #LLM #SoftwareEngineering
 
 ---
 
-## Short version
+## Even shorter (if the above still feels long)
 
-Melvor Idle simulates 24h of offline progress for whatever you left running. So
-an agent that keeps one skill going is worth nothing — the game does that free.
-The value is entirely in the transitions: bank, sell, buy the upgrade, re-equip,
-switch skill.
+I gave Fable 5.1 one instruction: **"play this game while I sleep."**
 
-Three lessons from building it that generalise past the game:
+It's an idle RPG. The game already grinds for you 24 hours at a time, so keeping
+something running is worth nothing. All the value is in the switches — sell,
+upgrade, re-gear, change skill, walk away from a fight you'd lose.
 
-→ Never infer success from a return value. The API returns `boolean`,
-`boolean | undefined`, and `void` for equivalent operations. Diff observed state
-instead. "It didn't throw" is not "it worked".
+Eight hours later: it had switched skills when returns dropped, bought an
+upgrade nobody told it to buy, sold 1,204 items while excluding the ones it'd
+need later — and refused a fight because the enemy hit harder than it could heal.
 
-→ When a session spots a missed opportunity, don't fix the instance — build the
-reflex. Any sentence starting "we should" is a missing guard, because tomorrow
-nobody's watching.
+Not that it played well. That it knew when not to.
 
-→ Fail closed at a named boundary. Empty allowlist means refuse. No dry-run
-mode; a survivability gate that runs on every fight is what makes acting for
-real safe.
+Three rules got it there:
+→ Never believe a return value — check what actually changed.
+→ Don't tell it what it missed. Give it a reflex.
+→ Fail closed. Empty permission list = refuse.
 
-TypeScript monorepo: sandboxed game mod, local Hono service, terminal dashboard,
-zod schemas as the contract. Objectives come from a Claude Code session over
-MCP — and when none is attached it keeps playing the objective it has. It never
-stops playing, it just stops changing its mind.
+Would you let one run unsupervised?
 
-#AI #Agents #TypeScript
+#AI #Agents #LLM
+
+---
+
